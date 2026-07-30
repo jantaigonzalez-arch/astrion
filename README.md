@@ -1,36 +1,104 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Evoelution — Sitio web + Portal
 
-## Getting Started
+Nueva plataforma web de Evoelution: sitio corporativo bilingüe (ES/EN), panel de
+administración y sistema de tickets de soporte. Construido con lo último del
+ecosistema Next.
 
-First, run the development server:
+## Stack
+
+- **Next.js 16** (App Router, React 19, Turbopack, Server Actions)
+- **Tailwind CSS 4** + tokens OKLCH (modo claro/oscuro) + **Motion** (animaciones)
+- **next-intl 4** — i18n español/inglés (`localePrefix: as-needed`, español por defecto)
+- **Auth.js v5** (credenciales + JWT, roles: `admin` / `agent` / `client`)
+- **Drizzle ORM** + **PostgreSQL**
+- **Zod** para validación
+
+## Arranque rápido
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# 1. Node (una vez)
+nvm install --lts && nvm use --lts
+
+# 2. Dependencias
+npm install
+
+# 3. Variables de entorno
+cp .env.example .env.local        # define DATABASE_URL y AUTH_SECRET
+npx auth secret                   # genera AUTH_SECRET
+
+# 4. Base de datos (requiere Postgres)
+npm run db:push                   # crea las tablas desde el schema
+npm run db:seed                   # datos demo + usuarios
+
+# 5. Desarrollo
+npm run dev                       # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+> El sitio público y el login funcionan **sin** base de datos. El formulario de
+> contacto degrada con elegancia (acepta el lead sin persistir) hasta configurar
+> `DATABASE_URL`. El portal (dashboard/tickets/admin) requiere Postgres + seed.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Usuarios demo (tras `db:seed`)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Rol    | Correo                  | Contraseña   |
+| ------ | ----------------------- | ------------ |
+| Admin  | admin@evoelution.com    | `Admin123!`  |
+| Agente | agente@evoelution.com   | `Agente123!` |
+| Cliente| cliente@lab.com         | `Cliente123!`|
 
-## Learn More
+## Estructura
 
-To learn more about Next.js, take a look at the following resources:
+```
+src/
+├── app/[locale]/
+│   ├── (marketing)/         # sitio público: home, nosotros, servicios,
+│   │                        #   productos, marcas, contacto
+│   └── (portal)/
+│       ├── login/           # inicio de sesión
+│       └── (app)/           # área autenticada (guard de sesión + sidebar)
+│           ├── dashboard/   # resumen (cliente y staff)
+│           ├── tickets/     # lista, nuevo, detalle + comentarios
+│           └── admin/       # cola de tickets, leads, usuarios, catálogo
+│                            #   (guard de rol: solo agent/admin)
+├── components/
+│   ├── marketing/           # hero, stats, servicios, cromatograma, etc.
+│   ├── portal/              # sidebar, topbar, formularios, badges
+│   ├── shared/              # logo, tema, switcher de idioma
+│   └── ui/                  # primitivos (button, input, card, badge…)
+├── lib/
+│   ├── db/                  # schema Drizzle + cliente
+│   ├── auth.ts              # Auth.js
+│   ├── actions/             # server actions (leads, tickets)
+│   ├── data/                # consultas (server-only)
+│   └── tickets.ts           # constantes/labels/SLA (cliente+servidor)
+├── i18n/                    # routing, request, navigation
+└── messages/               # es.json, en.json
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Sistema de tickets
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- Folio legible `EVO-000123`, categorías, prioridad y estados
+  (`open → in_progress → waiting → resolved → closed`).
+- **SLA de primera respuesta < 2 h** (según la promesa del sitio): se calcula
+  `slaDueAt` al crear y se marca `firstRespondedAt` cuando responde el staff.
+- Hilo de comentarios con **notas internas** (solo staff).
+- El staff cambia estado y asigna; el cliente solo ve sus propios tickets.
 
-## Deploy on Vercel
+## ML (fase 2)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Preparado, no conectado aún:
+- `tickets.mlSuggested` (jsonb) — categoría/prioridad sugeridas + confianza.
+- `leads.score` (int) — scoring de leads 0–100.
+- `ML_SERVICE_URL` — microservicio FastAPI (reutiliza patrones de `evo_ai`)
+  para clasificación de tickets, scoring y respuestas sugeridas.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Scripts
+
+| Comando            | Acción                                   |
+| ------------------ | ---------------------------------------- |
+| `npm run dev`      | Servidor de desarrollo                   |
+| `npm run build`    | Build de producción                      |
+| `npm run typecheck`| `tsc --noEmit`                           |
+| `npm run db:push`  | Sincroniza el schema con la DB           |
+| `npm run db:seed`  | Datos demo                               |
+| `npm run db:studio`| Drizzle Studio (explorador de datos)     |

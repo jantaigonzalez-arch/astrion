@@ -1,0 +1,230 @@
+{
+  "meta": {
+    "title": "Evoelution — Automatización analítica y cromatografía",
+    "description": "Empresa 100% mexicana especializada en cromatografía. Mantenimiento, validación, capacitación y automatización analítica para laboratorios con 20 años de experiencia."
+  },
+  "nav": {
+    "home": "Inicio",
+    "about": "Nosotros",
+    "services": "Servicios",
+    "evoAi": "Evo_AI",
+    "products": "Productos",
+    "brands": "Marcas",
+    "contact": "Contacto",
+    "portal": "Portal",
+    "login": "Iniciar sesión",
+    "requestService": "Solicitar servicio"
+  },
+  "hero": {
+    "badge": "20 años impulsando laboratorios analíticos",
+    "title": "Precisión analítica,",
+    "titleAccent": "sin fricción.",
+    "subtitle": "Modernizamos tu laboratorio de cromatografía: mantenimiento experto, validación de sistemas computarizados y automatización que reduce tiempos muertos. Respuesta remota en menos de 2 horas.",
+    "ctaPrimary": "Solicitar servicio",
+    "ctaSecondary": "Ver soluciones",
+    "responseTime": "Respuesta remota < 2 h"
+  },
+  "stats": {
+    "years": "años de experiencia",
+    "services": "servicios completados",
+    "equipment": "equipos vendidos",
+    "brands": "marcas aliadas"
+  },
+  "services": {
+    "eyebrow": "Servicios",
+    "title": "Todo lo que tu laboratorio necesita",
+    "subtitle": "Cobertura integral para tus sistemas cromatográficos, con estándares trazables a NIST.",
+    "items": {
+      "maintenance": {
+        "title": "Mantenimiento preventivo y correctivo",
+        "desc": "Servicio experto para sistemas HPLC, UHPLC y GC que maximiza el tiempo productivo."
+      },
+      "validation": {
+        "title": "Validación de sistemas computarizados",
+        "desc": "Cumplimiento para la industria farmacéutica: IQ/OQ/PQ y data integrity."
+      },
+      "training": {
+        "title": "Capacitación y cursos",
+        "desc": "Formamos a tu equipo en operación, troubleshooting y buenas prácticas."
+      },
+      "calibration": {
+        "title": "Calibración con estándares NIST",
+        "desc": "Calibración trazable que asegura resultados confiables y auditables."
+      },
+      "rental": {
+        "title": "Renta de equipos",
+        "desc": "Equipo analítico disponible cuando lo necesitas, sin inversión de capital."
+      },
+      "support": {
+        "title": "Soporte técnico",
+        "desc": "Asistencia remota < 2 h y en sitio en 24–48 h."
+      }
+    },
+    "learnMore": "Saber más"
+  },
+  "why": {
+    "eyebrow": "Por qué Evoelution",
+    "title": "El aliado técnico que tu operación merece",
+    "items": {
+      "experience": { "title": "Dos décadas de experiencia", "desc": "Más de 50,000 servicios ejecutados con precisión." },
+      "response": { "title": "Respuesta inmediata", "desc": "Contacto remoto en menos de 2 horas garantizado." },
+      "traceable": { "title": "Trazabilidad NIST", "desc": "Calibraciones y validaciones auditables de extremo a extremo." },
+      "automation": { "title": "Automatización analítica", "desc": "Digitalizamos flujos de laboratorio con ML e integración de datos." }
+    }
+  },
+  "brands": {
+    "eyebrow": "Marcas aliadas",
+    "title": "Trabajamos con las mejores marcas del sector",
+    "subtitle": "Más de 26 marcas confían en Evoelution para su servicio y soporte."
+  },
+  "cta": {
+    "title": "¿Listo para modernizar tu laboratorio?",
+    "subtitle": "Cuéntanos qué necesitas y un especialista te contactará en menos de 2 horas.",
+    "button": "Abrir un ticket",
+    "secondary": "Hablar por WhatsApp"
+  },
+  "contact": {
+    "eyebrow": "Contacto",
+    "title": "Hablemos",
+    "subtitle": "Estamos listos para atender tu laboratorio.",
+    "address": "Río Santiago 180, Xochimilco, Ciudad de México",
+    "sales": "Ventas",
+    "service": "Servicio",
+    "phone": "Teléfono",
+    "form": {
+      "name": "Nombre",
+      "email": "Correo",
+      "company": "Empresa",
+      "message": "¿Cómo podemos ayudarte?",
+      "submit": "Enviar solicitud",
+      "success": "¡Gracias! Te contactaremos en menos de 2 horas."
+    }
+  },
+  "pages": {
+    "about": {
+      "title": "Sobre Evoelution",
+      "lead": "Somos una empresa 100% mexicana especializada en cromatografía, con dos décadas construyendo relaciones duraderas con laboratorios de todo el país.",
+      "missionTitle": "Nuestra misión",
+      "mission": "Modernizar la operación de los laboratorios analíticos mediante servicio experto, validación rigurosa y automatización inteligente.",
+      "visionTitle": "Nuestra visión",
+      "vision": "Ser el aliado técnico de referencia en cromatografía en México y la región, reconocido por su rapidez de respuesta y su calidad trazable."
+    },
+    "products": {
+      "title": "Productos",
+      "lead": "Equipos, consumibles y refacciones para cromatografía de las mejores marcas del mercado.",
+      "soon": "Catálogo en construcción — contáctanos para cotizaciones y disponibilidad."
+    },
+    "servicesPage": {
+      "title": "Servicios",
+      "lead": "Cobertura integral para tus sistemas cromatográficos, con estándares trazables a NIST."
+    },
+    "brandsPage": {
+      "title": "Marcas",
+      "lead": "Damos servicio y soporte a más de 26 marcas líderes del sector analítico."
+    },
+    "evoAi": {
+      "badge": "Plataforma de datos cromatográficos · potenciada por ML",
+      "eyebrow": "Evo_AI",
+      "title": "De un .dat crudo a una",
+      "titleAccent": "decisión analítica.",
+      "subtitle": "Evo_AI convierte los archivos binarios de tus cromatógrafos en picos, cartas de control y alertas de anomalías — automáticamente. La plataforma de inteligencia analítica de Evoelution para laboratorios farmacéuticos.",
+      "cta1": "Solicitar una demo",
+      "cta2": "Ver cómo funciona",
+      "stats": {
+        "lead": "Construida para el rigor de un laboratorio regulado",
+        "items": [
+          { "value": "Waters Empower 3", "label": "parser nativo de .dat" },
+          { "value": "< 60 s", "label": "de archivo a reporte" },
+          { "value": "±2σ / ±3σ", "label": "límites Levey-Jennings" },
+          { "value": "0–100%", "label": "score de anomalía por corrida" }
+        ]
+      },
+      "problem": {
+        "eyebrow": "El problema",
+        "kicker": "De datos crudos a resueltos",
+        "tags": ["Binario propietario", "Difícil de auditar"],
+        "points": [
+          "Cada corrida queda como un binario .dat en la PC del equipo",
+          "Formatos propietarios y señal sin procesar frenan cualquier análisis",
+          "Sin trazabilidad ni comparación entre secuencias",
+          "El control de calidad es reactivo, nunca predictivo"
+        ],
+        "annotations": ["Ruido sin filtrar", "Picos sin resolver", "Línea base a la deriva"],
+        "link": "Por qué la cromatografía necesita replataformizarse"
+      },
+      "pipeline": {
+        "eyebrow": "La plataforma",
+        "title": "Un pipeline, de la señal cruda al insight",
+        "subtitle": "Cada corrida atraviesa el mismo flujo determinista y auditable.",
+        "steps": [
+          { "name": "Ingesta", "tag": ".dat", "desc": "Carga por drag & drop, individual o por lote. Parser nativo de Waters Empower 3." },
+          { "name": "Procesamiento de señal", "tag": "SciPy", "desc": "Suavizado Savitzky-Golay y corrección de baseline ALS (Eilers & Boelens)." },
+          { "name": "Detección de picos", "tag": "find_peaks", "desc": "RT, altura, área, FWHM y SNR por pico, con parámetros ajustables en vivo." },
+          { "name": "Control de calidad", "tag": "Levey-Jennings", "desc": "Cartas de control con límites ±2σ / ±3σ y especificaciones configurables." },
+          { "name": "ML Insights", "tag": "scikit-learn", "desc": "Anomalías no supervisadas y agrupamiento automático de corridas." }
+        ]
+      },
+      "features": {
+        "eyebrow": "Capacidades",
+        "title": "Todo el ciclo analítico, en una sola plataforma",
+        "subtitle": "Diseñada con y para químicos analíticos.",
+        "items": [
+          { "name": "Análisis individual", "desc": "Cromatograma interactivo: señal raw, suavizada, baseline y corregida. Tabla de picos por corrida." },
+          { "name": "Trending & QC", "desc": "Cartas Levey-Jennings, límites estadísticos automáticos y panel de alertas con acceso directo a cada corrida." },
+          { "name": "ML Insights", "desc": "Isolation Forest para anomalías, PCA 2D del espacio de features y KMeans para agrupar corridas similares." },
+          { "name": "Reportes auditables", "desc": "Exportación a PDF con marca Evoelution y CSV, listos para revisión de calidad." },
+          { "name": "API-first", "desc": "Backend FastAPI documentado: integra Evo_AI con tu LIMS o tus flujos existentes." },
+          { "name": "Despliegue simple", "desc": "Docker Compose + Nginx. On-premise o en la nube — tú decides dónde vive el dato." }
+        ]
+      },
+      "ml": {
+        "eyebrow": "Inteligencia",
+        "title": "Machine learning que un analista entiende",
+        "body": "Nada de cajas negras. Evo_AI usa métodos interpretables y estándar en la industria para señalar qué corrida se sale de patrón y por qué.",
+        "methods": [
+          { "name": "Isolation Forest", "desc": "Detección de anomalías sin supervisión. Ranking de corridas con score 0–100%." },
+          { "name": "PCA 2D", "desc": "Proyección del espacio de features para ver visualmente qué se agrupa y qué se aleja." },
+          { "name": "KMeans", "desc": "Agrupamiento automático que identifica métodos o condiciones distintas." }
+        ]
+      },
+      "compliance": {
+        "eyebrow": "Cumplimiento",
+        "title": "Pensada para la industria farmacéutica",
+        "body": "El flujo es determinista, reproducible y auditable — alineado con las exigencias de integridad de datos de un laboratorio regulado.",
+        "points": [
+          "Trazabilidad completa de cada corrida y parámetro",
+          "Reportes auditables en PDF/CSV",
+          "Compatible con validación IQ/OQ/PQ",
+          "El dato vive donde tú decidas — on-premise o nube privada"
+        ]
+      },
+      "stack": {
+        "eyebrow": "Bajo el capó",
+        "title": "Stack moderno, grado producción"
+      },
+      "finalCta": {
+        "title": "Lleva tu cromatografía al siguiente nivel",
+        "subtitle": "Agenda una demo de Evo_AI con un especialista de Evoelution.",
+        "button": "Solicitar demo"
+      }
+    }
+  },
+  "footer": {
+    "tagline": "Automatización analítica y cromatografía. 100% mexicana.",
+    "sections": { "company": "Empresa", "services": "Servicios", "legal": "Legal", "contact": "Contacto" },
+    "privacy": "Aviso de privacidad",
+    "terms": "Términos",
+    "rights": "Todos los derechos reservados."
+  },
+  "portal": {
+    "login": {
+      "title": "Bienvenido de nuevo",
+      "subtitle": "Accede a tus tickets y soporte.",
+      "email": "Correo",
+      "password": "Contraseña",
+      "submit": "Iniciar sesión",
+      "noAccount": "¿Tu laboratorio necesita acceso?",
+      "register": "Solicítalo"
+    }
+  }
+}

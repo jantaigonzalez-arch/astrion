@@ -1,0 +1,1 @@
+ALTER TABLE "ticket_comments" ADD COLUMN "hours" numeric(6, 2);

@@ -1,26 +1,268 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
+/* ============================================================
+   Evoelution — Sistema de diseño
+   Identidad: precisión analítica / cromatografía.
+   Azul profundo de confianza (farma) + cian "señal de pico".
+   Tokens en OKLCH, compatibles con shadcn, con modo claro/oscuro.
+   ============================================================ */
+
+@custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --radius: 0.75rem;
+
+  /* Superficies */
+  --background: oklch(0.99 0.004 240);
+  --foreground: oklch(0.17 0.03 255);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.17 0.03 255);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.17 0.03 255);
+
+  /* Marca — azul Evoelution */
+  --primary: oklch(0.52 0.19 258);
+  --primary-foreground: oklch(0.99 0.01 240);
+
+  /* Acento — cian "señal" */
+  --accent: oklch(0.78 0.14 200);
+  --accent-foreground: oklch(0.2 0.05 255);
+
+  --secondary: oklch(0.96 0.01 250);
+  --secondary-foreground: oklch(0.25 0.04 258);
+  --muted: oklch(0.96 0.008 250);
+  --muted-foreground: oklch(0.52 0.03 255);
+
+  --destructive: oklch(0.58 0.22 27);
+  --destructive-foreground: oklch(0.99 0.01 240);
+  --success: oklch(0.62 0.15 155);
+  --warning: oklch(0.75 0.16 75);
+
+  --border: oklch(0.9 0.01 250);
+  --input: oklch(0.9 0.01 250);
+  --ring: oklch(0.52 0.19 258);
+
+  /* Marca cruda para gradientes/efectos */
+  --brand-500: oklch(0.52 0.19 258);
+  --brand-400: oklch(0.62 0.17 255);
+  --brand-300: oklch(0.72 0.13 250);
+  --signal: oklch(0.78 0.14 200);
+  --signal-bright: oklch(0.85 0.15 195);
+}
+
+.dark {
+  --background: oklch(0.16 0.02 260);
+  --foreground: oklch(0.96 0.01 240);
+  --card: oklch(0.2 0.025 260);
+  --card-foreground: oklch(0.96 0.01 240);
+  --popover: oklch(0.2 0.025 260);
+  --popover-foreground: oklch(0.96 0.01 240);
+
+  --primary: oklch(0.68 0.16 255);
+  --primary-foreground: oklch(0.16 0.02 260);
+
+  --accent: oklch(0.8 0.14 198);
+  --accent-foreground: oklch(0.18 0.03 260);
+
+  --secondary: oklch(0.26 0.03 260);
+  --secondary-foreground: oklch(0.96 0.01 240);
+  --muted: oklch(0.26 0.03 260);
+  --muted-foreground: oklch(0.7 0.03 250);
+
+  --destructive: oklch(0.65 0.2 25);
+  --destructive-foreground: oklch(0.98 0.01 240);
+  --success: oklch(0.7 0.15 155);
+  --warning: oklch(0.8 0.15 78);
+
+  --border: oklch(0.3 0.02 260);
+  --input: oklch(0.3 0.02 260);
+  --ring: oklch(0.68 0.16 255);
+
+  --brand-500: oklch(0.68 0.16 255);
+  --brand-400: oklch(0.74 0.14 252);
+  --brand-300: oklch(0.8 0.1 248);
+  --signal: oklch(0.8 0.14 198);
+  --signal-bright: oklch(0.86 0.15 195);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand-500: var(--brand-500);
+  --color-brand-400: var(--brand-400);
+  --color-brand-300: var(--brand-300);
+  --color-signal: var(--signal);
+  --color-signal-bright: var(--signal-bright);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, monospace;
+
+  --animate-marquee: marquee 32s linear infinite;
+  --animate-glow: glow 4s ease-in-out infinite;
+  --animate-float: float 16s ease-in-out infinite;
+  --animate-aurora: aurora 20s ease-in-out infinite;
+  --animate-scan: scan 7s ease-in-out infinite;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@keyframes glow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.9; }
+}
+/* Blobs a la deriva — atmósfera "de futuro" */
+@keyframes float {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(24px, -28px, 0) scale(1.1); }
+}
+/* Aurora: rota y respira suavemente */
+@keyframes aurora {
+  0%, 100% { transform: translateX(-50%) rotate(0deg) scale(1); opacity: 0.55; }
+  50% { transform: translateX(-46%) rotate(10deg) scale(1.12); opacity: 0.85; }
+}
+/* Haz de barrido sobre los mockups */
+@keyframes scan {
+  0% { transform: translateX(-120%); opacity: 0; }
+  25% { opacity: 1; }
+  60% { opacity: 0; }
+  100% { transform: translateX(320%); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-float,
+  .animate-aurora,
+  .animate-scan {
+    animation: none;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer utilities {
+  /* Borde con gradiente luminoso (glow ring) para superficies "de futuro". */
+  .glow-ring {
+    position: relative;
+    border-radius: var(--radius-lg);
+    background:
+      linear-gradient(var(--card), var(--card)) padding-box,
+      linear-gradient(135deg,
+        color-mix(in oklch, var(--signal) 70%, transparent),
+        color-mix(in oklch, var(--brand-500) 40%, transparent) 45%,
+        transparent 80%) border-box;
+    border: 1px solid transparent;
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 25%, transparent);
+  }
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+}
+
+@layer utilities {
+  /* Malla de fondo tipo "cromatograma" */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, color-mix(in oklch, var(--border) 60%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklch, var(--border) 60%, transparent) 1px, transparent 1px);
+    background-size: 48px 48px;
+  }
+  .text-gradient-brand {
+    background: linear-gradient(120deg, var(--brand-500), var(--signal-bright));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .glass {
+    background: color-mix(in oklch, var(--card) 70%, transparent);
+    backdrop-filter: blur(12px) saturate(140%);
+  }
+}
+
+/* ---------------- Tokens de visualización de datos ----------------
+   Slots categóricos de la paleta validada (CVD ΔE 24.7 claro / 26.8 oscuro).
+   Los pasos oscuros son elegidos para la superficie oscura, no un flip. */
+.viz-root {
+  --series-1: #2a78d6; /* azul — utilidad / refacciones */
+  --series-2: #eb6834; /* naranja — mano de obra */
+  --viz-grid: color-mix(in oklch, var(--border) 70%, transparent);
+  --viz-track: color-mix(in oklch, var(--muted) 60%, transparent);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz-root {
+    --series-1: #3987e5;
+    --series-2: #d95926;
+  }
+}
+:root.dark .viz-root,
+:root[data-theme="dark"] .viz-root {
+  --series-1: #3987e5;
+  --series-2: #d95926;
+}
+
+/* ---------------- Impresión (reporte de servicio) ---------------- */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .print-main {
+    padding: 0 !important;
+  }
+  /* Documento a todo el ancho, sin sombras ni bordes de UI. */
+  .print-sheet {
+    max-width: none !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  .print-avoid-break {
+    break-inside: avoid;
+  }
+  @page {
+    margin: 16mm;
+  }
 }

@@ -1,0 +1,230 @@
+{
+  "meta": {
+    "title": "Evoelution — Analytical automation & chromatography",
+    "description": "A 100% Mexican company specialized in chromatography. Maintenance, validation, training and analytical automation for laboratories, backed by 20 years of experience."
+  },
+  "nav": {
+    "home": "Home",
+    "about": "About",
+    "services": "Services",
+    "evoAi": "Evo_AI",
+    "products": "Products",
+    "brands": "Brands",
+    "contact": "Contact",
+    "portal": "Portal",
+    "login": "Sign in",
+    "requestService": "Request service"
+  },
+  "hero": {
+    "badge": "20 years empowering analytical labs",
+    "title": "Analytical precision,",
+    "titleAccent": "without friction.",
+    "subtitle": "We modernize your chromatography lab: expert maintenance, computerized system validation and automation that cuts downtime. Remote response in under 2 hours.",
+    "ctaPrimary": "Request service",
+    "ctaSecondary": "Explore solutions",
+    "responseTime": "Remote response < 2 h"
+  },
+  "stats": {
+    "years": "years of experience",
+    "services": "services completed",
+    "equipment": "units sold",
+    "brands": "partner brands"
+  },
+  "services": {
+    "eyebrow": "Services",
+    "title": "Everything your lab needs",
+    "subtitle": "End-to-end coverage for your chromatographic systems, with NIST-traceable standards.",
+    "items": {
+      "maintenance": {
+        "title": "Preventive & corrective maintenance",
+        "desc": "Expert service for HPLC, UHPLC and GC systems that maximizes uptime."
+      },
+      "validation": {
+        "title": "Computerized system validation",
+        "desc": "Pharma compliance: IQ/OQ/PQ and data integrity."
+      },
+      "training": {
+        "title": "Training & courses",
+        "desc": "We train your team in operation, troubleshooting and best practices."
+      },
+      "calibration": {
+        "title": "NIST-traceable calibration",
+        "desc": "Traceable calibration ensuring reliable, auditable results."
+      },
+      "rental": {
+        "title": "Equipment rental",
+        "desc": "Analytical equipment when you need it, with no capital outlay."
+      },
+      "support": {
+        "title": "Technical support",
+        "desc": "Remote assistance < 2 h and on-site within 24–48 h."
+      }
+    },
+    "learnMore": "Learn more"
+  },
+  "why": {
+    "eyebrow": "Why Evoelution",
+    "title": "The technical partner your operation deserves",
+    "items": {
+      "experience": { "title": "Two decades of expertise", "desc": "Over 50,000 services delivered with precision." },
+      "response": { "title": "Immediate response", "desc": "Guaranteed remote contact in under 2 hours." },
+      "traceable": { "title": "NIST traceability", "desc": "Auditable calibrations and validations end to end." },
+      "automation": { "title": "Analytical automation", "desc": "We digitize lab workflows with ML and data integration." }
+    }
+  },
+  "brands": {
+    "eyebrow": "Partner brands",
+    "title": "We work with the industry's best brands",
+    "subtitle": "More than 26 brands trust Evoelution for their service and support."
+  },
+  "cta": {
+    "title": "Ready to modernize your lab?",
+    "subtitle": "Tell us what you need and a specialist will reach out in under 2 hours.",
+    "button": "Open a ticket",
+    "secondary": "Chat on WhatsApp"
+  },
+  "contact": {
+    "eyebrow": "Contact",
+    "title": "Let's talk",
+    "subtitle": "We're ready to serve your laboratory.",
+    "address": "Río Santiago 180, Xochimilco, Mexico City",
+    "sales": "Sales",
+    "service": "Service",
+    "phone": "Phone",
+    "form": {
+      "name": "Name",
+      "email": "Email",
+      "company": "Company",
+      "message": "How can we help you?",
+      "submit": "Send request",
+      "success": "Thank you! We'll contact you in under 2 hours."
+    }
+  },
+  "pages": {
+    "about": {
+      "title": "About Evoelution",
+      "lead": "We are a 100% Mexican company specialized in chromatography, with two decades building lasting relationships with labs across the country.",
+      "missionTitle": "Our mission",
+      "mission": "To modernize analytical lab operations through expert service, rigorous validation and intelligent automation.",
+      "visionTitle": "Our vision",
+      "vision": "To be the reference technical partner in chromatography in Mexico and the region, known for response speed and traceable quality."
+    },
+    "products": {
+      "title": "Products",
+      "lead": "Instruments, consumables and spare parts for chromatography from the market's leading brands.",
+      "soon": "Catalog under construction — contact us for quotes and availability."
+    },
+    "servicesPage": {
+      "title": "Services",
+      "lead": "End-to-end coverage for your chromatographic systems, with NIST-traceable standards."
+    },
+    "brandsPage": {
+      "title": "Brands",
+      "lead": "We service and support more than 26 leading brands in the analytical sector."
+    },
+    "evoAi": {
+      "badge": "Chromatography data platform · powered by ML",
+      "eyebrow": "Evo_AI",
+      "title": "From a raw .dat to an",
+      "titleAccent": "analytical decision.",
+      "subtitle": "Evo_AI turns your chromatographs' binary files into peaks, control charts and anomaly alerts — automatically. Evoelution's analytical intelligence platform, built for pharmaceutical labs.",
+      "cta1": "Request a demo",
+      "cta2": "See how it works",
+      "stats": {
+        "lead": "Built for the rigor of a regulated lab",
+        "items": [
+          { "value": "Waters Empower 3", "label": "native .dat parser" },
+          { "value": "< 60 s", "label": "from file to report" },
+          { "value": "±2σ / ±3σ", "label": "Levey-Jennings limits" },
+          { "value": "0–100%", "label": "anomaly score per run" }
+        ]
+      },
+      "problem": {
+        "eyebrow": "The problem",
+        "kicker": "From raw data to resolved",
+        "tags": ["Proprietary binary", "Hard to audit"],
+        "points": [
+          "Every run stays as a .dat binary on the instrument's PC",
+          "Proprietary formats and unprocessed signal block any analysis",
+          "No traceability or comparison across sequences",
+          "Quality control is reactive, never predictive"
+        ],
+        "annotations": ["Unfiltered noise", "Unresolved peaks", "Drifting baseline"],
+        "link": "Why chromatography needs to be replatformed"
+      },
+      "pipeline": {
+        "eyebrow": "The platform",
+        "title": "One pipeline, from raw signal to insight",
+        "subtitle": "Every run flows through the same deterministic, auditable path.",
+        "steps": [
+          { "name": "Ingest", "tag": ".dat", "desc": "Drag & drop upload, single or batch. Native Waters Empower 3 parser." },
+          { "name": "Signal processing", "tag": "SciPy", "desc": "Savitzky-Golay smoothing and ALS baseline correction (Eilers & Boelens)." },
+          { "name": "Peak detection", "tag": "find_peaks", "desc": "RT, height, area, FWHM and SNR per peak, with parameters tunable live." },
+          { "name": "Quality control", "tag": "Levey-Jennings", "desc": "Control charts with ±2σ / ±3σ limits and configurable specifications." },
+          { "name": "ML Insights", "tag": "scikit-learn", "desc": "Unsupervised anomaly detection and automatic run clustering." }
+        ]
+      },
+      "features": {
+        "eyebrow": "Capabilities",
+        "title": "The whole analytical cycle, in one platform",
+        "subtitle": "Designed with and for analytical chemists.",
+        "items": [
+          { "name": "Single analysis", "desc": "Interactive chromatogram: raw, smoothed, baseline and corrected signal. Peak table per run." },
+          { "name": "Trending & QC", "desc": "Levey-Jennings charts, automatic statistical limits and an alert panel linking straight to each run." },
+          { "name": "ML Insights", "desc": "Isolation Forest for anomalies, 2D PCA of the feature space and KMeans to cluster similar runs." },
+          { "name": "Auditable reports", "desc": "Export to PDF with Evoelution branding and CSV, ready for quality review." },
+          { "name": "API-first", "desc": "Documented FastAPI backend: integrate Evo_AI with your LIMS or existing workflows." },
+          { "name": "Simple deployment", "desc": "Docker Compose + Nginx. On-premise or in the cloud — you decide where the data lives." }
+        ]
+      },
+      "ml": {
+        "eyebrow": "Intelligence",
+        "title": "Machine learning an analyst can understand",
+        "body": "No black boxes. Evo_AI uses interpretable, industry-standard methods to flag which run is off-pattern and why.",
+        "methods": [
+          { "name": "Isolation Forest", "desc": "Unsupervised anomaly detection. Runs ranked with a 0–100% score." },
+          { "name": "2D PCA", "desc": "Feature-space projection to visually see what clusters and what drifts away." },
+          { "name": "KMeans", "desc": "Automatic clustering that identifies distinct methods or conditions." }
+        ]
+      },
+      "compliance": {
+        "eyebrow": "Compliance",
+        "title": "Built for the pharmaceutical industry",
+        "body": "The flow is deterministic, reproducible and auditable — aligned with the data-integrity demands of a regulated lab.",
+        "points": [
+          "Full traceability of every run and parameter",
+          "Auditable PDF/CSV reports",
+          "Compatible with IQ/OQ/PQ validation",
+          "Data lives wherever you choose — on-premise or private cloud"
+        ]
+      },
+      "stack": {
+        "eyebrow": "Under the hood",
+        "title": "Modern, production-grade stack"
+      },
+      "finalCta": {
+        "title": "Take your chromatography to the next level",
+        "subtitle": "Book an Evo_AI demo with an Evoelution specialist.",
+        "button": "Request a demo"
+      }
+    }
+  },
+  "footer": {
+    "tagline": "Analytical automation & chromatography. 100% Mexican.",
+    "sections": { "company": "Company", "services": "Services", "legal": "Legal", "contact": "Contact" },
+    "privacy": "Privacy policy",
+    "terms": "Terms",
+    "rights": "All rights reserved."
+  },
+  "portal": {
+    "login": {
+      "title": "Welcome back",
+      "subtitle": "Access your tickets and support.",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Sign in",
+      "noAccount": "Does your lab need access?",
+      "register": "Request it"
+    }
+  }
+}
