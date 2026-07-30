@@ -156,28 +156,55 @@ CREATE TRIGGER domain_events_no_update_delete
 `crm_deal_events` sigue existiendo: es una **proyección** específica del CRM que
 alimenta la línea de tiempo del negocio en la UI. No la reemplaza.
 
+### 6. Los borrados emiten evento con snapshot
+
+Los borrados de la app son **duros y en cascada**. Una vez ejecutados, el evento
+es la única copia que queda de lo que había, así que se guarda el registro
+completo:
+
+```ts
+await db.transaction(async (tx) => {
+  const [row] = await tx.delete(crmDeals).where(eq(crmDeals.id, id)).returning();
+  if (!row) return;
+  await recordDeletion(tx, {
+    aggregateType: "deal", aggregateId: id, eventType: "deal.deleted",
+    actorId: session.user.id, snapshot: row,   // ← la fila entera
+  });
+});
+```
+
+`recordDeletion` se llama **después** del delete y con el resultado de su
+`.returning()`: así el snapshot es exactamente lo que se borró y no cuesta un
+`SELECT` extra. Cuando la cascada se lleva otras filas, se agrega contexto en
+`extra` (p. ej. `deleteContract` guarda los `equipmentIds` que amparaba).
+
+Están cubiertas las 16 rutas de baja. Las dos excepciones deliberadas son los
+`delete` de `contract_equipment` dentro de `updateContract` y
+`toggleContractEquipment`: son un *re-vínculo* de equipos, no la baja de un
+registro, y el estado resultante queda en el contrato.
+
+Al agregar un `delete` nuevo: envolver en transacción, usar `.returning()` y
+emitir el evento. Un borrado sin evento es un agujero en la auditoría — que es
+justamente lo que un ERP tiene que poder responder.
+
 ---
 
 ## Deuda conocida, ordenada
 
-### Los borrados no se registran (hueco abierto en la bitácora)
+### Baja lógica (`deleted_at`) — pendiente
 
-Hay **18 rutas de borrado duro** en `src/lib/actions/*` (`deleteDeal`,
-`deleteOrganization`, `deleteContact`, `deleteContract`, `deleteEquipmentItem`,
-`deleteStage`, …) y **ninguna emite evento**. La Fase 0 registra creaciones y
-consumos, no bajas: el log de auditoría tiene el hueco justo donde más importa.
+Los borrados **ya se registran**: las 16 rutas de baja emiten `*.deleted` con el
+registro completo en el payload (ver regla 6). Lo que falta es el paso
+siguiente: los borrados siguen siendo **duros y en cascada** — eliminar una
+etapa borra sus negocios; eliminar un negocio borra sus actividades, notas y
+líneas. El evento conserva el agregado borrado, pero no lo que se llevó la
+cascada.
 
-Se detectó en la práctica y de la peor manera: durante la Fase 0 desapareció el
-negocio `EVO-D-000003` de la base de desarrollo y **el sistema no puede decir
-quién lo borró ni cuándo**, porque nada lo registró. Eso es exactamente lo que un
-ERP tiene que poder responder.
-
-Además son borrados **duros con cascada**: eliminar una etapa borra sus
-negocios; eliminar un negocio borra sus actividades, notas y líneas. Lo correcto
-para un ERP es baja lógica (`deleted_at`) en los agregados con historia.
-
-Pendiente: emitir `*.deleted` con snapshot del registro en el payload antes de
-borrar, y evaluar baja lógica en `crm_deals`, `contracts` y `crm_organizations`.
+Para un ERP lo correcto es baja lógica (`deleted_at`) en los agregados con
+historia — `crm_deals`, `contracts`, `crm_organizations` — de modo que el
+registro siga existiendo y consultable, marcado como dado de baja. Eso sí cambia
+comportamiento visible (todas las lecturas necesitan filtrar), así que es
+trabajo de Fase 2 y no de un parche.
 
 
 ### Moneda (Fase 2)

@@ -24,7 +24,18 @@ export type AggregateType =
   | "lead"
   | "contract"
   | "organization"
-  | "contact";
+  | "contact"
+  | "activity"
+  | "note"
+  | "stage"
+  | "deal_product"
+  | "equipment"
+  | "equipment_module"
+  | "equipment_submodule"
+  | "goal"
+  | "label"
+  | "email_template"
+  | "automation";
 
 /**
  * Tipos de evento en uso. Convención: `agregado.verbo_en_pasado`.
@@ -38,7 +49,25 @@ export type DomainEventType =
   | "ticket.comment_added"
   | "part.consumed"
   | "part.stock_overdrawn"
-  | "lead.qualified";
+  | "lead.qualified"
+  // Bajas. Los borrados del sistema son DUROS y en cascada, así que el evento
+  // con su snapshot es la única copia que queda del registro eliminado.
+  | "deal.deleted"
+  | "organization.deleted"
+  | "contact.deleted"
+  | "contract.deleted"
+  | "activity.deleted"
+  | "note.deleted"
+  | "stage.deleted"
+  | "deal_product.deleted"
+  | "deal_label.removed"
+  | "equipment.deleted"
+  | "equipment_module.deleted"
+  | "equipment_submodule.deleted"
+  | "goal.deleted"
+  | "label.deleted"
+  | "email_template.deleted"
+  | "automation.deleted";
 
 export type EventInput = {
   aggregateType: AggregateType;
@@ -59,6 +88,37 @@ export async function recordEvent(tx: DbOrTx, event: EventInput) {
     payload: event.payload ?? {},
     actorId: event.actorId ?? null,
     companyId: event.companyId ?? null,
+  });
+}
+
+/**
+ * Registra una baja guardando el registro completo en el payload.
+ *
+ * Los borrados de la app son duros y en cascada: una vez ejecutados, este
+ * evento es la única copia que queda de lo que había. Se llama DESPUÉS del
+ * delete y con el resultado de su `.returning()`, dentro de la misma
+ * transacción, para no pagar un SELECT extra y garantizar que el snapshot es
+ * exactamente lo que se borró.
+ */
+export async function recordDeletion(
+  tx: DbOrTx,
+  args: {
+    aggregateType: AggregateType;
+    aggregateId: string;
+    eventType: DomainEventType;
+    /** La fila devuelta por `.returning()` del delete. */
+    snapshot: Record<string, unknown>;
+    actorId?: string | null;
+    /** Contexto útil para reconstruir qué se llevó la cascada. */
+    extra?: Record<string, unknown>;
+  },
+) {
+  await recordEvent(tx, {
+    aggregateType: args.aggregateType,
+    aggregateId: args.aggregateId,
+    eventType: args.eventType,
+    actorId: args.actorId,
+    payload: { snapshot: args.snapshot, ...args.extra },
   });
 }
 

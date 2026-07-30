@@ -19,7 +19,7 @@ import {
 import { auth } from "@/lib/auth";
 import { isAdminRole, isSalesRole } from "@/lib/roles";
 import { nextDealReference } from "@/lib/domain/references";
-import { recordEvent } from "@/lib/domain/events";
+import { recordDeletion, recordEvent } from "@/lib/domain/events";
 
 export type CrmState = {
   ok: boolean;
@@ -409,7 +409,19 @@ export async function deleteDeal(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = getDb();
-  await db.delete(crmDeals).where(eq(crmDeals.id, id));
+  // El borrado es duro y arrastra actividades, notas y líneas por cascada.
+  // El evento con snapshot queda como única copia de lo que había.
+  await db.transaction(async (tx) => {
+    const [row] = await tx.delete(crmDeals).where(eq(crmDeals.id, id)).returning();
+    if (!row) return;
+    await recordDeletion(tx, {
+      aggregateType: "deal",
+      aggregateId: id,
+      eventType: "deal.deleted",
+      actorId: session.user.id,
+      snapshot: row,
+    });
+  });
   revalidateCrm();
   redirect("/admin/crm");
 }
@@ -543,7 +555,20 @@ export async function deleteOrganization(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = getDb();
-  await db.delete(crmOrganizations).where(eq(crmOrganizations.id, id));
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .delete(crmOrganizations)
+      .where(eq(crmOrganizations.id, id))
+      .returning();
+    if (!row) return;
+    await recordDeletion(tx, {
+      aggregateType: "organization",
+      aggregateId: id,
+      eventType: "organization.deleted",
+      actorId: session.user.id,
+      snapshot: row,
+    });
+  });
   revalidatePath("/admin/crm/organizaciones");
   redirect("/admin/crm/organizaciones");
 }
@@ -655,7 +680,20 @@ export async function deleteContact(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = getDb();
-  await db.delete(crmContacts).where(eq(crmContacts.id, id));
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .delete(crmContacts)
+      .where(eq(crmContacts.id, id))
+      .returning();
+    if (!row) return;
+    await recordDeletion(tx, {
+      aggregateType: "contact",
+      aggregateId: id,
+      eventType: "contact.deleted",
+      actorId: session.user.id,
+      snapshot: row,
+    });
+  });
   revalidatePath("/admin/crm/contactos");
 }
 
@@ -718,10 +756,21 @@ export async function deleteActivity(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = getDb();
-  const [row] = await db
-    .delete(crmActivities)
-    .where(eq(crmActivities.id, id))
-    .returning({ dealId: crmActivities.dealId });
+  const row = await db.transaction(async (tx) => {
+    const [deleted] = await tx
+      .delete(crmActivities)
+      .where(eq(crmActivities.id, id))
+      .returning();
+    if (!deleted) return null;
+    await recordDeletion(tx, {
+      aggregateType: "activity",
+      aggregateId: id,
+      eventType: "activity.deleted",
+      actorId: session.user.id,
+      snapshot: deleted,
+    });
+    return deleted;
+  });
   revalidateCrm(row?.dealId ?? undefined);
 }
 
@@ -756,10 +805,21 @@ export async function deleteNote(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = getDb();
-  const [row] = await db
-    .delete(crmNotes)
-    .where(eq(crmNotes.id, id))
-    .returning({ dealId: crmNotes.dealId });
+  const row = await db.transaction(async (tx) => {
+    const [deleted] = await tx
+      .delete(crmNotes)
+      .where(eq(crmNotes.id, id))
+      .returning();
+    if (!deleted) return null;
+    await recordDeletion(tx, {
+      aggregateType: "note",
+      aggregateId: id,
+      eventType: "note.deleted",
+      actorId: session.user.id,
+      snapshot: deleted,
+    });
+    return deleted;
+  });
   revalidateCrm(row?.dealId ?? undefined);
 }
 
@@ -865,13 +925,26 @@ export async function deleteStage(formData: FormData) {
   if (!id) return;
 
   const db = getDb();
-  const [{ n }] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(crmDeals)
-    .where(eq(crmDeals.stageId, id));
-  if (n > 0) return;
+  // La comprobación de "etapa vacía" y el borrado van en la misma transacción:
+  // sueltas, alguien podía mover un negocio a esta etapa entre el count y el
+  // delete, y la cascada de crm_stages se lo habría llevado.
+  await db.transaction(async (tx) => {
+    const [{ n }] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(crmDeals)
+      .where(eq(crmDeals.stageId, id));
+    if (n > 0) return;
 
-  await db.delete(crmStages).where(eq(crmStages.id, id));
+    const [row] = await tx.delete(crmStages).where(eq(crmStages.id, id)).returning();
+    if (!row) return;
+    await recordDeletion(tx, {
+      aggregateType: "stage",
+      aggregateId: id,
+      eventType: "stage.deleted",
+      actorId: session.user.id,
+      snapshot: row,
+    });
+  });
   revalidatePath("/admin/crm/configuracion");
   revalidatePath("/admin/crm");
 }

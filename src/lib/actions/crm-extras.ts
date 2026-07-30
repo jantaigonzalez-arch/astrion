@@ -16,6 +16,7 @@ import {
 import { auth } from "@/lib/auth";
 import { isAdminRole, isSalesRole } from "@/lib/roles";
 import { lineTotal } from "@/lib/crm";
+import { recordDeletion } from "@/lib/domain/events";
 
 async function requireSales() {
   const session = await auth();
@@ -103,7 +104,23 @@ export async function deleteDealItem(formData: FormData) {
   if (!id || !dealId) return;
 
   const db = getDb();
-  await db.delete(crmDealProducts).where(eq(crmDealProducts.id, id));
+  // Una línea borrada cambia el valor del negocio: es cambio con efecto en
+  // dinero, así que el snapshot importa para poder auditar la diferencia.
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .delete(crmDealProducts)
+      .where(eq(crmDealProducts.id, id))
+      .returning();
+    if (!row) return;
+    await recordDeletion(tx, {
+      aggregateType: "deal_product",
+      aggregateId: id,
+      eventType: "deal_product.deleted",
+      actorId: session.user.id,
+      snapshot: row,
+      extra: { dealId },
+    });
+  });
   await recalcDealValue(dealId);
   revalidatePath(`/admin/crm/negocios/${dealId}`);
   revalidatePath("/admin/crm");
@@ -129,7 +146,17 @@ export async function deleteLabel(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = getDb();
-  await db.delete(crmLabels).where(eq(crmLabels.id, id));
+  await db.transaction(async (tx) => {
+    const [row] = await tx.delete(crmLabels).where(eq(crmLabels.id, id)).returning();
+    if (!row) return;
+    await recordDeletion(tx, {
+      aggregateType: "label",
+      aggregateId: id,
+      eventType: "label.deleted",
+      actorId: session.user.id,
+      snapshot: row,
+    });
+  });
   revalidatePath("/admin/crm/configuracion");
   revalidatePath("/admin/crm");
 }
@@ -151,11 +178,23 @@ export async function toggleDealLabel(formData: FormData) {
       .values({ dealId, labelId })
       .onConflictDoNothing();
   } else {
-    await db
-      .delete(crmDealLabels)
-      .where(
-        and(eq(crmDealLabels.dealId, dealId), eq(crmDealLabels.labelId, labelId)),
-      );
+    await db.transaction(async (tx) => {
+      const [row] = await tx
+        .delete(crmDealLabels)
+        .where(
+          and(eq(crmDealLabels.dealId, dealId), eq(crmDealLabels.labelId, labelId)),
+        )
+        .returning();
+      if (!row) return;
+      await recordDeletion(tx, {
+        aggregateType: "deal",
+        aggregateId: dealId,
+        eventType: "deal_label.removed",
+        actorId: session.user.id,
+        snapshot: row,
+        extra: { labelId },
+      });
+    });
   }
   revalidatePath(`/admin/crm/negocios/${dealId}`);
   revalidatePath("/admin/crm");
@@ -195,7 +234,17 @@ export async function deleteGoal(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = getDb();
-  await db.delete(crmGoals).where(eq(crmGoals.id, id));
+  await db.transaction(async (tx) => {
+    const [row] = await tx.delete(crmGoals).where(eq(crmGoals.id, id)).returning();
+    if (!row) return;
+    await recordDeletion(tx, {
+      aggregateType: "goal",
+      aggregateId: id,
+      eventType: "goal.deleted",
+      actorId: session.user.id,
+      snapshot: row,
+    });
+  });
   revalidatePath("/admin/crm/objetivos");
 }
 
@@ -223,7 +272,20 @@ export async function deleteEmailTemplate(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = getDb();
-  await db.delete(crmEmailTemplates).where(eq(crmEmailTemplates.id, id));
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .delete(crmEmailTemplates)
+      .where(eq(crmEmailTemplates.id, id))
+      .returning();
+    if (!row) return;
+    await recordDeletion(tx, {
+      aggregateType: "email_template",
+      aggregateId: id,
+      eventType: "email_template.deleted",
+      actorId: session.user.id,
+      snapshot: row,
+    });
+  });
   revalidatePath("/admin/crm/plantillas");
 }
 
@@ -274,7 +336,22 @@ export async function deleteAutomation(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = getDb();
-  await db.delete(crmAutomations).where(eq(crmAutomations.id, id));
+  // Una automatización borrada cambia el comportamiento del sistema (deja de
+  // agendar seguimientos), así que su baja es información de auditoría.
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .delete(crmAutomations)
+      .where(eq(crmAutomations.id, id))
+      .returning();
+    if (!row) return;
+    await recordDeletion(tx, {
+      aggregateType: "automation",
+      aggregateId: id,
+      eventType: "automation.deleted",
+      actorId: session.user.id,
+      snapshot: row,
+    });
+  });
   revalidatePath("/admin/crm/automatizaciones");
 }
 

@@ -8,6 +8,7 @@ import { getDb } from "@/lib/db";
 import { contracts, contractEquipment, equipment } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
 import { isAdminRole, isSalesRole } from "@/lib/roles";
+import { recordDeletion } from "@/lib/domain/events";
 
 export type ContractState = {
   ok: boolean;
@@ -205,7 +206,26 @@ export async function deleteContract(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = getDb();
-  await db.delete(contracts).where(eq(contracts.id, id));
+  // Un contrato es un documento con dinero: su baja es el borrado con más peso
+  // de auditoría del sistema. Se guardan también los equipos que amparaba,
+  // porque la cascada de contract_equipment se los lleva.
+  await db.transaction(async (tx) => {
+    const covered = await tx
+      .select({ equipmentId: contractEquipment.equipmentId })
+      .from(contractEquipment)
+      .where(eq(contractEquipment.contractId, id));
+
+    const [row] = await tx.delete(contracts).where(eq(contracts.id, id)).returning();
+    if (!row) return;
+    await recordDeletion(tx, {
+      aggregateType: "contract",
+      aggregateId: id,
+      eventType: "contract.deleted",
+      actorId: session.user.id,
+      snapshot: row,
+      extra: { equipmentIds: covered.map((e) => e.equipmentId) },
+    });
+  });
   revalidatePath("/admin/contratos");
   redirect("/admin/contratos");
 }

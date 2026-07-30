@@ -12,6 +12,7 @@ import {
 import { auth } from "@/lib/auth";
 import { isSupport } from "@/lib/roles";
 import { saveImage } from "@/lib/uploads";
+import { recordDeletion } from "@/lib/domain/events";
 import { EQUIPMENT_BRANDS } from "@/lib/equipment";
 
 export type EquipState = { ok: boolean; error?: string };
@@ -147,18 +148,55 @@ export async function addSubmodule(
 
 /* ------------------------- Eliminar ------------------------- */
 export async function deleteEquipmentItem(formData: FormData) {
-  if (!(await requireStaff())) return;
+  const session = await requireStaff();
+  if (!session) return;
   const kind = String(formData.get("kind"));
   const id = String(formData.get("id"));
   const ownerId = String(formData.get("ownerId"));
   if (!id) return;
   const db = getDb();
-  if (kind === "equipment") {
-    await db.delete(equipment).where(eq(equipment.id, id));
-  } else if (kind === "module") {
-    await db.delete(equipmentModules).where(eq(equipmentModules.id, id));
-  } else if (kind === "submodule") {
-    await db.delete(equipmentSubmodules).where(eq(equipmentSubmodules.id, id));
-  }
+
+  // Borrar un equipo arrastra sus módulos y submódulos por cascada, y deja los
+  // tickets que lo referenciaban con equipment_id en null: el snapshot es la
+  // única forma de saber después a qué equipo se refería un ticket histórico.
+  await db.transaction(async (tx) => {
+    if (kind === "equipment") {
+      const [row] = await tx.delete(equipment).where(eq(equipment.id, id)).returning();
+      if (!row) return;
+      await recordDeletion(tx, {
+        aggregateType: "equipment",
+        aggregateId: id,
+        eventType: "equipment.deleted",
+        actorId: session.user.id,
+        snapshot: row,
+      });
+    } else if (kind === "module") {
+      const [row] = await tx
+        .delete(equipmentModules)
+        .where(eq(equipmentModules.id, id))
+        .returning();
+      if (!row) return;
+      await recordDeletion(tx, {
+        aggregateType: "equipment_module",
+        aggregateId: id,
+        eventType: "equipment_module.deleted",
+        actorId: session.user.id,
+        snapshot: row,
+      });
+    } else if (kind === "submodule") {
+      const [row] = await tx
+        .delete(equipmentSubmodules)
+        .where(eq(equipmentSubmodules.id, id))
+        .returning();
+      if (!row) return;
+      await recordDeletion(tx, {
+        aggregateType: "equipment_submodule",
+        aggregateId: id,
+        eventType: "equipment_submodule.deleted",
+        actorId: session.user.id,
+        snapshot: row,
+      });
+    }
+  });
   revalidateLab(ownerId);
 }
