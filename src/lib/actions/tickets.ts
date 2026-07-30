@@ -17,12 +17,14 @@ import {
 import { auth } from "@/lib/auth";
 import { isSupport } from "@/lib/roles";
 import {
-  generateReference,
   slaDueFrom,
   TICKET_CATEGORIES,
   TICKET_PRIORITIES,
   STAFF_SETTABLE_STATUSES,
 } from "@/lib/tickets";
+import { nextTicketReference } from "@/lib/domain/references";
+import { recordEvent } from "@/lib/domain/events";
+import { consumePart } from "@/lib/domain/inventory";
 
 const CreateSchema = z.object({
   subject: z.string().min(4).max(240),
@@ -88,30 +90,48 @@ export async function createTicket(
       }
     }
 
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(tickets);
     const now = new Date();
 
-    const [row] = await db
-      .insert(tickets)
-      .values({
-        reference: generateReference(count + 1),
-        subject: parsed.data.subject,
-        description: parsed.data.description,
-        category: parsed.data.category,
-        priority: parsed.data.priority,
-        // El cliente levanta una SOLICITUD: queda pendiente de que el admin
-        // la apruebe antes de entrar a la cola de atención. Si la crea el
-        // staff desde aquí, se considera ya revisada.
-        status: isStaff ? "open" : "pending_review",
-        type: isStaff ? "service" : "request",
-        createdById: session.user.id,
-        equipmentId,
-        moduleId,
-        slaDueAt: slaDueFrom(now),
-      })
-      .returning({ reference: tickets.reference });
+    const row = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(tickets)
+        .values({
+          reference: await nextTicketReference(tx),
+          subject: parsed.data.subject,
+          description: parsed.data.description,
+          category: parsed.data.category,
+          priority: parsed.data.priority,
+          // El cliente levanta una SOLICITUD: queda pendiente de que el admin
+          // la apruebe antes de entrar a la cola de atención. Si la crea el
+          // staff desde aquí, se considera ya revisada.
+          status: isStaff ? "open" : "pending_review",
+          type: isStaff ? "service" : "request",
+          createdById: session.user.id,
+          equipmentId,
+          moduleId,
+          slaDueAt: slaDueFrom(now),
+        })
+        .returning({ id: tickets.id, reference: tickets.reference });
+
+      await recordEvent(tx, {
+        aggregateType: "ticket",
+        aggregateId: created.id,
+        eventType: "ticket.created",
+        actorId: session.user.id,
+        payload: {
+          reference: created.reference,
+          category: parsed.data.category,
+          priority: parsed.data.priority,
+          status: isStaff ? "open" : "pending_review",
+          type: isStaff ? "service" : "request",
+          equipmentId,
+          moduleId,
+          slaDueAt: slaDueFrom(now).toISOString(),
+        },
+      });
+
+      return created;
+    });
 
     revalidatePath("/tickets");
     revalidatePath("/admin/tickets");
@@ -182,31 +202,50 @@ export async function createServiceTicket(
       }
     }
 
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(tickets);
     const now = new Date();
 
     // El ticket pertenece al laboratorio (lo ve en su portal), pero lo levantó
     // el staff: entra directo a la cola, sin revisión.
-    const [row] = await db
-      .insert(tickets)
-      .values({
-        reference: generateReference(count + 1),
-        subject: parsed.data.subject,
-        description: parsed.data.description,
-        category: parsed.data.category,
-        priority: parsed.data.priority,
-        status: "open",
-        type: "service",
-        createdById: parsed.data.clientId,
-        equipmentId,
-        moduleId,
-        reviewedById: session.user.id,
-        reviewedAt: now,
-        slaDueAt: slaDueFrom(now),
-      })
-      .returning({ reference: tickets.reference });
+    const row = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(tickets)
+        .values({
+          reference: await nextTicketReference(tx),
+          subject: parsed.data.subject,
+          description: parsed.data.description,
+          category: parsed.data.category,
+          priority: parsed.data.priority,
+          status: "open",
+          type: "service",
+          createdById: parsed.data.clientId,
+          equipmentId,
+          moduleId,
+          reviewedById: session.user.id,
+          reviewedAt: now,
+          slaDueAt: slaDueFrom(now),
+        })
+        .returning({ id: tickets.id, reference: tickets.reference });
+
+      await recordEvent(tx, {
+        aggregateType: "ticket",
+        aggregateId: created.id,
+        eventType: "ticket.created",
+        actorId: session.user.id,
+        payload: {
+          reference: created.reference,
+          category: parsed.data.category,
+          priority: parsed.data.priority,
+          status: "open",
+          type: "service",
+          clientId: parsed.data.clientId,
+          equipmentId,
+          moduleId,
+          slaDueAt: slaDueFrom(now).toISOString(),
+        },
+      });
+
+      return created;
+    });
 
     revalidatePath("/admin/tickets");
     revalidatePath("/tickets");
@@ -336,73 +375,121 @@ export async function addComment(formData: FormData) {
     if (!Number.isNaN(n) && n > 0 && n < 1000) hours = n.toFixed(2);
   }
 
-  const [createdComment] = await db
-    .insert(ticketComments)
-    .values({
-      ticketId,
-      authorId: session.user.id,
-      body,
-      internal,
-      equipmentId: refEquipment,
-      moduleId: refModule,
-      submoduleId: refSubmodule,
-      hours,
-    })
-    .returning({ id: ticketComments.id });
-
-  // Refacciones usadas: se guarda copia de nº de parte, descripción y costo
-  // vigente, y se descuenta la existencia del inventario.
   const partIds = formData.getAll("partIds").map(String).filter(Boolean);
   const qtys = formData.getAll("partQtys").map(String);
-  if (partIds.length && createdComment) {
-    const catalog = await db
-      .select()
-      .from(spareParts)
-      .where(inArray(spareParts.id, partIds));
 
-    const rows = partIds
-      .map((pid, i) => {
-        const p = catalog.find((c) => c.id === pid);
-        if (!p) return null;
-        const q = Math.max(1, Math.min(9999, Number(qtys[i] ?? 1) || 1));
-        return {
-          commentId: createdComment.id,
-          partId: p.id,
-          partNumber: p.partNumber,
-          description: p.description,
-          quantity: q,
-          unitCostMxn: p.costMxn,
-          unitCostUsd: p.costUsd,
-          unitPriceMxn: p.priceMxn,
-          unitPriceUsd: p.priceUsd,
-        };
+  // La bitácora, el consumo de refacciones, el movimiento de inventario y la
+  // marca de SLA son un solo hecho operativo. Antes eran escrituras sueltas:
+  // si fallaba a mitad quedaba el comentario sin las refacciones, o refacciones
+  // descontadas del stock sin comentario que las justificara.
+  await db.transaction(async (tx) => {
+    const [createdComment] = await tx
+      .insert(ticketComments)
+      .values({
+        ticketId,
+        authorId: session.user.id,
+        body,
+        internal,
+        equipmentId: refEquipment,
+        moduleId: refModule,
+        submoduleId: refSubmodule,
+        hours,
       })
-      .filter((r) => r !== null);
+      .returning({ id: ticketComments.id });
 
-    if (rows.length) {
-      await db.insert(commentParts).values(rows);
-      for (const r of rows) {
-        await db
-          .update(spareParts)
-          .set({
-            stock: sql`greatest(0, ${spareParts.stock} - ${r.quantity})`,
-            updatedAt: new Date(),
-          })
-          .where(eq(spareParts.id, r.partId!));
+    await recordEvent(tx, {
+      aggregateType: "ticket",
+      aggregateId: ticketId,
+      eventType: "ticket.comment_added",
+      actorId: session.user.id,
+      payload: {
+        commentId: createdComment.id,
+        internal,
+        hours,
+        equipmentId: refEquipment,
+        moduleId: refModule,
+        submoduleId: refSubmodule,
+      },
+    });
+
+    // Refacciones usadas: se guarda copia de nº de parte, descripción y costo
+    // vigente, y se registra la salida en el ledger de inventario.
+    if (partIds.length && createdComment) {
+      const catalog = await tx
+        .select()
+        .from(spareParts)
+        .where(inArray(spareParts.id, partIds));
+
+      const rows = partIds
+        .map((pid, i) => {
+          const p = catalog.find((c) => c.id === pid);
+          if (!p) return null;
+          const q = Math.max(1, Math.min(9999, Number(qtys[i] ?? 1) || 1));
+          return {
+            commentId: createdComment.id,
+            partId: p.id,
+            partNumber: p.partNumber,
+            description: p.description,
+            quantity: q,
+            unitCostMxn: p.costMxn,
+            unitCostUsd: p.costUsd,
+            unitPriceMxn: p.priceMxn,
+            unitPriceUsd: p.priceUsd,
+          };
+        })
+        .filter((r) => r !== null);
+
+      if (rows.length) {
+        await tx.insert(commentParts).values(rows);
+
+        // Un movimiento por refacción, con lock de fila: dos técnicos
+        // registrando consumo de la misma pieza a la vez ya no se pisan.
+        for (const r of rows) {
+          const moved = await consumePart(tx, {
+            partId: r.partId,
+            quantity: r.quantity,
+            ticketCommentId: createdComment.id,
+            unitCostMxn: r.unitCostMxn,
+            unitCostUsd: r.unitCostUsd,
+            actorId: session.user.id,
+            note: `Consumo en bitácora del ticket`,
+          });
+
+          await recordEvent(tx, {
+            aggregateType: "spare_part",
+            aggregateId: r.partId,
+            // Un sobregiro se registra como evento propio para que el panel de
+            // refacciones y compras puedan reaccionar, en vez de silenciarse.
+            eventType: moved.overdrawn ? "part.stock_overdrawn" : "part.consumed",
+            actorId: session.user.id,
+            payload: {
+              ticketId,
+              commentId: createdComment.id,
+              partNumber: r.partNumber,
+              quantity: r.quantity,
+              balanceAfter: moved.balanceAfter,
+              shortfall: moved.shortfall,
+            },
+          });
+        }
       }
     }
-  }
 
-  // Marca primera respuesta si un agente/admin contesta (SLA).
-  if (isSupport(session.user.role)) {
-    await db
-      .update(tickets)
-      .set({ firstRespondedAt: sql`coalesce(${tickets.firstRespondedAt}, now())`, updatedAt: new Date() })
-      .where(eq(tickets.id, ticketId));
-  }
+    // Marca primera respuesta si un agente/admin contesta (SLA).
+    if (isSupport(session.user.role)) {
+      await tx
+        .update(tickets)
+        .set({
+          firstRespondedAt: sql`coalesce(${tickets.firstRespondedAt}, now())`,
+          updatedAt: new Date(),
+        })
+        .where(eq(tickets.id, ticketId));
+    }
+  });
 
   revalidatePath(`/tickets/${ticketId}`);
   revalidatePath(`/admin/tickets`);
+  revalidatePath(`/admin/refacciones`);
 }
 
 export async function updateTicketStatus(formData: FormData) {

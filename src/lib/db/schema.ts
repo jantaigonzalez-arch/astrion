@@ -1,16 +1,20 @@
 import {
   pgTable,
   pgEnum,
+  pgSequence,
   uuid,
   text,
   varchar,
   timestamp,
   boolean,
   integer,
+  bigserial,
   jsonb,
   numeric,
   date,
   primaryKey,
+  index,
+  uniqueIndex,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -69,6 +73,20 @@ export const leadStatus = pgEnum("lead_status", [
   "lost",
 ]);
 
+/* Inventario: naturaleza de un movimiento de existencias.
+ * opening      saldo inicial al migrar el catálogo al ledger
+ * consumption  refacción usada en una actividad de la bitácora (salida)
+ * purchase     entrada por compra a proveedor
+ * return       devolución al inventario (entrada)
+ * adjustment   corrección manual tras conteo físico */
+export const inventoryMovementKind = pgEnum("inventory_movement_kind", [
+  "opening",
+  "consumption",
+  "purchase",
+  "return",
+  "adjustment",
+]);
+
 /* ------------------------- Users ------------------------- */
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -114,6 +132,9 @@ export const tickets = pgTable("tickets", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   assignedToId: uuid("assigned_to_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  companyId: uuid("company_id").references((): AnyPgColumn => companies.id, {
     onDelete: "set null",
   }),
   // SLA: fecha límite de primera respuesta (< 2 h desde creación).
@@ -248,7 +269,15 @@ export const spareParts = pgTable("spare_parts", {
   costUsd: numeric("cost_usd", { precision: 12, scale: 2 }),
   priceMxn: numeric("price_mxn", { precision: 12, scale: 2 }),
   priceUsd: numeric("price_usd", { precision: 12, scale: 2 }),
+  // CACHÉ MATERIALIZADO, no fuente de verdad: es la suma de
+  // inventory_movements para esta refacción. Se actualiza únicamente al
+  // insertar un movimiento, en la misma transacción. No hacer UPDATE directo.
+  // Puede quedar NEGATIVO: un sobregiro real se registra tal cual y se alerta
+  // en el panel, en vez de silenciarse con greatest(0, …) como antes.
   stock: integer("stock").notNull().default(0),
+  companyId: uuid("company_id").references((): AnyPgColumn => companies.id, {
+    onDelete: "set null",
+  }),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -303,6 +332,13 @@ export const contracts = pgTable("contracts", {
   }),
   amountMxn: numeric("amount_mxn", { precision: 14, scale: 2 }),
   amountUsd: numeric("amount_usd", { precision: 14, scale: 2 }),
+  // Ver nota de moneda en crmDeals: mismo camino de migración.
+  currency: varchar("currency", { length: 3 }),
+  fxRate: numeric("fx_rate", { precision: 18, scale: 8 }),
+  fxDate: date("fx_date"),
+  companyId: uuid("company_id").references((): AnyPgColumn => companies.id, {
+    onDelete: "set null",
+  }),
   startDate: date("start_date"),
   endDate: date("end_date"),
   notes: text("notes"),
@@ -362,6 +398,9 @@ export const crmOrganizations = pgTable("crm_organizations", {
   address: text("address"),
   ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
   clientId: uuid("client_id").references(() => users.id, { onDelete: "set null" }),
+  companyId: uuid("company_id").references((): AnyPgColumn => companies.id, {
+    onDelete: "set null",
+  }),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -400,6 +439,15 @@ export const crmDeals = pgTable("crm_deals", {
   ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
   valueMxn: numeric("value_mxn", { precision: 14, scale: 2 }),
   valueUsd: numeric("value_usd", { precision: 14, scale: 2 }),
+  // Modelo de moneda al que migra el par mxn/usd: importe + moneda + tipo de
+  // cambio fechado. Nullable mientras las columnas de arriba siguen vigentes;
+  // ningún lector usa esto todavía (ver Fase 2 en docs/ARQUITECTURA.md).
+  currency: varchar("currency", { length: 3 }),
+  fxRate: numeric("fx_rate", { precision: 18, scale: 8 }),
+  fxDate: date("fx_date"),
+  companyId: uuid("company_id").references((): AnyPgColumn => companies.id, {
+    onDelete: "set null",
+  }),
   status: crmDealStatus("status").notNull().default("open"),
   lostReason: text("lost_reason"),
   expectedCloseDate: date("expected_close_date"),
@@ -895,6 +943,147 @@ export const crmDealEventsRelations = relations(crmDealEvents, ({ one }) => ({
   }),
 }));
 
+/* ============== Núcleo transaccional (camino a ERP + ML) ==============
+ * Piezas transversales que no pertenecen a un módulo sino a la plataforma:
+ *
+ *  · secuencias de folio — reemplazan a count(*)+1, que reutilizaba números
+ *    al borrar filas y colisionaba entre inserciones concurrentes.
+ *  · companies — dimensión de empresa/entidad legal. Nullable por ahora: se
+ *    agrega con 37 tablas en el schema y no con 80.
+ *  · domainEvents — bitácora append-only. Cumple dos necesidades con un solo
+ *    registro: la auditoría que exige un ERP, y la historia que necesita ML.
+ *    Las tablas de negocio guardan estado MUTABLE, así que sin esto cada
+ *    UPDATE borra el pasado y no hay features "as-of" que entrenar.
+ *  · inventoryMovements — existencias como ledger. spare_parts.stock pasa a
+ *    ser caché materializado (la suma de los movimientos), no la verdad.
+ *  · fxRates — tipo de cambio fechado, para que la utilidad de un contrato
+ *    de 2024 no se recalcule con el dólar de hoy.
+ */
+
+export const ticketReferenceSeq = pgSequence("ticket_reference_seq", {
+  startWith: 1,
+  increment: 1,
+});
+export const dealReferenceSeq = pgSequence("crm_deal_reference_seq", {
+  startWith: 1,
+  increment: 1,
+});
+
+// Entidad legal que emite documentos. Un solo registro hoy ('Evoelution'),
+// pero las tablas raíz ya cuelgan de aquí para no re-migrarlas después.
+export const companies = pgTable("companies", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: varchar("name", { length: 160 }).notNull(),
+  legalName: varchar("legal_name", { length: 240 }),
+  // RFC en México. Requisito para timbrado CFDI cuando llegue facturación.
+  taxId: varchar("tax_id", { length: 20 }),
+  // Moneda funcional: en la que se llevan los libros de esta empresa.
+  functionalCurrency: varchar("functional_currency", { length: 3 })
+    .notNull()
+    .default("MXN"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// APPEND-ONLY. Nunca se hace UPDATE ni DELETE sobre esta tabla: es la única
+// copia del pasado que tiene el sistema. Se escribe dentro de la misma
+// transacción que el cambio que describe, así que o quedan ambos o ninguno.
+export const domainEvents = pgTable(
+  "domain_events",
+  {
+    // Serial y no uuid: da orden total de escritura, que es lo que necesita
+    // un consumidor incremental (CDC → parquet) para saber por dónde iba.
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    // Agregado afectado: 'deal' | 'ticket' | 'spare_part' | 'lead' | 'contract'
+    aggregateType: varchar("aggregate_type", { length: 60 }).notNull(),
+    aggregateId: uuid("aggregate_id").notNull(),
+    // Verbo en pasado y con namespace: 'deal.created', 'part.consumed'.
+    eventType: varchar("event_type", { length: 80 }).notNull(),
+    // Datos del cambio. Deliberadamente laxo: el consumidor analítico decide
+    // qué campos promueve a columnas cuando el evento se estabiliza.
+    payload: jsonb("payload").notNull().default({}),
+    actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+    companyId: uuid("company_id").references(() => companies.id, {
+      onDelete: "set null",
+    }),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    // Reconstruir la línea de tiempo de un agregado (auditoría, features as-of).
+    index("domain_events_aggregate_idx").on(
+      t.aggregateType,
+      t.aggregateId,
+      t.occurredAt,
+    ),
+    // Barrer un tipo de evento en una ventana (extracción analítica).
+    index("domain_events_type_idx").on(t.eventType, t.occurredAt),
+  ],
+);
+
+// Ledger de existencias. quantity es SIGNADO: negativo = salida.
+// El stock nunca se "setea": se inserta un movimiento y el saldo se recalcula.
+export const inventoryMovements = pgTable(
+  "inventory_movements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // restrict, no cascade: el histórico de consumo debe sobrevivir al
+    // catálogo. Las refacciones se desactivan (active=false), no se borran.
+    partId: uuid("part_id")
+      .notNull()
+      .references(() => spareParts.id, { onDelete: "restrict" }),
+    companyId: uuid("company_id").references(() => companies.id, {
+      onDelete: "set null",
+    }),
+    kind: inventoryMovementKind("kind").notNull(),
+    quantity: integer("quantity").notNull(),
+    // Saldo resultante tras aplicar el movimiento. Redundante con la suma,
+    // y a propósito: permite auditar el ledger sin recorrerlo entero y
+    // detectar si alguien tocó spare_parts.stock por fuera.
+    balanceAfter: integer("balance_after").notNull(),
+    // Origen del consumo, si vino de la bitácora de un ticket.
+    ticketCommentId: uuid("ticket_comment_id").references(
+      () => ticketComments.id,
+      { onDelete: "set null" },
+    ),
+    // Costo vigente al momento del movimiento (valuación histórica).
+    unitCostMxn: numeric("unit_cost_mxn", { precision: 12, scale: 2 }),
+    unitCostUsd: numeric("unit_cost_usd", { precision: 12, scale: 2 }),
+    note: text("note"),
+    actorId: uuid("actor_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("inventory_movements_part_idx").on(t.partId, t.occurredAt)],
+);
+
+// Tipo de cambio fechado. Sin esto, todo importe convertido se recalcula con
+// la cotización de hoy y los reportes históricos cambian solos.
+export const fxRates = pgTable(
+  "fx_rates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    quoteDate: date("quote_date").notNull(),
+    baseCurrency: varchar("base_currency", { length: 3 }).notNull(),
+    quoteCurrency: varchar("quote_currency", { length: 3 }).notNull(),
+    rate: numeric("rate", { precision: 18, scale: 8 }).notNull(),
+    // 'dof' (Diario Oficial), 'banxico', 'manual'…
+    source: varchar("source", { length: 60 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("fx_rates_unique_idx").on(
+      t.quoteDate,
+      t.baseCurrency,
+      t.quoteCurrency,
+    ),
+  ],
+);
+
 /* ------------------------- Tipos ------------------------- */
 export type User = typeof users.$inferSelect;
 export type Ticket = typeof tickets.$inferSelect;
@@ -918,3 +1107,8 @@ export type CrmLabel = typeof crmLabels.$inferSelect;
 export type CrmGoal = typeof crmGoals.$inferSelect;
 export type CrmEmailTemplate = typeof crmEmailTemplates.$inferSelect;
 export type CrmAutomation = typeof crmAutomations.$inferSelect;
+export type Company = typeof companies.$inferSelect;
+export type DomainEvent = typeof domainEvents.$inferSelect;
+export type NewDomainEvent = typeof domainEvents.$inferInsert;
+export type InventoryMovement = typeof inventoryMovements.$inferSelect;
+export type FxRate = typeof fxRates.$inferSelect;

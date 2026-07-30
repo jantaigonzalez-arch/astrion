@@ -7,6 +7,7 @@ import { getDb } from "@/lib/db";
 import { spareParts } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
 import { isSupport } from "@/lib/roles";
+import { applyInventoryMovement } from "@/lib/domain/inventory";
 
 export type PartState = {
   ok: boolean;
@@ -66,15 +67,35 @@ export async function createPart(
       .limit(1);
     if (dup) return { ok: false, error: "duplicate" };
 
-    await db.insert(spareParts).values({
-      partNumber,
-      description: parsed.data.description,
-      brand: parsed.data.brand,
-      costMxn: parsed.data.costMxn ?? null,
-      costUsd: parsed.data.costUsd ?? null,
-      priceMxn: parsed.data.priceMxn ?? null,
-      priceUsd: parsed.data.priceUsd ?? null,
-      stock: parsed.data.stock ?? 0,
+    await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(spareParts)
+        .values({
+          partNumber,
+          description: parsed.data.description,
+          brand: parsed.data.brand,
+          costMxn: parsed.data.costMxn ?? null,
+          costUsd: parsed.data.costUsd ?? null,
+          priceMxn: parsed.data.priceMxn ?? null,
+          priceUsd: parsed.data.priceUsd ?? null,
+          // Nace en 0 y el saldo inicial entra como movimiento: así el stock
+          // siempre es la suma del ledger, sin un valor que apareció de la nada.
+          stock: 0,
+        })
+        .returning({ id: spareParts.id });
+
+      const opening = parsed.data.stock ?? 0;
+      if (opening > 0) {
+        await applyInventoryMovement(tx, {
+          partId: created.id,
+          kind: "opening",
+          quantity: opening,
+          unitCostMxn: parsed.data.costMxn ?? null,
+          unitCostUsd: parsed.data.costUsd ?? null,
+          actorId: session.user.id,
+          note: "Saldo inicial al dar de alta la refacción",
+        });
+      }
     });
 
     revalidatePath("/admin/refacciones");
@@ -117,19 +138,44 @@ export async function updatePart(
       .limit(1);
     if (dup && dup.id !== id) return { ok: false, error: "duplicate" };
 
-    await db
-      .update(spareParts)
-      .set({
-        partNumber,
-        description: parsed.data.description,
-        brand: parsed.data.brand ?? null,
-        costMxn: parsed.data.costMxn ?? null,
-        costUsd: parsed.data.costUsd ?? null,
-        stock: parsed.data.stock ?? 0,
-        active: formData.get("active") === "on",
-        updatedAt: new Date(),
-      })
-      .where(eq(spareParts.id, id));
+    await db.transaction(async (tx) => {
+      // Nota: `stock` ya no se escribe aquí. Es caché del ledger, así que un
+      // cambio de existencias se expresa como movimiento de ajuste.
+      await tx
+        .update(spareParts)
+        .set({
+          partNumber,
+          description: parsed.data.description,
+          brand: parsed.data.brand ?? null,
+          costMxn: parsed.data.costMxn ?? null,
+          costUsd: parsed.data.costUsd ?? null,
+          active: formData.get("active") === "on",
+          updatedAt: new Date(),
+        })
+        .where(eq(spareParts.id, id));
+
+      // El formulario manda el stock deseado; el ledger guarda la diferencia.
+      if (parsed.data.stock !== undefined) {
+        const [current] = await tx
+          .select({ stock: spareParts.stock })
+          .from(spareParts)
+          .where(eq(spareParts.id, id))
+          .limit(1);
+
+        const delta = parsed.data.stock - (current?.stock ?? 0);
+        if (delta !== 0) {
+          await applyInventoryMovement(tx, {
+            partId: id,
+            kind: "adjustment",
+            quantity: delta,
+            unitCostMxn: parsed.data.costMxn ?? null,
+            unitCostUsd: parsed.data.costUsd ?? null,
+            actorId: session.user.id,
+            note: `Ajuste manual: ${current?.stock ?? 0} → ${parsed.data.stock}`,
+          });
+        }
+      }
+    });
 
     revalidatePath("/admin/refacciones");
     return { ok: true, partNumber };

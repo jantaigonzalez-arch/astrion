@@ -30,7 +30,9 @@ const usd = (v: string | null) => {
   }).format(n);
 };
 
-type StockFilter = "all" | "low" | "out";
+// "over" = sobregiro: se consumió más de lo que había. Antes era imposible de
+// ver porque el descuento se topaba en 0 y el faltante se perdía.
+type StockFilter = "all" | "low" | "out" | "over";
 
 export function PartsInventory({ parts }: { parts: Row[] }) {
   const [q, setQ] = useState("");
@@ -48,6 +50,7 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
       if (brand !== "all" && p.brand !== brand) return false;
       if (stock === "low" && !(p.stock > 0 && p.stock <= 3)) return false;
       if (stock === "out" && p.stock !== 0) return false;
+      if (stock === "over" && p.stock >= 0) return false;
       if (!term) return true;
       return `${p.partNumber} ${p.description} ${p.brand ?? ""}`
         .toLowerCase()
@@ -57,6 +60,9 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
 
   const lowCount = parts.filter((p) => p.stock > 0 && p.stock <= 3).length;
   const outCount = parts.filter((p) => p.stock === 0).length;
+  const overParts = parts.filter((p) => p.stock < 0);
+  // Piezas que hay que reponer para volver a cero: es el faltante real.
+  const shortfall = overParts.reduce((a, p) => a + Math.abs(p.stock), 0);
   const value = filtered.reduce(
     (a, p) => a + Number(p.costMxn ?? 0) * p.stock,
     0,
@@ -72,6 +78,32 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
 
   return (
     <div className="space-y-4">
+      {/* Sobregiro: se usó más de lo que había en existencia. El consumo se
+          registró tal cual (refleja la realidad física) y el faltante queda
+          aquí visible para compras, en vez de silenciarse topando el stock. */}
+      {overParts.length > 0 && (
+        <Card className="border-destructive/40 bg-destructive/5 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-destructive">
+                {overParts.length === 1
+                  ? "1 refacción con existencia negativa"
+                  : `${overParts.length} refacciones con existencia negativa`}{" "}
+                · faltan {shortfall} {shortfall === 1 ? "pieza" : "piezas"}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Se consumió más de lo registrado en inventario. Hay que reponer o
+                corregir el conteo físico: {}
+                {overParts
+                  .map((p) => `${p.partNumber} (${p.stock})`)
+                  .join(" · ")}
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
       {/* Buscador y filtros */}
       <Card className="p-4">
         <div className="flex items-center gap-2 rounded-lg border border-input bg-background px-3">
@@ -116,6 +148,18 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
             <PackageX className="mr-1 inline size-3" />
             Agotado ({outCount})
           </button>
+          {overParts.length > 0 && (
+            <button
+              onClick={() => setStock("over")}
+              className={cn(
+                chip(stock === "over"),
+                stock !== "over" && "bg-destructive/10 text-destructive",
+              )}
+            >
+              <AlertTriangle className="mr-1 inline size-3" />
+              Sobregiro ({overParts.length})
+            </button>
+          )}
         </div>
 
         <p className="mt-3 text-xs text-muted-foreground">
@@ -176,11 +220,18 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
                     <td className="px-4 py-3">
                       <span
                         className={
-                          p.stock === 0
-                            ? "font-semibold text-destructive"
-                            : p.stock <= 3
-                              ? "font-semibold text-warning"
-                              : ""
+                          p.stock < 0
+                            ? "rounded bg-destructive/15 px-1.5 py-0.5 font-bold text-destructive"
+                            : p.stock === 0
+                              ? "font-semibold text-destructive"
+                              : p.stock <= 3
+                                ? "font-semibold text-warning"
+                                : ""
+                        }
+                        title={
+                          p.stock < 0
+                            ? `Sobregiro: faltan ${Math.abs(p.stock)} piezas`
+                            : undefined
                         }
                       >
                         {p.stock}

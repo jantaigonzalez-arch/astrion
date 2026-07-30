@@ -18,7 +18,8 @@ import {
 } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
 import { isAdminRole, isSalesRole } from "@/lib/roles";
-import { dealReference } from "@/lib/crm";
+import { nextDealReference } from "@/lib/domain/references";
+import { recordEvent } from "@/lib/domain/events";
 
 export type CrmState = {
   ok: boolean;
@@ -168,53 +169,87 @@ export async function createDeal(
 
   try {
     const db = getDb();
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(crmDeals);
 
-    // Nuevo negocio: al tope de su columna del kanban.
-    const [{ minPos }] = await db
-      .select({ minPos: sql<number>`coalesce(min(${crmDeals.position}), 0)::int` })
-      .from(crmDeals)
-      .where(eq(crmDeals.stageId, parsed.data.stageId));
+    // Negocio + su evento de alta + calificación del lead son un solo hecho:
+    // o quedan los tres, o ninguno. Antes eran escrituras sueltas y un fallo
+    // a mitad dejaba un negocio sin historial.
+    const created = await db.transaction(async (tx) => {
+      // Nuevo negocio: al tope de su columna del kanban.
+      const [{ minPos }] = await tx
+        .select({ minPos: sql<number>`coalesce(min(${crmDeals.position}), 0)::int` })
+        .from(crmDeals)
+        .where(eq(crmDeals.stageId, parsed.data.stageId));
 
-    const [created] = await db
-      .insert(crmDeals)
-      .values({
-        reference: dealReference(count + 1),
-        title: parsed.data.title.trim(),
-        pipelineId: parsed.data.pipelineId,
-        stageId: parsed.data.stageId,
-        organizationId: parsed.data.organizationId ?? null,
-        contactId: parsed.data.contactId ?? null,
-        // Sin responsable explícito, el negocio queda a nombre de quien lo crea.
-        ownerId: parsed.data.ownerId ?? session.user.id,
-        valueMxn: parsed.data.valueMxn ?? null,
-        valueUsd: parsed.data.valueUsd ?? null,
-        expectedCloseDate: parsed.data.expectedCloseDate ?? null,
-        source: parsed.data.source ?? null,
-        leadId: parsed.data.leadId ?? null,
-        position: minPos - 1,
-      })
-      .returning({ id: crmDeals.id, reference: crmDeals.reference });
+      const [deal] = await tx
+        .insert(crmDeals)
+        .values({
+          reference: await nextDealReference(tx),
+          title: parsed.data.title.trim(),
+          pipelineId: parsed.data.pipelineId,
+          stageId: parsed.data.stageId,
+          organizationId: parsed.data.organizationId ?? null,
+          contactId: parsed.data.contactId ?? null,
+          // Sin responsable explícito, el negocio queda a nombre de quien lo crea.
+          ownerId: parsed.data.ownerId ?? session.user.id,
+          valueMxn: parsed.data.valueMxn ?? null,
+          valueUsd: parsed.data.valueUsd ?? null,
+          expectedCloseDate: parsed.data.expectedCloseDate ?? null,
+          source: parsed.data.source ?? null,
+          leadId: parsed.data.leadId ?? null,
+          position: minPos - 1,
+        })
+        .returning({ id: crmDeals.id, reference: crmDeals.reference });
 
-    await db.insert(crmDealEvents).values({
-      dealId: created.id,
-      toStageId: parsed.data.stageId,
-      status: "open",
-      authorId: session.user.id,
+      // Proyección propia del CRM: alimenta la línea de tiempo del negocio.
+      await tx.insert(crmDealEvents).values({
+        dealId: deal.id,
+        toStageId: parsed.data.stageId,
+        status: "open",
+        authorId: session.user.id,
+      });
+
+      // Bitácora de plataforma: auditoría + historia para features de ML.
+      await recordEvent(tx, {
+        aggregateType: "deal",
+        aggregateId: deal.id,
+        eventType: "deal.created",
+        actorId: session.user.id,
+        payload: {
+          reference: deal.reference,
+          pipelineId: parsed.data.pipelineId,
+          stageId: parsed.data.stageId,
+          valueMxn: parsed.data.valueMxn ?? null,
+          valueUsd: parsed.data.valueUsd ?? null,
+          source: parsed.data.source ?? null,
+          leadId: parsed.data.leadId ?? null,
+        },
+      });
+
+      // El lead de origen queda marcado como calificado.
+      if (parsed.data.leadId) {
+        await tx
+          .update(leads)
+          .set({ status: "qualified" })
+          .where(eq(leads.id, parsed.data.leadId));
+        await recordEvent(tx, {
+          aggregateType: "lead",
+          aggregateId: parsed.data.leadId,
+          eventType: "lead.qualified",
+          actorId: session.user.id,
+          payload: { dealId: deal.id, dealReference: deal.reference },
+        });
+      }
+
+      return deal;
     });
+
+    // Fuera de la transacción a propósito: las automatizaciones son un efecto
+    // secundario (agendan seguimientos) y ya fallan en silencio. Si fallaran
+    // dentro, Postgres abortaría la transacción entera y se perdería el
+    // negocio por no haber podido crear una tarea de recordatorio.
     await runStageAutomations(created.id, parsed.data.stageId, session.user.id);
 
-    // El lead de origen queda marcado como calificado.
-    if (parsed.data.leadId) {
-      await db
-        .update(leads)
-        .set({ status: "qualified" })
-        .where(eq(leads.id, parsed.data.leadId));
-      revalidatePath("/admin/leads");
-    }
-
+    if (parsed.data.leadId) revalidatePath("/admin/leads");
     revalidateCrm();
     return { ok: true, id: created.id, reference: created.reference };
   } catch (e) {
@@ -856,77 +891,104 @@ export async function convertLeadToDeal(formData: FormData) {
   if (!leadId || !pipelineId) return;
 
   const db = getDb();
-  const [lead] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
-  if (!lead) return;
 
-  const [firstStage] = await db
-    .select()
-    .from(crmStages)
-    .where(eq(crmStages.pipelineId, pipelineId))
-    .orderBy(crmStages.order)
-    .limit(1);
-  if (!firstStage) return;
+  // Convertir un lead crea hasta 4 filas enlazadas (organización, contacto,
+  // negocio, evento) y marca el lead. Sin transacción, un fallo a mitad dejaba
+  // un contacto huérfano y el lead sin convertir: al reintentar se duplicaba.
+  const dealId = await db.transaction(async (tx) => {
+    const [lead] = await tx.select().from(leads).where(eq(leads.id, leadId)).limit(1);
+    if (!lead) return null;
 
-  // Reutiliza la organización si ya existe una con el mismo nombre.
-  let organizationId: string | null = null;
-  const orgName = lead.company?.trim();
-  if (orgName) {
-    const [existing] = await db
-      .select({ id: crmOrganizations.id })
-      .from(crmOrganizations)
-      .where(eq(crmOrganizations.name, orgName))
+    const [firstStage] = await tx
+      .select()
+      .from(crmStages)
+      .where(eq(crmStages.pipelineId, pipelineId))
+      .orderBy(crmStages.order)
       .limit(1);
-    organizationId =
-      existing?.id ??
-      (
-        await db
-          .insert(crmOrganizations)
-          .values({ name: orgName, ownerId: session.user.id })
-          .returning({ id: crmOrganizations.id })
-      )[0].id;
-  }
+    if (!firstStage) return null;
 
-  const [contact] = await db
-    .insert(crmContacts)
-    .values({
-      name: lead.name,
-      email: lead.email,
-      organizationId,
-      ownerId: session.user.id,
-      notes: lead.message,
-    })
-    .returning({ id: crmContacts.id });
+    // Reutiliza la organización si ya existe una con el mismo nombre.
+    let organizationId: string | null = null;
+    const orgName = lead.company?.trim();
+    if (orgName) {
+      const [existing] = await tx
+        .select({ id: crmOrganizations.id })
+        .from(crmOrganizations)
+        .where(eq(crmOrganizations.name, orgName))
+        .limit(1);
+      organizationId =
+        existing?.id ??
+        (
+          await tx
+            .insert(crmOrganizations)
+            .values({ name: orgName, ownerId: session.user.id })
+            .returning({ id: crmOrganizations.id })
+        )[0].id;
+    }
 
-  const [{ count }] = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(crmDeals);
+    const [contact] = await tx
+      .insert(crmContacts)
+      .values({
+        name: lead.name,
+        email: lead.email,
+        organizationId,
+        ownerId: session.user.id,
+        notes: lead.message,
+      })
+      .returning({ id: crmContacts.id });
 
-  const [deal] = await db
-    .insert(crmDeals)
-    .values({
-      reference: dealReference(count + 1),
-      title: orgName ? `${orgName} — oportunidad web` : `${lead.name} — oportunidad web`,
-      pipelineId,
-      stageId: firstStage.id,
-      organizationId,
-      contactId: contact.id,
-      ownerId: session.user.id,
-      source: lead.source ?? "web_contact",
-      leadId: lead.id,
-      position: 0,
-    })
-    .returning({ id: crmDeals.id });
+    const [deal] = await tx
+      .insert(crmDeals)
+      .values({
+        reference: await nextDealReference(tx),
+        title: orgName
+          ? `${orgName} — oportunidad web`
+          : `${lead.name} — oportunidad web`,
+        pipelineId,
+        stageId: firstStage.id,
+        organizationId,
+        contactId: contact.id,
+        ownerId: session.user.id,
+        source: lead.source ?? "web_contact",
+        leadId: lead.id,
+        position: 0,
+      })
+      .returning({ id: crmDeals.id, reference: crmDeals.reference });
 
-  await db.insert(crmDealEvents).values({
-    dealId: deal.id,
-    toStageId: firstStage.id,
-    status: "open",
-    authorId: session.user.id,
+    await tx.insert(crmDealEvents).values({
+      dealId: deal.id,
+      toStageId: firstStage.id,
+      status: "open",
+      authorId: session.user.id,
+    });
+
+    await tx.update(leads).set({ status: "qualified" }).where(eq(leads.id, lead.id));
+
+    await recordEvent(tx, {
+      aggregateType: "deal",
+      aggregateId: deal.id,
+      eventType: "deal.created_from_lead",
+      actorId: session.user.id,
+      payload: {
+        reference: deal.reference,
+        leadId: lead.id,
+        organizationId,
+        contactId: contact.id,
+        pipelineId,
+        stageId: firstStage.id,
+        source: lead.source ?? "web_contact",
+      },
+    });
+
+    return deal.id;
   });
 
-  await db.update(leads).set({ status: "qualified" }).where(eq(leads.id, lead.id));
+  if (!dealId) return;
 
   revalidatePath("/admin/leads");
   revalidateCrm();
-  redirect(`/admin/crm/negocios/${deal.id}`);
+  // redirect() FUERA de la transacción: lanza NEXT_REDIRECT como control de
+  // flujo, y dentro del bloque haría rollback de todo lo que acabamos de
+  // escribir. Es el error clásico al meter Server Actions en transacciones.
+  redirect(`/admin/crm/negocios/${dealId}`);
 }

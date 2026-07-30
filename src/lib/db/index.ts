@@ -27,3 +27,15 @@ export function getDb() {
 }
 
 export { schema };
+
+type Db = ReturnType<typeof getDb>;
+
+/**
+ * Cliente o transacción, indistintamente. Permite que un helper de dominio
+ * (registrar un evento, mover inventario) se invoque suelto o dentro de un
+ * `db.transaction(...)` sin duplicar la implementación.
+ *
+ * El tipo de la transacción se deriva de la firma de `db.transaction` en vez
+ * de escribirse a mano: así no se desincroniza al actualizar drizzle.
+ */
+export type DbOrTx = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
