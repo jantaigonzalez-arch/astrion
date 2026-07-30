@@ -1,0 +1,173 @@
+# Stack de producción — un solo VPS.
+#
+#   nginx  :80/:443  → TLS y enrutado por dominio
+#     ├── evoelution.com               → web (este proyecto)
+#     └── cromatografia.evoelution.com → evo_ai (perfil "cromatografia")
+#   postgres          → volumen persistente
+#   migrate           → corre una vez y sale, antes de que arranque web
+#   backup            → pg_dump diario
+#
+# Arranque:  docker compose -f docker-compose.prod.yml up -d --build
+# Con ML:    ... --profile cromatografia up -d --build
+#
+# Las variables sensibles se leen de deploy/.env (ver deploy/.env.example).
+# Nunca se escriben aquí: este archivo va al repo.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-evoelution}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?definí POSTGRES_PASSWORD en deploy/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-evoelution}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Sin `ports`: la base NO se expone a internet. Solo la alcanzan los
+    # contenedores de esta red. Para conectarte desde afuera, túnel SSH.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-evoelution} -d ${POSTGRES_DB:-evoelution}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Aplica las migraciones pendientes y termina. `web` espera a que salga bien,
+  # así que nunca corre una versión de la app contra un schema viejo.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-evoelution}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-evoelution}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-evoelution}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-evoelution}
+      AUTH_SECRET: ${AUTH_SECRET:?generá uno con `openssl rand -base64 32`}
+      AUTH_TRUST_HOST: "true"
+      AUTH_URL: https://${APP_DOMAIN:?definí APP_DOMAIN en deploy/.env}
+      NEXT_PUBLIC_SITE_URL: https://${APP_DOMAIN}
+      NEXT_PUBLIC_WHATSAPP: ${NEXT_PUBLIC_WHATSAPP:-}
+      # Conexión directa a Postgres (sin pooler): los prepared statements sí
+      # se pueden usar y ahorran replanificar cada consulta.
+      DB_PREPARE: "true"
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      UPLOADS_DIR: /data/uploads
+      # Red interna: el ML se llama servidor-a-servidor, sin salir a internet.
+      ML_SERVICE_URL: ${ML_SERVICE_URL:-http://evoai-backend:8000}
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      ML_DOMAIN: ${ML_DOMAIN:-cromatografia.evoelution.com}
+      # Solo sustituir estas dos: sin el filtro, envsubst se comería $host,
+      # $remote_addr y el resto de variables propias de nginx.
+      NGINX_ENVSUBST_FILTER: "^(APP_DOMAIN|ML_DOMAIN)$$"
+    volumes:
+      # La imagen procesa /etc/nginx/templates/*.template con envsubst y
+      # escribe el resultado en /etc/nginx/conf.d/ al arrancar.
+      - ./deploy/nginx:/etc/nginx/templates:ro
+      # Las fotos las sirve nginx directo desde el volumen: no tiene sentido
+      # despertar a Node para devolver un JPG.
+      - uploads:/srv/uploads:ro
+      - certbot_conf:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    depends_on:
+      - web
+
+  # Renueva los certificados. Let's Encrypt emite a 90 días; este bucle
+  # reintenta cada 12 h y solo actúa cuando faltan menos de 30.
+  certbot:
+    image: certbot/certbot
+    restart: unless-stopped
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: >
+      sh -c "trap exit TERM;
+             while :; do certbot renew --webroot -w /var/www/certbot --quiet;
+             sleep 12h & wait $${!}; done"
+
+  # Respaldo diario. Es la contrapartida de tener Postgres en el mismo host:
+  # sin esto, un disco perdido es el negocio perdido.
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "while :; do
+               ts=$$(date +%Y%m%d-%H%M%S);
+               pg_dump -h postgres -U ${POSTGRES_USER:-evoelution} -d ${POSTGRES_DB:-evoelution} -Fc
+                 > /backups/evoelution-$$ts.dump
+                 && echo \"[backup] ok evoelution-$$ts.dump\"
+                 || echo '[backup] FALLÓ';
+               find /backups -name '*.dump' -mtime +$${RETENTION_DAYS} -delete;
+               sleep 24h;
+             done"
+
+  # ---- Cromatografía / ML (perfil opcional) --------------------------------
+  # Requiere el repo evo_ai hermano de este. Se levanta con:
+  #   docker compose -f docker-compose.prod.yml --profile cromatografia up -d
+  # Sin el perfil, nginx responde 502 en ese subdominio y el resto funciona
+  # igual: los servicios están desacoplados a propósito.
+  evoai-backend:
+    profiles: ["cromatografia"]
+    build:
+      context: ../evo_ai/backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - DATA_DIR=/app/data/uploads
+      - CACHE_SIZE=200
+      - ALLOWED_ORIGINS=https://${ML_DOMAIN:-cromatografia.evoelution.com}
+    volumes:
+      - evoai_uploads:/app/data/uploads
+
+  evoai-frontend:
+    profiles: ["cromatografia"]
+    build:
+      context: ../evo_ai/frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_URL=https://${ML_DOMAIN:-cromatografia.evoelution.com}/api/v1
+    depends_on:
+      - evoai-backend
+
+volumes:
+  pgdata:
+  uploads:
+  backups:
+  certbot_conf:
+  certbot_www:
+  evoai_uploads:

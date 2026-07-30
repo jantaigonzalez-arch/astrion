@@ -189,6 +189,55 @@ justamente lo que un ERP tiene que poder responder.
 
 ---
 
+## Infraestructura
+
+El detalle operativo está en [DEPLOY.md](./DEPLOY.md). Lo que importa desde la
+arquitectura:
+
+**Un VPS con Docker Compose, no serverless.** No es preferencia: el portal hace
+**varias consultas por render**, y con la app y Postgres en la misma máquina
+cada una cuesta ~0.3 ms contra los 15–30 ms de una base remota. Para SSR, la
+localidad domina. Además el filesystem de Vercel es de solo lectura y efímero,
+lo que rompe las fotos de equipos, y en serverless cada instancia abre su
+propio pool: haría falta un pooler en modo *transaction* (en modo *statement*
+las transacciones de la Fase 0 no funcionan).
+
+**Los uploads salieron de `public/`.** Antes se escribían dentro del proyecto,
+que se reconstruye en cada imagen: las fotos desaparecían en el siguiente
+deploy. Ahora van a `UPLOADS_DIR` (un volumen), y **las sirve nginx**
+directamente — no tiene sentido despertar a Node para devolver un JPG.
+`saveImage()` conserva la firma a propósito: migrar a S3/R2 el día que haga
+falta escalar horizontalmente es reemplazar el cuerpo de esa función, sin tocar
+a ninguno de sus llamadores.
+
+**Las migraciones son un paso del deploy, no algo manual.** El servicio
+`migrate` corre antes que `web`, y `web` solo arranca si terminó bien. Nunca
+queda una versión de la app contra un schema viejo.
+
+Dos cosas que se corrigieron de paso, ambas de seguridad:
+
+- `images.remotePatterns` era `hostname: "**"`, o sea cualquier host HTTPS: en
+  producción eso es un proxy de imágenes abierto, y lo paga tu servidor. Ahora
+  la lista sale de `NEXT_PUBLIC_IMAGE_HOSTS` y está vacía, que es lo correcto
+  hoy (no hay una sola imagen remota en el código ni en la base).
+- nginx corta con 444 los hosts desconocidos: sin eso, cualquiera que apunte su
+  dominio a la IP sirve el sitio bajo su nombre.
+
+### `middleware.ts` → `proxy.ts`
+
+Hecho. La convención `middleware` quedó deprecada en Next 16 y el archivo pasó
+a `src/proxy.ts` — mismo contrato (`export default` + `config.matcher`).
+
+Una advertencia que costó encontrar: **no pueden coexistir los dos archivos.**
+Con `middleware.ts` y `proxy.ts` a la vez, el build pasa sin quejarse pero en
+producción TODAS las rutas entran en bucle de redirección (`/` → `/` con 307).
+En `next dev` no se nota. Si alguna vez el sitio queda en bucle tras tocar
+enrutado, eso es lo primero que hay que mirar.
+
+Dato útil para no confundirse: con `proxy.ts`, `middleware-manifest.json` queda
+vacío y es **normal** — Next 16 registra el proxy por otra vía. Un manifest
+vacío no significa que el proxy no esté corriendo.
+
 ## Deuda conocida, ordenada
 
 ### Baja lógica (`deleted_at`) — pendiente
@@ -244,12 +293,17 @@ No hay un solo test en el repo. Antes de tocar facturación e inventario en
 serio, eso importa: la verificación de la Fase 0 se hizo con un script
 desechable contra una base temporal, no con una suite que corra en CI.
 
-### Bug menor detectado, no corregido
+### Bugs menores detectados, no corregidos
 
 `updatePart` (`src/lib/actions/parts.ts`) parsea `priceMxn`/`priceUsd` del
 formulario pero **no los escribe** en el `UPDATE`: editar el precio de venta de
 una refacción no tiene efecto. Está fuera del alcance de la Fase 0; se dejó
 señalado a propósito en vez de arreglarlo de contrabando.
+
+`saveImage` sanea el subdirectorio quitando los caracteres no permitidos, así
+que `../../etc` queda en `//etc`: **no escapa** del directorio base (el
+comportamiento es seguro), pero genera rutas con barras dobles. Conviene
+normalizar cuando se toque ese archivo.
 
 ---
 

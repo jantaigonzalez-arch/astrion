@@ -20,7 +20,17 @@ export function getDb() {
     );
   }
   if (!_db) {
-    const client = postgres(connectionString, { prepare: false });
+    const client = postgres(connectionString, {
+      // Sin prepared statements: los rompe un pooler en modo transaction
+      // (pgbouncer, el pooler de Supabase). Se puede activar cuando la
+      // conexión es directa a Postgres, como en el compose de producción.
+      prepare: process.env.DB_PREPARE === "true",
+      // Conexiones por instancia de la app. El default de la librería es 10;
+      // hacerlo explícito importa porque cada instancia multiplica: con
+      // `max_connections=100` en Postgres, esto acota cuántas instancias
+      // caben antes de agotar el servidor.
+      max: Number(process.env.DB_POOL_MAX ?? 10),
+    });
     _db = drizzle(client, { schema });
   }
   return _db;
