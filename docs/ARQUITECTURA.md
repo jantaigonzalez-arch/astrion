@@ -89,7 +89,40 @@ quedaba 0 y las 3 piezas faltantes desaparecían del sistema. Ahora el consumo
 real se registra tal cual, el saldo queda en −3 y el panel de refacciones lo
 muestra como sobregiro para que compras reaccione.
 
-### 4. Todo cambio de negocio emite un evento
+### 4. Índices: Postgres no indexa las foreign keys
+
+Hasta la migración `0013` **ninguna tabla de negocio tenía un solo índice** más
+allá de la primary key y los `unique`. Es un malentendido común: declarar una
+foreign key **no** crea índice sobre la columna que referencia. `crm_deals`
+tenía 7 FKs y 0 índices; `tickets`, 6 y 0.
+
+Medido con 100 000 negocios, 50 000 tickets y 200 000 comentarios:
+
+| Consulta | Sin índices | Con índices | Ganancia |
+|---|---|---|---|
+| Bitácora de un ticket | 7.05 ms | 0.056 ms | **126x** |
+| "Mis tickets" de un cliente | 4.47 ms | 0.082 ms | **54x** |
+| Embudo por etapa y vendedor | 13.2 ms | 3.2 ms | 4.1x |
+| Negocios estancados | 15.5 ms | 2.7 ms | 5.7x |
+| Cerrados por mes (12 meses) | 18.6 ms | 14.9 ms | 1.2x |
+
+La lectura importante está en la asimetría, no en el promedio:
+
+- **Las búsquedas selectivas ganan dos órdenes de magnitud.** Son las que
+  dominan cada carga de página del portal.
+- **Las consultas de agregación casi no mejoran.** "Sumá todo el pipeline de los
+  últimos 12 meses" tiene que tocar un tercio de la tabla; ningún índice evita
+  ese trabajo.
+
+De ahí se sigue una conclusión de arquitectura, con evidencia: **los informes no
+se arreglan con índices, se arreglan sacándolos del OLTP.** Es el argumento real
+para el plano analítico (parquet + Polars/DuckDB), y el punto donde
+efectivamente empieza a tener sentido evaluar Iceberg.
+
+Al agregar un índice nuevo, verificar con `EXPLAIN (ANALYZE)` que el planner lo
+usa: un índice que nadie elige solo cuesta en cada escritura.
+
+### 5. Todo cambio de negocio emite un evento
 
 ```ts
 await recordEvent(tx, {
@@ -126,6 +159,26 @@ alimenta la línea de tiempo del negocio en la UI. No la reemplaza.
 ---
 
 ## Deuda conocida, ordenada
+
+### Los borrados no se registran (hueco abierto en la bitácora)
+
+Hay **18 rutas de borrado duro** en `src/lib/actions/*` (`deleteDeal`,
+`deleteOrganization`, `deleteContact`, `deleteContract`, `deleteEquipmentItem`,
+`deleteStage`, …) y **ninguna emite evento**. La Fase 0 registra creaciones y
+consumos, no bajas: el log de auditoría tiene el hueco justo donde más importa.
+
+Se detectó en la práctica y de la peor manera: durante la Fase 0 desapareció el
+negocio `EVO-D-000003` de la base de desarrollo y **el sistema no puede decir
+quién lo borró ni cuándo**, porque nada lo registró. Eso es exactamente lo que un
+ERP tiene que poder responder.
+
+Además son borrados **duros con cascada**: eliminar una etapa borra sus
+negocios; eliminar un negocio borra sus actividades, notas y líneas. Lo correcto
+para un ERP es baja lógica (`deleted_at`) en los agregados con historia.
+
+Pendiente: emitir `*.deleted` con snapshot del registro en el payload antes de
+borrar, y evaluar baja lógica en `crm_deals`, `contracts` y `crm_organizations`.
+
 
 ### Moneda (Fase 2)
 

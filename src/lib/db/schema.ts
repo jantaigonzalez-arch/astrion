@@ -143,7 +143,18 @@ export const tickets = pgTable("tickets", {
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // Bandeja de soporte: filtra por estado y ordena por prioridad.
+  index("tickets_status_priority_idx").on(t.status, t.priority),
+  // Cola de un agente.
+  index("tickets_assigned_status_idx").on(t.assignedToId, t.status),
+  // Portal del cliente: "mis tickets", más recientes primero.
+  index("tickets_created_by_idx").on(t.createdById, t.createdAt),
+  // Listados y dashboard globales.
+  index("tickets_created_at_idx").on(t.createdAt),
+  // Historial de un equipo del laboratorio.
+  index("tickets_equipment_idx").on(t.equipmentId),
+]);
 
 export const ticketComments = pgTable("ticket_comments", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -170,7 +181,11 @@ export const ticketComments = pgTable("ticket_comments", {
   // Horas de servicio invertidas en esta actividad (p. ej. 1.50).
   hours: numeric("hours", { precision: 6, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // Bitácora de un ticket en orden cronológico: la consulta más frecuente
+  // del portal. Sin este índice cada apertura de ticket escanea la tabla.
+  index("ticket_comments_ticket_idx").on(t.ticketId, t.createdAt),
+]);
 
 /* ------------------------- Leads (contacto) ------------------------- */
 export const leads = pgTable("leads", {
@@ -184,7 +199,10 @@ export const leads = pgTable("leads", {
   score: integer("score"),
   source: varchar("source", { length: 80 }).default("web_contact"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // Bandeja de leads: pendientes primero, más recientes arriba.
+  index("leads_status_created_idx").on(t.status, t.createdAt),
+]);
 
 /* ------------------------- Catálogo (CMS admin) ------------------------- */
 export const services = pgTable("services", {
@@ -233,7 +251,10 @@ export const equipment = pgTable("equipment", {
   photo: text("photo"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // Equipos de un laboratorio (su portal y el selector al abrir un ticket).
+  index("equipment_owner_idx").on(t.ownerId),
+]);
 
 export const equipmentModules = pgTable("equipment_modules", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -245,7 +266,7 @@ export const equipmentModules = pgTable("equipment_modules", {
   serialNumber: varchar("serial_number", { length: 120 }),
   photo: text("photo"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [index("equipment_modules_equipment_idx").on(t.equipmentId)]);
 
 export const equipmentSubmodules = pgTable("equipment_submodules", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -256,7 +277,7 @@ export const equipmentSubmodules = pgTable("equipment_submodules", {
   serialNumber: varchar("serial_number", { length: 120 }),
   photo: text("photo"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [index("equipment_submodules_module_idx").on(t.moduleId)]);
 
 /* ------------------------- Inventario de refacciones ------------------------- */
 export const spareParts = pgTable("spare_parts", {
@@ -301,7 +322,12 @@ export const commentParts = pgTable("ticket_comment_parts", {
   unitCostUsd: numeric("unit_cost_usd", { precision: 12, scale: 2 }),
   unitPriceMxn: numeric("unit_price_mxn", { precision: 12, scale: 2 }),
   unitPriceUsd: numeric("unit_price_usd", { precision: 12, scale: 2 }),
-});
+}, (t) => [
+  // Refacciones de una actividad (se lee al render del ticket y en utilidad).
+  index("ticket_comment_parts_comment_idx").on(t.commentId),
+  // Consumo histórico de una refacción (alimenta rentabilidad y ML).
+  index("ticket_comment_parts_part_idx").on(t.partId),
+]);
 
 /* ------------------------- Configuración global ------------------------- */
 // Fila única ('global'): tarifas de mano de obra usadas para calcular utilidad.
@@ -343,7 +369,13 @@ export const contracts = pgTable("contracts", {
   endDate: date("end_date"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // Contratos de un laboratorio.
+  index("contracts_client_idx").on(t.clientId),
+  // Cierre del ciclo negocio → contrato.
+  index("contracts_deal_idx").on(t.dealId),
+  index("contracts_created_at_idx").on(t.createdAt),
+]);
 
 // Equipos amparados por el contrato (un equipo puede estar en varios).
 export const contractEquipment = pgTable(
@@ -385,7 +417,10 @@ export const crmStages = pgTable("crm_stages", {
   // (equivalente al "rotting" de Pipedrive). 0 = desactivado.
   rottingDays: integer("rotting_days").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // Etapas de un pipeline en su orden de tablero.
+  index("crm_stages_pipeline_order_idx").on(t.pipelineId, t.order),
+]);
 
 // Organización = laboratorio/empresa. Puede existir antes de ser cliente;
 // al firmar se enlaza con la cuenta de portal (users) vía clientId.
@@ -403,7 +438,11 @@ export const crmOrganizations = pgTable("crm_organizations", {
   }),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  index("crm_organizations_owner_idx").on(t.ownerId),
+  // Enlace organización ↔ cuenta de portal del laboratorio.
+  index("crm_organizations_client_idx").on(t.clientId),
+]);
 
 export const crmContacts = pgTable("crm_contacts", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -417,7 +456,11 @@ export const crmContacts = pgTable("crm_contacts", {
   ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // Contactos de una organización (ficha del laboratorio).
+  index("crm_contacts_organization_idx").on(t.organizationId),
+  index("crm_contacts_owner_idx").on(t.ownerId),
+]);
 
 export const crmDeals = pgTable("crm_deals", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -459,7 +502,24 @@ export const crmDeals = pgTable("crm_deals", {
   position: integer("position").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // La tabla más consultada del sistema. Postgres NO indexa las columnas de
+  // foreign key por su cuenta, así que sin esto cada vista del CRM (tablero,
+  // embudo, informes) hacía un sequential scan de crm_deals completa.
+
+  // Tablero kanban y embudo por etapa: el join arranca por stage_id.
+  index("crm_deals_stage_status_idx").on(t.stageId, t.status),
+  // Agregados a nivel pipeline (valor total, conteos).
+  index("crm_deals_pipeline_status_idx").on(t.pipelineId, t.status),
+  // Filtro por vendedor, presente en casi todos los informes.
+  index("crm_deals_owner_status_idx").on(t.ownerId, t.status),
+  // Cerrados por mes (ventana de 12 meses sobre closed_at).
+  index("crm_deals_pipeline_closed_idx").on(t.pipelineId, t.closedAt),
+  // Pronóstico por mes de cierre estimado.
+  index("crm_deals_pipeline_expected_idx").on(t.pipelineId, t.expectedCloseDate),
+  // Negocios estancados (rottingDays compara contra updated_at).
+  index("crm_deals_status_updated_idx").on(t.status, t.updatedAt),
+]);
 
 // Actividades agendadas: llamadas, visitas, demos. Se cuelgan de un negocio,
 // contacto u organización (al menos uno).
@@ -483,7 +543,14 @@ export const crmActivities = pgTable("crm_activities", {
     onDelete: "set null",
   }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // Actividades de un negocio (panel del detalle).
+  index("crm_activities_deal_idx").on(t.dealId),
+  // Agenda del vendedor: pendientes por vencer.
+  index("crm_activities_owner_pending_idx").on(t.ownerId, t.done, t.dueAt),
+  // Vencidas a nivel global (alertas del dashboard).
+  index("crm_activities_pending_due_idx").on(t.done, t.dueAt),
+]);
 
 export const crmNotes = pgTable("crm_notes", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -497,7 +564,10 @@ export const crmNotes = pgTable("crm_notes", {
   authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
   body: text("body").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  index("crm_notes_deal_idx").on(t.dealId, t.createdAt),
+  index("crm_notes_organization_idx").on(t.organizationId),
+]);
 
 /* ---------- Productos del negocio (líneas de cotización) ---------- */
 // Equivalente a los "products" de Pipedrive: el valor del negocio se calcula
@@ -522,7 +592,10 @@ export const crmDealProducts = pgTable("crm_deal_products", {
     .notNull()
     .default("0"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // Líneas de un negocio: se suman para calcular su valor.
+  index("crm_deal_products_deal_idx").on(t.dealId),
+]);
 
 /* ---------- Etiquetas ---------- */
 export const crmLabels = pgTable("crm_labels", {
@@ -561,7 +634,10 @@ export const crmGoals = pgTable("crm_goals", {
   periodStart: date("period_start").notNull(),
   periodEnd: date("period_end").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // Objetivos vigentes de un vendedor en el periodo.
+  index("crm_goals_owner_period_idx").on(t.ownerId, t.periodStart, t.periodEnd),
+]);
 
 /* ---------- Plantillas de correo ---------- */
 // Cuerpos reutilizables con marcadores {{contacto}}, {{organizacion}},
@@ -611,7 +687,10 @@ export const crmDealEvents = pgTable("crm_deal_events", {
   status: crmDealStatus("status"),
   authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (t) => [
+  // Línea de tiempo de un negocio (proyección que alimenta su ficha).
+  index("crm_deal_events_deal_idx").on(t.dealId, t.createdAt),
+]);
 
 /* ------------------------- Relations ------------------------- */
 export const usersRelations = relations(users, ({ many }) => ({
