@@ -47,3 +47,6 @@ next-env.d.ts
 
 # fotos de equipos subidas en runtime
 /public/uploads/
+
+# Salida del importador: lleva nombres de clientes reales, no va al repo.
+import-report.csv
