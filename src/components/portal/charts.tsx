@@ -46,7 +46,14 @@ export function MonthlyTrend({
           return (
             <div
               key={d.label}
-              className="group relative flex flex-1 flex-col items-center justify-end"
+              // h-full es obligatorio, no decorativo: la barra se dimensiona con
+              // `height: N%`, y un porcentaje necesita que el contenedor tenga
+              // altura DEFINIDA. El padre usa `items-end`, que deja a esta
+              // columna con altura automática (= la de su contenido), así que
+              // sin h-full el porcentaje no tiene contra qué calcularse y la
+              // barra colapsa a 0: la gráfica se ve vacía aunque los datos
+              // estén bien.
+              className="group relative flex h-full flex-1 flex-col items-center justify-end"
               onMouseEnter={() => setHover(i)}
               onMouseLeave={() => setHover(null)}
             >
