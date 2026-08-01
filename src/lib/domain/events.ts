@@ -50,6 +50,13 @@ export type DomainEventType =
   | "part.consumed"
   | "part.stock_overdrawn"
   | "lead.qualified"
+  // Migración del sistema anterior. Cada registro importado deja su evento con
+  // la fila cruda en el payload: es la única forma de responder después "de
+  // dónde salió este dato y qué decía el archivo original".
+  | "ticket.imported"
+  | "contract.imported"
+  | "equipment.imported"
+  | "organization.imported"
   // Bajas. Los borrados del sistema son DUROS y en cascada, así que el evento
   // con su snapshot es la única copia que queda del registro eliminado.
   | "deal.deleted"

@@ -99,6 +99,13 @@
       "when": 1785389913606,
       "tag": "0013_many_swordsman",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1785552940856,
+      "tag": "0014_bouncy_stranger",
+      "breakpoints": true
     }
   ]
 }

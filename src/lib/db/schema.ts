@@ -106,6 +106,11 @@ export const tickets = pgTable("tickets", {
   id: uuid("id").primaryKey().defaultRandom(),
   // Folio legible: EVO-000123 (generado en la app).
   reference: varchar("reference", { length: 20 }).notNull().unique(),
+  // Folio del sistema anterior (EVO-0669, 4 dígitos). Los tickets migrados se
+  // re-foliaron al formato de 6 dígitos, pero el técnico tiene el número viejo
+  // en sus reportes de papel: sin esta columna, ese papel deja de ser
+  // rastreable. Null en todo lo creado dentro de la app.
+  legacyReference: varchar("legacy_reference", { length: 30 }),
   subject: varchar("subject", { length: 240 }).notNull(),
   description: text("description").notNull(),
   status: ticketStatus("status").notNull().default("open"),
@@ -427,6 +432,9 @@ export const crmStages = pgTable("crm_stages", {
 export const crmOrganizations = pgTable("crm_organizations", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: varchar("name", { length: 200 }).notNull(),
+  // RFC. Viene del padrón de SAE y es requisito para timbrar CFDI cuando
+  // llegue facturación: sin esto habría que recapturarlo cliente por cliente.
+  taxId: varchar("tax_id", { length: 20 }),
   industry: varchar("industry", { length: 120 }),
   website: varchar("website", { length: 255 }),
   phone: varchar("phone", { length: 40 }),
