@@ -19,13 +19,25 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
-/* ------------------------- Enums ------------------------- */
-export const userRole = pgEnum("user_role", [
-  "admin",
-  "agent",
-  "client",
-  "sales", // vendedor: responsable comercial de contratos
-]);
+/**
+ * TABLAS DE NEGOCIO — viven en el esquema de CADA inquilino (`tenant_<slug>`),
+ * nunca en `public`.
+ *
+ * Se declaran SIN calificar el esquema a propósito: el `search_path` que fija
+ * `withTenant()` en cada transacción decide a qué inquilino resuelven. La misma
+ * consulta sirve para todos, y una consulta sin inquilino activo falla en vez
+ * de devolver datos ajenos.
+ *
+ * `users`, `companies` y demás plano de control viven en public.ts y se
+ * reexportan aquí para no romper los imports existentes.
+ */
+import { companies, users } from "./platform";
+
+// NO se reexportan a propósito. Quien consulte `users` o `companies` debe
+// importarlas de "@/lib/db/platform" y saber que son del plano de control:
+// viven una sola vez en `public`, no una por inquilino. El reexport también
+// rompería la generación de migraciones de inquilino, que toma este archivo
+// como la lista de tablas a replicar en cada esquema.
 export const ticketStatus = pgEnum("ticket_status", [
   "pending_review", // solicitud del cliente esperando aprobación del admin
   "open",
@@ -87,19 +99,6 @@ export const inventoryMovementKind = pgEnum("inventory_movement_kind", [
   "adjustment",
 ]);
 
-/* ------------------------- Users ------------------------- */
-export const users = pgTable("users", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: varchar("name", { length: 160 }),
-  email: varchar("email", { length: 255 }).notNull().unique(),
-  passwordHash: text("password_hash"),
-  role: userRole("role").notNull().default("client"),
-  company: varchar("company", { length: 200 }),
-  phone: varchar("phone", { length: 40 }),
-  active: boolean("active").notNull().default(true),
-  image: text("image"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
 
 /* ------------------------- Tickets ------------------------- */
 export const tickets = pgTable("tickets", {
@@ -1056,21 +1055,6 @@ export const dealReferenceSeq = pgSequence("crm_deal_reference_seq", {
   increment: 1,
 });
 
-// Entidad legal que emite documentos. Un solo registro hoy ('Evoelution'),
-// pero las tablas raíz ya cuelgan de aquí para no re-migrarlas después.
-export const companies = pgTable("companies", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: varchar("name", { length: 160 }).notNull(),
-  legalName: varchar("legal_name", { length: 240 }),
-  // RFC en México. Requisito para timbrado CFDI cuando llegue facturación.
-  taxId: varchar("tax_id", { length: 20 }),
-  // Moneda funcional: en la que se llevan los libros de esta empresa.
-  functionalCurrency: varchar("functional_currency", { length: 3 })
-    .notNull()
-    .default("MXN"),
-  active: boolean("active").notNull().default(true),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
 
 // APPEND-ONLY. Nunca se hace UPDATE ni DELETE sobre esta tabla: es la única
 // copia del pasado que tiene el sistema. Se escribe dentro de la misma
@@ -1172,7 +1156,7 @@ export const fxRates = pgTable(
 );
 
 /* ------------------------- Tipos ------------------------- */
-export type User = typeof users.$inferSelect;
+/* User y Company se reexportan desde ./platform (arriba): son del plano de control. */
 export type Ticket = typeof tickets.$inferSelect;
 export type NewTicket = typeof tickets.$inferInsert;
 export type TicketComment = typeof ticketComments.$inferSelect;
@@ -1194,7 +1178,6 @@ export type CrmLabel = typeof crmLabels.$inferSelect;
 export type CrmGoal = typeof crmGoals.$inferSelect;
 export type CrmEmailTemplate = typeof crmEmailTemplates.$inferSelect;
 export type CrmAutomation = typeof crmAutomations.$inferSelect;
-export type Company = typeof companies.$inferSelect;
 export type DomainEvent = typeof domainEvents.$inferSelect;
 export type NewDomainEvent = typeof domainEvents.$inferInsert;
 export type InventoryMovement = typeof inventoryMovements.$inferSelect;

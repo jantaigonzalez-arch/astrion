@@ -11,8 +11,8 @@ import {
   crmStages,
   equipment,
   tickets,
-  users,
 } from "@/lib/db/schema";
+import { users } from "@/lib/db/platform";
 import { DEFAULT_PIPELINE_NAME, DEFAULT_STAGES } from "@/lib/crm";
 
 /**

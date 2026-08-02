@@ -7,6 +7,7 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import bcrypt from "bcryptjs";
 import * as schema from "../src/lib/db/schema";
+import * as platform from "../src/lib/db/platform";
 import {
   generateReference,
   slaDueFrom,
@@ -25,7 +26,7 @@ async function main() {
 
   console.log("→ Usuarios…");
   const [admin] = await db
-    .insert(schema.users)
+    .insert(platform.users)
     .values({
       name: "Admin Evoelution",
       email: "admin@evoelution.com",
@@ -36,7 +37,7 @@ async function main() {
     .returning();
 
   const [agent] = await db
-    .insert(schema.users)
+    .insert(platform.users)
     .values({
       name: "Agente Soporte",
       email: "agente@evoelution.com",
@@ -47,7 +48,7 @@ async function main() {
     .returning();
 
   const [client1] = await db
-    .insert(schema.users)
+    .insert(platform.users)
     .values({
       name: "Laboratorio Genérico",
       email: "cliente@lab.com",

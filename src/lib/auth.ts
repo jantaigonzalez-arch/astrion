@@ -3,7 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { getDb, isDbConfigured } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { users } from "@/lib/db/platform";
 
 export type Role = "admin" | "agent" | "client" | "sales";
 

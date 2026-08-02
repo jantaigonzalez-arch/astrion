@@ -1,7 +1,8 @@
 import "server-only";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { tickets, ticketComments, leads, users } from "@/lib/db/schema";
+import { tickets, ticketComments, leads } from "@/lib/db/schema";
+import { users } from "@/lib/db/platform";
 import type { Role } from "@/lib/auth";
 
 export async function getTicketsForUser(userId: string) {

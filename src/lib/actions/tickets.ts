@@ -10,10 +10,10 @@ import {
   equipment,
   equipmentModules,
   equipmentSubmodules,
-  users,
   spareParts,
   commentParts,
 } from "@/lib/db/schema";
+import { users } from "@/lib/db/platform";
 import { auth } from "@/lib/auth";
 import { isSupport } from "@/lib/roles";
 import {

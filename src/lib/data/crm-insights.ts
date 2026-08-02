@@ -13,8 +13,8 @@ import {
   crmStages,
   products,
   spareParts,
-  users,
 } from "@/lib/db/schema";
+import { users } from "@/lib/db/platform";
 
 /* ========================= Informes ========================= */
 

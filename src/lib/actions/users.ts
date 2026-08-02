@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { and, eq, ne } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { getDb } from "@/lib/db";
-import { crmOrganizations, users } from "@/lib/db/schema";
+import { crmOrganizations } from "@/lib/db/schema";
+import { users } from "@/lib/db/platform";
 import { auth } from "@/lib/auth";
 
 /* ---------------- Editar cuenta existente ---------------- */

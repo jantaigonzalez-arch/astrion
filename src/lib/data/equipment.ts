@@ -1,7 +1,8 @@
 import "server-only";
 import { asc, desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { users, equipment, equipmentModules, tickets } from "@/lib/db/schema";
+import { equipment, equipmentModules, tickets } from "@/lib/db/schema";
+import { users } from "@/lib/db/platform";
 
 export async function getOwner(ownerId: string) {
   const db = getDb();

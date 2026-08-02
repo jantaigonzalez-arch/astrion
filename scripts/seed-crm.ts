@@ -9,6 +9,7 @@ import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import * as schema from "../src/lib/db/schema";
+import * as platform from "../src/lib/db/platform";
 import { DEFAULT_PIPELINE_NAME, DEFAULT_STAGES, dealReference } from "../src/lib/crm";
 
 config({ path: ".env.local" });
@@ -61,8 +62,8 @@ async function main() {
   // 2) Responsable: el primer admin/vendedor activo.
   const [owner] = await db
     .select()
-    .from(schema.users)
-    .where(inArray(schema.users.role, ["admin", "sales"]))
+    .from(platform.users)
+    .where(inArray(platform.users.role, ["admin", "sales"]))
     .limit(1);
 
   // 3) Organizaciones demo.

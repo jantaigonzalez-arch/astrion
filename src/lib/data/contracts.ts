@@ -4,10 +4,10 @@ import { getDb } from "@/lib/db";
 import {
   contracts,
   contractEquipment,
-  users,
   tickets,
   ticketComments,
 } from "@/lib/db/schema";
+import { users } from "@/lib/db/platform";
 
 export async function getContracts(salesRepId?: string) {
   const db = getDb();

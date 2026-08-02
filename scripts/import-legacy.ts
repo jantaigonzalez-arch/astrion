@@ -29,7 +29,6 @@ import path from "node:path";
 import { sql } from "drizzle-orm";
 import { getDb } from "../src/lib/db";
 import {
-  companies,
   contractEquipment,
   contracts,
   commentParts,
@@ -39,8 +38,8 @@ import {
   equipmentModules,
   ticketComments,
   tickets,
-  users,
 } from "../src/lib/db/schema";
+import { companies, users } from "../src/lib/db/platform";
 
 /* ===================== utilidades de parseo ===================== */
 

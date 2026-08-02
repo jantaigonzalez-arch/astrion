@@ -1,6 +1,21 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import * as schema from "./schema";
+import * as businessSchema from "./schema";
+import * as platformSchema from "./platform";
+
+/**
+ * Las dos mitades del modelo, en un solo objeto para el query builder:
+ *
+ *  · plano de control (`public`): inquilinos, usuarios, membresías, empresas.
+ *    Se consulta con `getDb()` directo — es lo que hay que leer para saber en
+ *    qué inquilino estamos.
+ *  · negocio (`tenant_<slug>`): tickets, contratos, CRM… Solo se consulta con
+ *    `withTenant()`, que fija el `search_path` de la transacción.
+ *
+ * `schema.ts` ya reexporta `users` y `companies` desde `platform.ts`, así que
+ * la unión no duplica claves.
+ */
+const schema = { ...platformSchema, ...businessSchema };
 
 /**
  * Cliente Drizzle perezoso. Si DATABASE_URL no está configurada,
