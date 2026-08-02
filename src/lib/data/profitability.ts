@@ -1,6 +1,6 @@
 import "server-only";
 import { desc } from "drizzle-orm";
-import { getDb } from "@/lib/db";
+import { tenantDb } from "@/lib/tenancy/context";
 import { tickets } from "@/lib/db/schema";
 
 /**
@@ -8,7 +8,7 @@ import { tickets } from "@/lib/db/schema";
  * El cálculo (ingreso/costo/utilidad) vive en lib/profit.ts.
  */
 export async function getTicketsWithCostData() {
-  const db = getDb();
+  const db = await tenantDb();
   return db.query.tickets.findMany({
     columns: {
       id: true,

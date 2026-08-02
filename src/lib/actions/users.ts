@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { and, eq, ne } from "drizzle-orm";
 import bcrypt from "bcryptjs";
-import { getDb } from "@/lib/db";
+import { tenantDb } from "@/lib/tenancy/context";
 import { crmOrganizations } from "@/lib/db/schema";
 import { users } from "@/lib/db/platform";
 import { auth } from "@/lib/auth";
@@ -61,7 +61,7 @@ export async function updateUser(
   }
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
     await db
       .update(users)
       .set({
@@ -121,7 +121,7 @@ export async function resetUserPassword(
   if (!id || password.length < 8) return { ok: false, error: "invalid" };
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
     await db
       .update(users)
       .set({ passwordHash: bcrypt.hashSync(password, 10) })
@@ -173,7 +173,7 @@ export async function createUser(
   const email = parsed.data.email.toLowerCase().trim();
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
     const [existing] = await db
       .select({ id: users.id })
       .from(users)

@@ -186,13 +186,40 @@ Es el cimiento: sin esto, ninguna de las demás fases tiene dónde apoyarse.
 | 1.1 | Esquema `public`: tenants, companies, users, memberships, tenant_schemas | ✅ |
 | 1.2 | Runner de migraciones por esquema (drizzle-kit no lo hace) | ✅ |
 | 1.3 | Aprovisionamiento: crear inquilino = crear esquema + migrar + sembrar | ✅ |
-| 1.4 | `withTenant()` y sesión con inquilino activo | ← siguiente |
-| 1.5 | Migrar los datos actuales a `tenant_evoelution` | |
-| 1.6 | Rol desde membresías en las 45 páginas y las acciones | |
-| 1.7 | Selector de inquilino + alta de inquilino | |
+| 1.4 | Contexto de inquilino (`tenantDb()`) y sesión con rol de plataforma | ✅ |
+| 1.5 | Migrar los datos actuales a `tenant_evoelution` | ✅ |
+| 1.6 | Rol desde membresías en las 45 páginas y las acciones | ← siguiente |
+| 1.7 | Consola de plataforma: ver todas, entrar, dar de alta | ✅ |
 
 **Criterio de terminado:** dos inquilinos con datos propios, ambos con un ticket
 `EVO-000001` sin colisión, y una consulta sin inquilino activo que **falla**.
+
+### Consola de plataforma
+
+La capa que está **por debajo** de los inquilinos: donde el equipo que opera el
+SaaS ve todas las empresas y entra a cualquiera.
+
+`platform_role` en `users` es una dimensión **distinta** de `membershipRole`, no
+un valor más de esa lista. El dueño de una cuenta manda en la suya y no debe ver
+ninguna otra; un superadministrador ve todas. Mezclarlos en el mismo enum haría
+que un error de comparación convirtiera a un cliente en operador de la
+plataforma.
+
+| Rol | Puede |
+|---|---|
+| `superadmin` | Dar de alta empresas, entrar a cualquiera, otorgar consentimiento de datos |
+| `support` | Entrar a una empresa para diagnosticar; sin altas ni consentimientos |
+| *(nulo)* | Nada de esto: es un usuario de un cliente |
+
+**Entrar a la empresa de un cliente SIEMPRE deja registro** en `platform_events`,
+con quién, cuándo y el motivo opcional. No es cortesía: un laboratorio
+farmacéutico va a preguntar quién de tu equipo vio sus datos, y la respuesta no
+puede depender de que alguien se acuerde. La UI marca el acceso con un aviso
+visible para que nadie confunda "administro mi empresa" con "estoy dentro de la
+de un cliente".
+
+La cookie de empresa activa es **de sesión, no persistente**: entrar debe ser un
+acto deliberado cada vez, no un estado que sobrevive semanas en el navegador.
 
 ### Fase 2 — Núcleo de ERP
 
@@ -247,17 +274,33 @@ Casos de uso que el dato ya soporta:
 Estas reglas se suman a las de [ARQUITECTURA.md](./ARQUITECTURA.md), que siguen
 vigentes (transacciones, folios por secuencia, ledger, eventos).
 
-### Toda lectura y escritura de negocio pasa por `withTenant`
+### Toda lectura y escritura de negocio pasa por `tenantDb()`
 
 ```ts
 export async function getTickets() {
-  return withTenant((tx) => tx.query.tickets.findMany());
+  const db = await tenantDb();          // ← nunca getDb()
+  return db.query.tickets.findMany();
 }
 ```
 
-Nunca `getDb()` directo para datos de negocio: el `search_path` no estaría
-puesto y la consulta fallaría. Que falle es la red de seguridad — no la
-desactives calificando el esquema a mano.
+`tenantDb()` devuelve un cliente cuyo `search_path` es `tenant_x, public`, fijado
+al abrir la conexión. Consecuencias prácticas:
+
+- Las consultas que además tocan `users` o `companies` siguen funcionando: esas
+  tablas están en `public`, que es el segundo elemento del `search_path`.
+- Si no hay empresa activa, `tenantDb()` lanza. Que falle es la red de seguridad
+  — no la desactives calificando el esquema a mano.
+
+**Se eligió un pool por esquema sobre `SET LOCAL` dentro de una transacción**
+para que las ~115 consultas ya escritas conservaran su forma en vez de
+reescribirse como callbacks. El aislamiento es igual de estricto: el esquema
+viaja en la conexión, no en un ajuste que se pueda olvidar.
+
+El costo es el número de conexiones: cada empresa activa mantiene su pool. Por
+eso `DB_TENANT_POOL_MAX` es bajo (3) y `DB_TENANT_IDLE` corto (20 s) — una
+empresa inactiva devuelve sus conexiones. **Con decenas de empresas concurrentes
+esto deja de alcanzar**, y ese es el punto donde se pasa a un pooler externo o al
+modelo por transacción. Está medido, no es una sorpresa esperando.
 
 ### El plano de control se consulta con `getDb()`
 

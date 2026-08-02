@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
-import { getDb } from "@/lib/db";
+import { tenantDb } from "@/lib/tenancy/context";
 import {
   crmAutomations,
   crmDealLabels,
@@ -38,7 +38,7 @@ async function requireAdmin() {
  * un número suelto y pasa a derivarse de la cotización.
  */
 async function recalcDealValue(dealId: string) {
-  const db = getDb();
+  const db = await tenantDb();
   const items = await db
     .select({
       quantity: crmDealProducts.quantity,
@@ -79,7 +79,7 @@ export async function addDealItem(formData: FormData) {
     ? catalogRef.split(":")
     : [null, null];
 
-  const db = getDb();
+  const db = await tenantDb();
   await db.insert(crmDealProducts).values({
     dealId,
     name,
@@ -103,7 +103,7 @@ export async function deleteDealItem(formData: FormData) {
   const dealId = String(formData.get("dealId") ?? "");
   if (!id || !dealId) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   // Una línea borrada cambia el valor del negocio: es cambio con efecto en
   // dinero, así que el snapshot importa para poder auditar la diferencia.
   await db.transaction(async (tx) => {
@@ -135,7 +135,7 @@ export async function createLabel(formData: FormData) {
   const color = String(formData.get("color") ?? "primary");
   if (!name) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   await db.insert(crmLabels).values({ name, color });
   revalidatePath("/admin/crm/configuracion");
 }
@@ -145,7 +145,7 @@ export async function deleteLabel(formData: FormData) {
   if (!session) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  const db = getDb();
+  const db = await tenantDb();
   await db.transaction(async (tx) => {
     const [row] = await tx.delete(crmLabels).where(eq(crmLabels.id, id)).returning();
     if (!row) return;
@@ -171,7 +171,7 @@ export async function toggleDealLabel(formData: FormData) {
   const attach = formData.get("attach") === "1";
   if (!dealId || !labelId) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   if (attach) {
     await db
       .insert(crmDealLabels)
@@ -215,7 +215,7 @@ export async function createGoal(formData: FormData) {
   const periodEnd = String(formData.get("periodEnd") ?? "");
   if (!name || !target || !periodStart || !periodEnd) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   await db.insert(crmGoals).values({
     name,
     ownerId,
@@ -233,7 +233,7 @@ export async function deleteGoal(formData: FormData) {
   if (!session) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  const db = getDb();
+  const db = await tenantDb();
   await db.transaction(async (tx) => {
     const [row] = await tx.delete(crmGoals).where(eq(crmGoals.id, id)).returning();
     if (!row) return;
@@ -259,7 +259,7 @@ export async function createEmailTemplate(formData: FormData) {
   const body = String(formData.get("body") ?? "").trim();
   if (!name || !subject || !body) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   await db
     .insert(crmEmailTemplates)
     .values({ name, subject, body, createdById: session.user.id });
@@ -271,7 +271,7 @@ export async function deleteEmailTemplate(formData: FormData) {
   if (!session) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  const db = getDb();
+  const db = await tenantDb();
   await db.transaction(async (tx) => {
     const [row] = await tx
       .delete(crmEmailTemplates)
@@ -302,7 +302,7 @@ export async function createAutomation(formData: FormData) {
   const dueInDays = Number(formData.get("dueInDays") ?? 1);
   if (!name || !triggerStageId || !activitySubject) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   await db.insert(crmAutomations).values({
     name,
     triggerStageId,
@@ -325,7 +325,7 @@ export async function toggleAutomation(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const active = formData.get("active") === "1";
   if (!id) return;
-  const db = getDb();
+  const db = await tenantDb();
   await db.update(crmAutomations).set({ active }).where(eq(crmAutomations.id, id));
   revalidatePath("/admin/crm/automatizaciones");
 }
@@ -335,7 +335,7 @@ export async function deleteAutomation(formData: FormData) {
   if (!session) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  const db = getDb();
+  const db = await tenantDb();
   // Una automatización borrada cambia el comportamiento del sistema (deja de
   // agendar seguimientos), así que su baja es información de auditoría.
   await db.transaction(async (tx) => {
@@ -364,7 +364,7 @@ export async function updateStageRotting(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const days = Number(formData.get("rottingDays") ?? 0);
   if (!id) return;
-  const db = getDb();
+  const db = await tenantDb();
   await db
     .update(crmStages)
     .set({ rottingDays: Math.max(0, Math.min(365, days)) })

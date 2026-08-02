@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { getDb } from "@/lib/db";
+import { tenantDb } from "@/lib/tenancy/context";
 import {
   tickets,
   ticketComments,
@@ -56,7 +56,7 @@ export async function createTicket(
   if (!parsed.success) return { ok: false, error: "invalid" };
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
 
     // El equipo debe pertenecer a quien crea el ticket (o al cliente dueño).
     let equipmentId: string | null = null;
@@ -168,7 +168,7 @@ export async function createServiceTicket(
   if (!parsed.success) return { ok: false, error: "invalid" };
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
 
     // El equipo debe pertenecer al laboratorio elegido.
     let equipmentId: string | null = null;
@@ -264,7 +264,7 @@ export async function approveTicket(formData: FormData) {
   const ticketId = String(formData.get("ticketId"));
   if (!ticketId) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   await db
     .update(tickets)
     .set({
@@ -288,7 +288,7 @@ export async function rejectTicket(formData: FormData) {
   const reason = String(formData.get("reason") ?? "").trim();
   if (!ticketId) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   await db
     .update(tickets)
     .set({
@@ -314,7 +314,7 @@ export async function addComment(formData: FormData) {
     formData.get("internal") === "on" && isSupport(session.user.role);
   if (!ticketId || body.length < 1) return;
 
-  const db = getDb();
+  const db = await tenantDb();
 
   // Componente al que se refiere la actividad. Se valida la jerarquía:
   // el submódulo debe pertenecer al módulo, y el módulo al equipo.
@@ -501,7 +501,7 @@ export async function updateTicketStatus(formData: FormData) {
   // La aprobación/rechazo tiene su propio flujo; aquí solo estados operativos.
   if (!STAFF_SETTABLE_STATUSES.includes(status as never)) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   await db
     .update(tickets)
     .set({
@@ -525,7 +525,7 @@ export async function assignTicket(formData: FormData) {
   const candidate = typeof raw === "string" && raw.trim() ? raw.trim() : null;
   if (!ticketId) return;
 
-  const db = getDb();
+  const db = await tenantDb();
 
   // Solo se puede asignar a personal activo (agente o admin).
   let assignedToId: string | null = null;

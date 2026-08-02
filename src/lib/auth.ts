@@ -7,12 +7,23 @@ import { users } from "@/lib/db/platform";
 
 export type Role = "admin" | "agent" | "client" | "sales";
 
+/**
+ * Rol de PLATAFORMA: quien opera el SaaS, por encima de los inquilinos.
+ * Null en la enorme mayoría de las cuentas — son usuarios de un cliente.
+ */
+export type PlatformRole = "superadmin" | "support" | null;
+
 declare module "next-auth" {
   interface Session {
-    user: { id: string; role: Role } & DefaultSession["user"];
+    user: {
+      id: string;
+      role: Role;
+      platformRole: PlatformRole;
+    } & DefaultSession["user"];
   }
   interface User {
     role?: Role;
+    platformRole?: PlatformRole;
   }
 }
 
@@ -47,6 +58,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           name: user.name ?? undefined,
           email: user.email,
           role: user.role,
+          platformRole: user.platformRole ?? null,
         };
       },
     }),
@@ -56,6 +68,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (user) {
         token.id = user.id;
         token.role = (user as { role?: Role }).role ?? "client";
+        token.platformRole =
+          (user as { platformRole?: PlatformRole }).platformRole ?? null;
       }
       return token;
     },
@@ -63,6 +77,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (session.user) {
         session.user.id = token.id as string;
         session.user.role = (token.role as Role) ?? "client";
+        session.user.platformRole = (token.platformRole as PlatformRole) ?? null;
       }
       return session;
     },

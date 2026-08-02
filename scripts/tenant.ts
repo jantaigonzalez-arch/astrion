@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { sql, eq } from "drizzle-orm";
 import { getDb } from "../src/lib/db";
-import { tenants, tenantSchemas, platformEvents, schemaNameFor } from "../src/lib/db/platform";
+import { tenants, tenantSchemas, platformEvents, users, schemaNameFor } from "../src/lib/db/platform";
 import {
   migrateAllTenants,
   migrateSchema,
@@ -19,6 +19,7 @@ import {
  *   npx tsx scripts/tenant.ts provision --slug acme --name "ACME Labs"
  *   npx tsx scripts/tenant.ts migrate
  *   npx tsx scripts/tenant.ts drop --slug acme          ← solo desarrollo
+ *   npx tsx scripts/tenant.ts grant --email a@b.com --role superadmin
  */
 
 const args = process.argv.slice(2);
@@ -190,6 +191,32 @@ async function main() {
       break;
     }
 
+    case "grant": {
+      // Quién opera la plataforma es una decisión operativa, no un hecho del
+      // esquema: por eso se otorga con un comando y queda en la bitácora, en
+      // vez de venir horneado en una migración.
+      const email = flag("email");
+      const role = (flag("role") ?? "superadmin") as "superadmin" | "support";
+      if (!email) throw new Error("Falta --email");
+      if (role !== "superadmin" && role !== "support") {
+        throw new Error('--role debe ser "superadmin" o "support"');
+      }
+      const db = getDb();
+      const [u] = await db
+        .update(users)
+        .set({ platformRole: role })
+        .where(eq(users.email, email.toLowerCase().trim()))
+        .returning({ id: users.id, email: users.email });
+      if (!u) throw new Error(`No existe el usuario ${email}`);
+      await db.insert(platformEvents).values({
+        eventType: "platform.role_granted",
+        actorId: u.id,
+        payload: { email: u.email, rol: role },
+      });
+      console.log(`▸ ${u.email} ahora es ${role} de la plataforma.`);
+      break;
+    }
+
     case "drop": {
       const slug = flag("slug");
       if (!slug) throw new Error("Falta --slug");
@@ -199,7 +226,15 @@ async function main() {
     }
 
     default:
-      console.log(`Comandos: list | adopt --slug X | provision --slug X --name "N" [--owner UUID] | migrate | drop --slug X`);
+      console.log(
+        "Comandos:\n" +
+        "  list\n" +
+        '  provision --slug X --name "Nombre" [--owner UUID]\n' +
+        "  adopt --slug X\n" +
+        "  migrate\n" +
+        "  grant --email a@b.com [--role superadmin|support]\n" +
+        "  drop --slug X   (solo desarrollo)",
+      );
   }
   process.exit(0);
 }

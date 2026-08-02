@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db";
+import { tenantDb } from "@/lib/tenancy/context";
 import { spareParts } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
 import { isSupport } from "@/lib/roles";
@@ -59,7 +59,7 @@ export async function createPart(
   const partNumber = parsed.data.partNumber.trim().toUpperCase();
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
     const [dup] = await db
       .select({ id: spareParts.id })
       .from(spareParts)
@@ -130,7 +130,7 @@ export async function updatePart(
   const partNumber = parsed.data.partNumber.trim().toUpperCase();
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
     const [dup] = await db
       .select({ id: spareParts.id })
       .from(spareParts)

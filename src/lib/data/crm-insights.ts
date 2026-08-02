@@ -1,6 +1,6 @@
 import "server-only";
 import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
-import { getDb } from "@/lib/db";
+import { tenantDb } from "@/lib/tenancy/context";
 import {
   crmActivities,
   crmAutomations,
@@ -20,7 +20,7 @@ import { users } from "@/lib/db/platform";
 
 /** Embudo: negocios abiertos por etapa (conteo, valor y valor ponderado). */
 export async function getFunnelByStage(pipelineId: string, ownerId?: string) {
-  const db = getDb();
+  const db = await tenantDb();
   const rows = await db
     .select({
       stageId: crmStages.id,
@@ -51,7 +51,7 @@ export async function getFunnelByStage(pipelineId: string, ownerId?: string) {
 
 /** Cerrados por mes (últimos 12): ganados vs perdidos. */
 export async function getMonthlyClosed(pipelineId: string, ownerId?: string) {
-  const db = getDb();
+  const db = await tenantDb();
   return db
     .select({
       month: sql<string>`to_char(date_trunc('month', ${crmDeals.closedAt}), 'YYYY-MM')`,
@@ -74,7 +74,7 @@ export async function getMonthlyClosed(pipelineId: string, ownerId?: string) {
 
 /** Pronóstico: negocios abiertos agrupados por mes de cierre estimado. */
 export async function getForecastByMonth(pipelineId: string, ownerId?: string) {
-  const db = getDb();
+  const db = await tenantDb();
   return db
     .select({
       month: sql<string>`to_char(date_trunc('month', ${crmDeals.expectedCloseDate}), 'YYYY-MM')`,
@@ -98,7 +98,7 @@ export async function getForecastByMonth(pipelineId: string, ownerId?: string) {
 
 /** Ranking de vendedores por monto ganado. */
 export async function getOwnerRanking(pipelineId: string) {
-  const db = getDb();
+  const db = await tenantDb();
   return db
     .select({
       ownerId: crmDeals.ownerId,
@@ -118,7 +118,7 @@ export async function getOwnerRanking(pipelineId: string) {
 
 /** Motivos de pérdida más frecuentes. */
 export async function getLostReasons(pipelineId: string, ownerId?: string) {
-  const db = getDb();
+  const db = await tenantDb();
   return db
     .select({
       reason: crmDeals.lostReason,
@@ -141,7 +141,7 @@ export async function getLostReasons(pipelineId: string, ownerId?: string) {
 
 /** Origen de los negocios (de dónde vienen las oportunidades). */
 export async function getSourceBreakdown(pipelineId: string) {
-  const db = getDb();
+  const db = await tenantDb();
   return db
     .select({
       source: crmDeals.source,
@@ -159,7 +159,7 @@ export async function getSourceBreakdown(pipelineId: string) {
  * Solo considera negocios ya cerrados.
  */
 export async function getAvgCycleDays(pipelineId: string, ownerId?: string) {
-  const db = getDb();
+  const db = await tenantDb();
   const [row] = await db
     .select({
       days: sql<string>`coalesce(avg(extract(epoch from (${crmDeals.closedAt} - ${crmDeals.createdAt})) / 86400), 0)`,
@@ -182,7 +182,7 @@ export async function getAvgCycleDays(pipelineId: string, ownerId?: string) {
  * etapa. Equivale al "rotting" de Pipedrive.
  */
 export async function getRottingDeals(pipelineId: string, ownerId?: string) {
-  const db = getDb();
+  const db = await tenantDb();
   return db
     .select({
       id: crmDeals.id,
@@ -212,7 +212,7 @@ export async function getRottingDeals(pipelineId: string, ownerId?: string) {
 
 /** Objetivos con su avance real calculado sobre los negocios ganados. */
 export async function getGoalsWithProgress() {
-  const db = getDb();
+  const db = await tenantDb();
   const goals = await db.query.crmGoals.findMany({
     orderBy: [desc(crmGoals.periodStart)],
     with: {
@@ -253,17 +253,17 @@ export async function getGoalsWithProgress() {
 /* ========================= Catálogos auxiliares ========================= */
 
 export async function getLabels() {
-  const db = getDb();
+  const db = await tenantDb();
   return db.select().from(crmLabels).orderBy(asc(crmLabels.name));
 }
 
 export async function getEmailTemplates() {
-  const db = getDb();
+  const db = await tenantDb();
   return db.select().from(crmEmailTemplates).orderBy(asc(crmEmailTemplates.name));
 }
 
 export async function getAutomations() {
-  const db = getDb();
+  const db = await tenantDb();
   return db.query.crmAutomations.findMany({
     orderBy: [asc(crmAutomations.name)],
     with: { triggerStage: { columns: { id: true, name: true } } },
@@ -272,7 +272,7 @@ export async function getAutomations() {
 
 /** Catálogo combinado para las líneas de un negocio: productos y refacciones. */
 export async function getCatalogOptions() {
-  const db = getDb();
+  const db = await tenantDb();
   const [prods, parts] = await Promise.all([
     db
       .select({ id: products.id, name: products.nameEs })
@@ -301,7 +301,7 @@ export async function globalSearch(q: string) {
   if (q.trim().length < 2) {
     return { deals: [], organizations: [], contacts: [], activities: [] };
   }
-  const db = getDb();
+  const db = await tenantDb();
 
   const [deals, organizations, contacts, activities] = await Promise.all([
     db

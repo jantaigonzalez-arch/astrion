@@ -1,6 +1,6 @@
 import "server-only";
 import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
-import { getDb } from "@/lib/db";
+import { tenantDb } from "@/lib/tenancy/context";
 import {
   contracts,
   crmActivities,
@@ -21,7 +21,7 @@ import { DEFAULT_PIPELINE_NAME, DEFAULT_STAGES } from "@/lib/crm";
  * después no hace nada. Evita depender de un seed manual.
  */
 export async function ensureDefaultPipeline() {
-  const db = getDb();
+  const db = await tenantDb();
   const [existing] = await db
     .select({ id: crmPipelines.id })
     .from(crmPipelines)
@@ -46,7 +46,7 @@ export async function ensureDefaultPipeline() {
 }
 
 export async function getPipelines() {
-  const db = getDb();
+  const db = await tenantDb();
   return db.query.crmPipelines.findMany({
     where: eq(crmPipelines.active, true),
     orderBy: [asc(crmPipelines.order)],
@@ -55,7 +55,7 @@ export async function getPipelines() {
 }
 
 export async function getStages(pipelineId: string) {
-  const db = getDb();
+  const db = await tenantDb();
   return db.query.crmStages.findMany({
     where: eq(crmStages.pipelineId, pipelineId),
     orderBy: [asc(crmStages.order)],
@@ -67,7 +67,7 @@ export async function getStages(pipelineId: string) {
  * `ownerId` limita la vista a la cartera de un vendedor.
  */
 export async function getPipelineBoard(pipelineId: string, ownerId?: string) {
-  const db = getDb();
+  const db = await tenantDb();
   const stages = await getStages(pipelineId);
 
   const deals = await db.query.crmDeals.findMany({
@@ -93,7 +93,7 @@ export async function getPipelineBoard(pipelineId: string, ownerId?: string) {
 
 /** Negocios cerrados (ganados/perdidos) del embudo. */
 export async function getClosedDeals(pipelineId: string, ownerId?: string) {
-  const db = getDb();
+  const db = await tenantDb();
   return db.query.crmDeals.findMany({
     where: and(
       eq(crmDeals.pipelineId, pipelineId),
@@ -111,7 +111,7 @@ export async function getClosedDeals(pipelineId: string, ownerId?: string) {
 }
 
 export async function getDealById(id: string) {
-  const db = getDb();
+  const db = await tenantDb();
   return db.query.crmDeals.findFirst({
     where: eq(crmDeals.id, id),
     with: {
@@ -142,7 +142,7 @@ export async function getDealById(id: string) {
 
 /* ------------------------- Organizaciones ------------------------- */
 export async function getOrganizations(ownerId?: string) {
-  const db = getDb();
+  const db = await tenantDb();
   return db.query.crmOrganizations.findMany({
     where: ownerId ? eq(crmOrganizations.ownerId, ownerId) : undefined,
     orderBy: [asc(crmOrganizations.name)],
@@ -156,7 +156,7 @@ export async function getOrganizations(ownerId?: string) {
 }
 
 export async function getOrganizationById(id: string) {
-  const db = getDb();
+  const db = await tenantDb();
   return db.query.crmOrganizations.findFirst({
     where: eq(crmOrganizations.id, id),
     with: {
@@ -186,7 +186,7 @@ export async function getOrganizationById(id: string) {
  */
 export async function getOrganizationPortalData(clientId: string | null) {
   if (!clientId) return { contracts: [], equipment: [], tickets: [] };
-  const db = getDb();
+  const db = await tenantDb();
 
   const [contractRows, equipmentRows, ticketRows] = await Promise.all([
     db.query.contracts.findMany({
@@ -222,7 +222,7 @@ export async function getOrganizationPortalData(clientId: string | null) {
  * esa cuenta. Sirve para avisar en la lista de usuarios cuáles faltan.
  */
 export async function getOrganizationsByClient() {
-  const db = getDb();
+  const db = await tenantDb();
   const rows = await db
     .select({
       clientId: crmOrganizations.clientId,
@@ -237,7 +237,7 @@ export async function getOrganizationsByClient() {
 
 /** Contrato generado a partir de un negocio (si ya existe). */
 export async function getContractForDeal(dealId: string) {
-  const db = getDb();
+  const db = await tenantDb();
   const [row] = await db
     .select({
       id: contracts.id,
@@ -252,7 +252,7 @@ export async function getContractForDeal(dealId: string) {
 
 /* ------------------------- Contactos ------------------------- */
 export async function getContacts(ownerId?: string) {
-  const db = getDb();
+  const db = await tenantDb();
   return db.query.crmContacts.findMany({
     where: ownerId ? eq(crmContacts.ownerId, ownerId) : undefined,
     orderBy: [asc(crmContacts.name)],
@@ -270,7 +270,7 @@ export async function getActivities(opts?: {
   ownerId?: string;
   onlyPending?: boolean;
 }) {
-  const db = getDb();
+  const db = await tenantDb();
   return db.query.crmActivities.findMany({
     where: and(
       opts?.ownerId ? eq(crmActivities.ownerId, opts.ownerId) : undefined,
@@ -290,7 +290,7 @@ export async function getActivities(opts?: {
 /* ------------------------- Métricas ------------------------- */
 /** KPIs del embudo: abiertos, valor, ganados/perdidos y actividades vencidas. */
 export async function getCrmStats(pipelineId: string, ownerId?: string) {
-  const db = getDb();
+  const db = await tenantDb();
   const scope = and(
     eq(crmDeals.pipelineId, pipelineId),
     ownerId ? eq(crmDeals.ownerId, ownerId) : undefined,
@@ -333,7 +333,7 @@ export async function getCrmStats(pipelineId: string, ownerId?: string) {
 /* ------------------------- Apoyo para formularios ------------------------- */
 /** Responsables posibles de un negocio: vendedores y administradores. */
 export async function getCrmOwners() {
-  const db = getDb();
+  const db = await tenantDb();
   return db
     .select({
       id: users.id,
@@ -353,7 +353,7 @@ export async function getCrmOwners() {
 
 /** Cuentas de portal (laboratorios) para enlazar una organización ya cliente. */
 export async function getClientAccounts() {
-  const db = getDb();
+  const db = await tenantDb();
   return db
     .select({
       id: users.id,
@@ -368,7 +368,7 @@ export async function getClientAccounts() {
 
 /** Listas ligeras para los <select> de los formularios. */
 export async function getOrgOptions() {
-  const db = getDb();
+  const db = await tenantDb();
   return db
     .select({ id: crmOrganizations.id, name: crmOrganizations.name })
     .from(crmOrganizations)
@@ -376,7 +376,7 @@ export async function getOrgOptions() {
 }
 
 export async function getContactOptions() {
-  const db = getDb();
+  const db = await tenantDb();
   return db
     .select({
       id: crmContacts.id,
@@ -389,7 +389,7 @@ export async function getContactOptions() {
 
 /** Ids de leads que ya generaron un negocio (para no convertirlos dos veces). */
 export async function getConvertedLeadIds() {
-  const db = getDb();
+  const db = await tenantDb();
   const rows = await db
     .select({ leadId: crmDeals.leadId })
     .from(crmDeals)
@@ -399,7 +399,7 @@ export async function getConvertedLeadIds() {
 
 /** Leads del formulario web que aún no se convirtieron en negocio. */
 export async function getUnconvertedLeads() {
-  const db = getDb();
+  const db = await tenantDb();
   const converted = db
     .select({ leadId: crmDeals.leadId })
     .from(crmDeals)

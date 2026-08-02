@@ -23,6 +23,7 @@ import {
   Users2,
   Workflow,
   type LucideIcon,
+  ShieldAlert,
 } from "lucide-react";
 import { Link, usePathname } from "@/i18n/navigation";
 import { Logo } from "@/components/shared/logo";
@@ -31,13 +32,24 @@ import { cn } from "@/lib/utils";
 
 type NavItem = { href: string; label: string; Icon: LucideIcon };
 
-function navFor(role: Role): { section: string; items: NavItem[] }[] {
+/** Sección de plataforma: aparece solo para quien opera el SaaS, y va aparte
+ *  del área /admin porque es otra dimensión — "todas las empresas" frente a
+ *  "mi empresa". */
+const PLATFORM: NavItem[] = [
+  { href: "/platform", label: "Empresas", Icon: ShieldAlert },
+];
+
+function navFor(role: Role, platform: boolean): { section: string; items: NavItem[] }[] {
   const client: NavItem[] = [
     { href: "/dashboard", label: "Inicio", Icon: LayoutDashboard },
     { href: "/tickets", label: "Mis tickets", Icon: Ticket },
     { href: "/tickets/new", label: "Nuevo ticket", Icon: PlusCircle },
   ];
-  if (role === "client") return [{ section: "Portal", items: client }];
+  const withPlatform = (
+    secs: { section: string; items: NavItem[] }[],
+  ) => (platform ? [{ section: "Plataforma", items: PLATFORM }, ...secs] : secs);
+
+  if (role === "client") return withPlatform([{ section: "Portal", items: client }]);
 
   // CRM: embudo de ventas (vendedor y admin).
   const crm: NavItem[] = [
@@ -52,7 +64,7 @@ function navFor(role: Role): { section: string; items: NavItem[] }[] {
 
   // Vendedor: solo su ámbito comercial.
   if (role === "sales") {
-    return [
+    return withPlatform([
       { section: "CRM", items: crm },
       {
         section: "Comercial",
@@ -62,7 +74,7 @@ function navFor(role: Role): { section: string; items: NavItem[] }[] {
           { href: "/admin/leads", label: "Leads", Icon: Contact },
         ],
       },
-    ];
+    ]);
   }
 
   const agent: NavItem[] = [
@@ -80,8 +92,8 @@ function navFor(role: Role): { section: string; items: NavItem[] }[] {
     { href: "/admin/configuracion", label: "Configuración", Icon: Settings },
   ];
 
-  if (role === "agent") return [{ section: "Operación", items: agent }];
-  return [
+  if (role === "agent") return withPlatform([{ section: "Operación", items: agent }]);
+  return withPlatform([
     { section: "Operación", items: agent },
     {
       section: "CRM",
@@ -97,12 +109,18 @@ function navFor(role: Role): { section: string; items: NavItem[] }[] {
       ],
     },
     { section: "Administración", items: adminExtra },
-  ];
+  ]);
 }
 
-export function Sidebar({ role }: { role: Role }) {
+export function Sidebar({
+  role,
+  platform = false,
+}: {
+  role: Role;
+  platform?: boolean;
+}) {
   const pathname = usePathname();
-  const groups = navFor(role);
+  const groups = navFor(role, platform);
 
   // Se marca activo solo el enlace más específico que coincide con la ruta,
   // para que "/admin/crm" no quede encendido junto a "/admin/crm/contactos".

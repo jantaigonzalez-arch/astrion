@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db";
+import { tenantDb } from "@/lib/tenancy/context";
 import {
   equipment,
   equipmentModules,
@@ -54,7 +54,7 @@ export async function addEquipment(
 
   try {
     const photo = await saveImage(formData.get("photo"), "equipment");
-    const db = getDb();
+    const db = await tenantDb();
     await db.insert(equipment).values({
       ownerId: parsed.data.ownerId,
       brand: parsed.data.brand,
@@ -94,7 +94,7 @@ export async function addModule(
 
   try {
     const photo = await saveImage(formData.get("photo"), "equipment");
-    const db = getDb();
+    const db = await tenantDb();
     await db.insert(equipmentModules).values({
       equipmentId: parsed.data.equipmentId,
       brand: parsed.data.brand,
@@ -132,7 +132,7 @@ export async function addSubmodule(
 
   try {
     const photo = await saveImage(formData.get("photo"), "equipment");
-    const db = getDb();
+    const db = await tenantDb();
     await db.insert(equipmentSubmodules).values({
       moduleId: parsed.data.moduleId,
       name: parsed.data.name,
@@ -154,7 +154,7 @@ export async function deleteEquipmentItem(formData: FormData) {
   const id = String(formData.get("id"));
   const ownerId = String(formData.get("ownerId"));
   if (!id) return;
-  const db = getDb();
+  const db = await tenantDb();
 
   // Borrar un equipo arrastra sus módulos y submódulos por cascada, y deja los
   // tickets que lo referenciaban con equipment_id en null: el snapshot es la

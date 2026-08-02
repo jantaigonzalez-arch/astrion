@@ -1,6 +1,6 @@
 import "server-only";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { getDb } from "@/lib/db";
+import { tenantDb } from "@/lib/tenancy/context";
 import {
   contracts,
   contractEquipment,
@@ -10,7 +10,7 @@ import {
 import { users } from "@/lib/db/platform";
 
 export async function getContracts(salesRepId?: string) {
-  const db = getDb();
+  const db = await tenantDb();
   return db.query.contracts.findMany({
     where: salesRepId ? eq(contracts.salesRepId, salesRepId) : undefined,
     orderBy: [desc(contracts.createdAt)],
@@ -24,7 +24,7 @@ export async function getContracts(salesRepId?: string) {
 
 /** Detalle completo: equipos amparados con sus módulos y submódulos. */
 export async function getContractById(id: string) {
-  const db = getDb();
+  const db = await tenantDb();
   return db.query.contracts.findFirst({
     where: eq(contracts.id, id),
     with: {
@@ -54,7 +54,7 @@ export async function getContractById(id: string) {
 /** Horas y refacciones de cada ticket, para calcular utilidad consolidada. */
 export async function getProfitInputsForTickets(ticketIds: string[]) {
   if (ticketIds.length === 0) return [];
-  const db = getDb();
+  const db = await tenantDb();
   const rows = await db.query.ticketComments.findMany({
     where: inArray(ticketComments.ticketId, ticketIds),
     columns: { id: true, ticketId: true, hours: true },
@@ -92,7 +92,7 @@ export async function getProfitInputsForTickets(ticketIds: string[]) {
 /** Tickets de los equipos amparados por el contrato. */
 export async function getTicketsForEquipmentIds(equipmentIds: string[]) {
   if (equipmentIds.length === 0) return [];
-  const db = getDb();
+  const db = await tenantDb();
   return db
     .select({
       id: tickets.id,
@@ -110,7 +110,7 @@ export async function getTicketsForEquipmentIds(equipmentIds: string[]) {
 
 /** Contratos de un laboratorio (para su ficha). */
 export async function getContractsForClient(clientId: string) {
-  const db = getDb();
+  const db = await tenantDb();
   return db.query.contracts.findMany({
     where: eq(contracts.clientId, clientId),
     orderBy: [desc(contracts.createdAt)],
@@ -123,7 +123,7 @@ export async function getContractsForClient(clientId: string) {
 
 /** Vendedores activos (y admins, que también pueden figurar como responsables). */
 export async function getSalesReps() {
-  const db = getDb();
+  const db = await tenantDb();
   return db
     .select({
       id: users.id,

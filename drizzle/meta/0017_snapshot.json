@@ -1,6 +1,6 @@
 {
-  "id": "b2813afe-c445-4d3c-9c5d-918463907069",
-  "prevId": "8a99fe43-30fa-4272-9605-6b320acd211c",
+  "id": "be87b374-308c-4df2-843e-e3b6c7f35019",
+  "prevId": "b2813afe-c445-4d3c-9c5d-918463907069",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -613,6 +613,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'client'"
+        },
+        "platform_role": {
+          "name": "platform_role",
+          "type": "platform_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
         },
         "company": {
           "name": "company",
@@ -4524,6 +4531,14 @@
         "agent",
         "sales",
         "client"
+      ]
+    },
+    "public.platform_role": {
+      "name": "platform_role",
+      "schema": "public",
+      "values": [
+        "superadmin",
+        "support"
       ]
     },
     "public.tenant_status": {

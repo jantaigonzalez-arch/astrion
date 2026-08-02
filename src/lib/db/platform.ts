@@ -55,6 +55,22 @@ export const membershipRole = pgEnum("membership_role", [
   "client",
 ]);
 
+/**
+ * Rol DE PLATAFORMA: quien opera el SaaS, por encima de los inquilinos.
+ *
+ * Es una dimensión distinta de `membershipRole`, no un valor más de esa lista.
+ * Un dueño de cuenta manda en SU empresa y no debe ver ninguna otra; un
+ * superadministrador ve todas y puede entrar a cualquiera. Meterlos en el mismo
+ * enum haría que un error de comparación convirtiera a un cliente en operador
+ * de la plataforma.
+ *
+ * · superadmin — alta de inquilinos, entrar a cualquiera, ver la bitácora
+ * · support    — entra a un inquilino solo para diagnosticar; sin altas
+ *
+ * Nulo en la enorme mayoría de las cuentas: son usuarios de un cliente.
+ */
+export const platformRole = pgEnum("platform_role", ["superadmin", "support"]);
+
 /* ------------------------- Identidad ------------------------- */
 
 /**
@@ -78,6 +94,8 @@ export const users = pgTable("users", {
   // Así se importan padrones de clientes sin abrirles acceso por accidente.
   passwordHash: text("password_hash"),
   role: userRole("role").notNull().default("client"), // heredado, ver nota arriba
+  /** Null = usuario de un cliente. Ver la nota de `platformRole`. */
+  platformRole: platformRole("platform_role"),
   company: varchar("company", { length: 200 }),
   phone: varchar("phone", { length: 40 }),
   active: boolean("active").notNull().default(true),

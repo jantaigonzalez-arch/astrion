@@ -1,7 +1,7 @@
 /**
  * Importación del sistema anterior (4 CSV) a la base de Evoelution.
  *
- *   npx tsx scripts/import-legacy.ts --dir <carpeta> [--dry-run] [--wipe]
+ *   npx tsx scripts/import-legacy.ts --dir <carpeta> --tenant <slug> [--dry-run] [--wipe]
  *
  * Propiedades del importador, en orden de importancia:
  *
@@ -27,7 +27,8 @@ import "./_env"; // DEBE ir primero: ver el comentario en scripts/_env.ts
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { sql } from "drizzle-orm";
-import { getDb } from "../src/lib/db";
+import { tenantDbFor } from "../src/lib/tenancy/context";
+import { schemaNameFor } from "../src/lib/db/platform";
 import {
   contractEquipment,
   contracts,
@@ -331,7 +332,14 @@ async function main() {
   }
 
   /* ---------- 4. Escritura ---------- */
-  const db = getDb();
+  // Las tablas de negocio viven en el esquema del inquilino, no en `public`.
+  // Sin --tenant no hay a dónde escribir, y eso es correcto: importar a la
+  // empresa equivocada es peor que no importar.
+  const slugArg = args[args.indexOf("--tenant") + 1];
+  if (!slugArg || slugArg.startsWith("--")) {
+    throw new Error("Falta --tenant <slug>: indicá a qué empresa se importa.");
+  }
+  const db = tenantDbFor(schemaNameFor(slugArg));
   const counts = {
     orgs: 0, labs: 0, techs: 0, equipos: 0, modulos: 0,
     contratos: 0, contratoEquipos: 0, tickets: 0, comentarios: 0, refacciones: 0,

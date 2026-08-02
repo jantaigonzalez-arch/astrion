@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { and, eq, ne, sql } from "drizzle-orm";
-import { getDb } from "@/lib/db";
+import { tenantDb } from "@/lib/tenancy/context";
 import {
   crmActivities,
   crmAutomations,
@@ -81,7 +81,7 @@ async function runStageAutomations(
   userId: string,
 ) {
   try {
-    const db = getDb();
+    const db = await tenantDb();
     const rules = await db
       .select()
       .from(crmAutomations)
@@ -168,7 +168,7 @@ export async function createDeal(
   if (!parsed.success) return { ok: false, error: "invalid" };
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
 
     // Negocio + su evento de alta + calificación del lead son un solo hecho:
     // o quedan los tres, o ninguno. Antes eran escrituras sueltas y un fallo
@@ -272,7 +272,7 @@ export async function updateDeal(
   if (!parsed.success) return { ok: false, error: "invalid" };
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
     const [current] = await db
       .select({ id: crmDeals.id, stageId: crmDeals.stageId })
       .from(crmDeals)
@@ -328,7 +328,7 @@ export async function moveDeal(formData: FormData) {
   const index = Number(formData.get("index") ?? 0);
   if (!dealId || !stageId) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   const [deal] = await db
     .select({ id: crmDeals.id, stageId: crmDeals.stageId })
     .from(crmDeals)
@@ -383,7 +383,7 @@ export async function setDealStatus(formData: FormData) {
   const lostReason = (formData.get("lostReason") as string) || null;
   if (!dealId || !["open", "won", "lost"].includes(status)) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   await db
     .update(crmDeals)
     .set({
@@ -408,7 +408,7 @@ export async function deleteDeal(formData: FormData) {
   if (!isAdminRole(session?.user?.role)) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  const db = getDb();
+  const db = await tenantDb();
   // El borrado es duro y arrastra actividades, notas y líneas por cascada.
   // El evento con snapshot queda como única copia de lo que había.
   await db.transaction(async (tx) => {
@@ -445,7 +445,7 @@ const OrgSchema = z.object({
  * esa misma cuenta (el mismo invariante que aplica `updateUser`).
  */
 async function enforceSingleClientLink(clientId: string, orgId: string) {
-  const db = getDb();
+  const db = await tenantDb();
   const stale = await db
     .update(crmOrganizations)
     .set({ clientId: null })
@@ -480,7 +480,7 @@ export async function createOrganization(
   if (!parsed.success) return { ok: false, error: "invalid" };
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
     const [created] = await db
       .insert(crmOrganizations)
       .values({
@@ -521,7 +521,7 @@ export async function updateOrganization(
   if (!parsed.success) return { ok: false, error: "invalid" };
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
     await db
       .update(crmOrganizations)
       .set({
@@ -554,7 +554,7 @@ export async function deleteOrganization(formData: FormData) {
   if (!isAdminRole(session?.user?.role)) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  const db = getDb();
+  const db = await tenantDb();
   await db.transaction(async (tx) => {
     const [row] = await tx
       .delete(crmOrganizations)
@@ -614,7 +614,7 @@ export async function createContact(
   if (!parsed.success) return { ok: false, error: "invalid" };
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
     const [created] = await db
       .insert(crmContacts)
       .values({
@@ -652,7 +652,7 @@ export async function updateContact(
   if (!parsed.success) return { ok: false, error: "invalid" };
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
     await db
       .update(crmContacts)
       .set({
@@ -679,7 +679,7 @@ export async function deleteContact(formData: FormData) {
   if (!isAdminRole(session?.user?.role)) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  const db = getDb();
+  const db = await tenantDb();
   await db.transaction(async (tx) => {
     const [row] = await tx
       .delete(crmContacts)
@@ -713,7 +713,7 @@ export async function createActivity(formData: FormData) {
   const ownerId = (formData.get("ownerId") as string) || session.user.id;
   if (!subject) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   await db.insert(crmActivities).values({
     subject,
     type: type as "call" | "meeting" | "email" | "task" | "demo" | "visit",
@@ -740,7 +740,7 @@ export async function toggleActivity(formData: FormData) {
   const done = formData.get("done") === "1";
   if (!id) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   const [row] = await db
     .update(crmActivities)
     .set({ done, doneAt: done ? new Date() : null })
@@ -755,7 +755,7 @@ export async function deleteActivity(formData: FormData) {
   if (!session) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  const db = getDb();
+  const db = await tenantDb();
   const row = await db.transaction(async (tx) => {
     const [deleted] = await tx
       .delete(crmActivities)
@@ -786,7 +786,7 @@ export async function createNote(formData: FormData) {
   const organizationId = (formData.get("organizationId") as string) || null;
   if (!body) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   await db.insert(crmNotes).values({
     body,
     dealId,
@@ -804,7 +804,7 @@ export async function deleteNote(formData: FormData) {
   if (!session) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  const db = getDb();
+  const db = await tenantDb();
   const row = await db.transaction(async (tx) => {
     const [deleted] = await tx
       .delete(crmNotes)
@@ -834,7 +834,7 @@ export async function createStage(formData: FormData) {
   const probability = Number(formData.get("probability") ?? 50);
   if (!pipelineId || !name) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   const [{ maxOrder }] = await db
     .select({ maxOrder: sql<number>`coalesce(max(${crmStages.order}), -1)::int` })
     .from(crmStages)
@@ -862,7 +862,7 @@ export async function updateStage(formData: FormData) {
   const rottingDays = Number(formData.get("rottingDays") ?? 0);
   if (!id || !name) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   await db
     .update(crmStages)
     .set({
@@ -885,7 +885,7 @@ export async function moveStage(formData: FormData) {
   const dir = String(formData.get("dir") ?? "");
   if (!id || !["up", "down"].includes(dir)) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   const [stage] = await db
     .select()
     .from(crmStages)
@@ -924,7 +924,7 @@ export async function deleteStage(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   // La comprobación de "etapa vacía" y el borrado van en la misma transacción:
   // sueltas, alguien podía mover un negocio a esta etapa entre el count y el
   // delete, y la cascada de crm_stages se lo habría llevado.
@@ -963,7 +963,7 @@ export async function convertLeadToDeal(formData: FormData) {
   const pipelineId = String(formData.get("pipelineId") ?? "");
   if (!leadId || !pipelineId) return;
 
-  const db = getDb();
+  const db = await tenantDb();
 
   // Convertir un lead crea hasta 4 filas enlazadas (organización, contacto,
   // negocio, evento) y marca el lead. Sin transacción, un fallo a mitad dejaba

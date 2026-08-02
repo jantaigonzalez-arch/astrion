@@ -1,7 +1,8 @@
 "use server";
 
 import { z } from "zod";
-import { getDb, isDbConfigured } from "@/lib/db";
+import { isDbConfigured } from "@/lib/db";
+import { tenantDb } from "@/lib/tenancy/context";
 import { leads } from "@/lib/db/schema";
 
 const LeadSchema = z.object({
@@ -38,7 +39,7 @@ export async function submitLead(
   }
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
     await db.insert(leads).values({
       name: parsed.data.name,
       email: parsed.data.email.toLowerCase(),

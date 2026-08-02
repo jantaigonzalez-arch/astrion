@@ -1,6 +1,6 @@
 import "server-only";
 import { eq } from "drizzle-orm";
-import { getDb } from "@/lib/db";
+import { tenantDb } from "@/lib/tenancy/context";
 import { settings } from "@/lib/db/schema";
 
 export type AppSettings = {
@@ -11,7 +11,7 @@ export type AppSettings = {
 const DEFAULTS: AppSettings = { laborCostPerHour: 0, laborRatePerHour: 0 };
 
 export async function getSettings(): Promise<AppSettings> {
-  const db = getDb();
+  const db = await tenantDb();
   const [row] = await db
     .select()
     .from(settings)

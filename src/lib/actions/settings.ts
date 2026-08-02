@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getDb } from "@/lib/db";
+import { tenantDb } from "@/lib/tenancy/context";
 import { settings } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
 import { isAdminRole } from "@/lib/roles";
@@ -27,7 +27,7 @@ export async function updateSettings(
   const laborRatePerHour = money(formData.get("laborRatePerHour"));
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
     await db
       .insert(settings)
       .values({ id: "global", laborCostPerHour, laborRatePerHour })

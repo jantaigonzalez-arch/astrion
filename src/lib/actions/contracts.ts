@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
-import { getDb } from "@/lib/db";
+import { tenantDb } from "@/lib/tenancy/context";
 import { contracts, contractEquipment, equipment } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
 import { isAdminRole, isSalesRole } from "@/lib/roles";
@@ -66,7 +66,7 @@ export async function createContract(
   const number = parsed.data.number.trim();
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
 
     const [dup] = await db
       .select({ id: contracts.id })
@@ -143,7 +143,7 @@ export async function updateContract(
   const number = parsed.data.number.trim();
 
   try {
-    const db = getDb();
+    const db = await tenantDb();
 
     const [current] = await db
       .select({ id: contracts.id, clientId: contracts.clientId })
@@ -205,7 +205,7 @@ export async function deleteContract(formData: FormData) {
   if (!isAdminRole(session?.user?.role)) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
-  const db = getDb();
+  const db = await tenantDb();
   // Un contrato es un documento con dinero: su baja es el borrado con más peso
   // de auditoría del sistema. Se guardan también los equipos que amparaba,
   // porque la cascada de contract_equipment se los lleva.
@@ -240,7 +240,7 @@ export async function toggleContractEquipment(formData: FormData) {
   const attach = formData.get("attach") === "1";
   if (!contractId || !equipmentId) return;
 
-  const db = getDb();
+  const db = await tenantDb();
   if (attach) {
     await db.insert(contractEquipment).values({ contractId, equipmentId }).onConflictDoNothing();
   } else {

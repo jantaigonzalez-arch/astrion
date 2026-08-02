@@ -23,7 +23,10 @@ export default async function PortalAppLayout({
   return (
     <SessionProvider session={session}>
       <div className="flex min-h-screen">
-        <Sidebar role={session!.user.role} />
+        <Sidebar
+            role={session!.user.role}
+            platform={Boolean(session!.user.platformRole)}
+          />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar name={session!.user.name} email={session!.user.email} />
           <main className="print-main flex-1 bg-background p-6 lg:p-8">{children}</main>

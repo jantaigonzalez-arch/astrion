@@ -120,6 +120,13 @@
       "when": 1785552942856,
       "tag": "0016_tenant_seed",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785633251630,
+      "tag": "0017_lowly_mister_sinister",
+      "breakpoints": true
     }
   ]
 }
