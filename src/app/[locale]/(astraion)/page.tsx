@@ -4,6 +4,7 @@ import { Link } from "@/i18n/navigation";
 import { getCopy } from "@/components/astraion/copy";
 import { Starfield } from "@/components/astraion/starfield";
 import { GapMeter } from "@/components/astraion/gap-meter";
+import { DecisionForecast } from "@/components/astraion/decision-forecast";
 import s from "./astraion.module.css";
 
 export async function generateMetadata({
@@ -72,15 +73,49 @@ export default async function PlataformaPage({
         </div>
 
         <div className={`${s.wrap} ${s.heroInner}`}>
-          <p className={s.eyebrow}>{t.hero.eyebrow}</p>
+          <div className={s.heroGrid}>
+            <div className={s.heroCol}>
+              <p className={s.eyebrow}>{t.hero.eyebrow}</p>
 
-          <h1 className={s.heroTitle}>
-            {t.hero.title1}
-            <br />
-            <em>{t.hero.title2}</em>
-          </h1>
+              <h1 className={s.heroTitle}>
+                {t.hero.title1}
+                <br />
+                <em>{t.hero.title2}</em>
+              </h1>
 
-          <p className={s.lede}>{t.hero.lede}</p>
+              <p className={s.lede}>{t.hero.lede}</p>
+            </div>
+
+            {/* El titular dice que una empresa grande responde con un
+                pronóstico. Aquí está ese pronóstico: dato del ERP, modelo y
+                decisión en un solo objeto. */}
+            <figure className={s.fcast}>
+              <div className={s.fcastHead}>
+                <p className={s.fcastTitle}>
+                  {t.forecast.title}
+                  <span className={s.fcastPart}>{t.forecast.part}</span>
+                </p>
+                <span className={s.fcastTag}>{t.forecast.tag}</span>
+              </div>
+
+              <DecisionForecast
+                className={s.fcastCanvas}
+                labels={{
+                  history: t.forecast.history,
+                  model: t.forecast.model,
+                  today: t.forecast.today,
+                }}
+              />
+
+              <div className={s.fcastReadout}>
+                <span className={s.label}>{t.forecast.readoutLabel}</span>
+                <span className={s.value}>{t.forecast.readoutValue}</span>
+                <span className={s.unit}>{t.forecast.readoutUnit}</span>
+              </div>
+
+              <figcaption className={s.fcastFoot}>{t.forecast.foot}</figcaption>
+            </figure>
+          </div>
 
           <div className={s.spectrum} role="img" aria-label={t.hero.spectrumNote} />
           <div className={s.spectrumKey}>

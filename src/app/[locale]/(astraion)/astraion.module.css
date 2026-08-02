@@ -179,6 +179,108 @@
   font-weight: 500;
 }
 
+/* ---------------- Encabezado a dos columnas ----------------
+   El titular ocupa 17ch por diseño, así que en pantallas anchas sobraba media
+   pantalla. Ahí va el pronóstico: no es relleno, es el argumento del titular
+   hecho objeto. */
+.heroGrid {
+  display: grid;
+  gap: 34px;
+  align-items: center;
+}
+@media (min-width: 1060px) {
+  .heroGrid {
+    grid-template-columns: minmax(0, 1.05fr) minmax(380px, 0.95fr);
+    gap: 56px;
+  }
+}
+.heroCol {
+  display: grid;
+  gap: 30px;
+  align-content: start;
+}
+
+/* Panel del pronóstico */
+.fcast {
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: linear-gradient(180deg, rgb(17 23 42 / 0.86), rgb(9 13 24 / 0.9));
+  backdrop-filter: blur(3px);
+  padding: 20px 22px 18px;
+  display: grid;
+  gap: 14px;
+}
+.fcastHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.fcastTitle {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.fcastPart {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-transform: none;
+}
+.fcastTag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 100px;
+  padding: 3px 9px;
+  white-space: nowrap;
+}
+.fcastCanvas {
+  display: block;
+  width: 100%;
+  height: 176px;
+}
+.fcastReadout {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 14px;
+}
+.fcastReadout .label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--muted);
+  flex: 1;
+}
+.fcastReadout .value {
+  font-family: var(--serif);
+  font-size: 2rem;
+  line-height: 1;
+  color: var(--halpha-lit);
+  font-variant-numeric: tabular-nums;
+}
+.fcastReadout .unit {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+.fcastFoot {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: 0;
+}
+
 /* Espectro de emisión: la firma visual de la página */
 .spectrum {
   height: 54px;

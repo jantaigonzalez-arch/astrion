@@ -24,6 +24,19 @@ const es = {
     spectrumStrong: "Astraion hace eso con la operación de una empresa.",
   },
 
+  forecast: {
+    tag: "Ejemplo",
+    title: "Consumo mensual",
+    part: "Sello de bomba · WAT270919",
+    history: "histórico",
+    model: "pronóstico",
+    today: "hoy",
+    readoutLabel: "Punto de reorden sugerido",
+    readoutValue: "8",
+    readoutUnit: "piezas",
+    foot: "Sale del libro mayor de inventario. Nadie captura nada aparte.",
+  },
+
   duel: {
     question: "«¿Cuántas bombas de HPLC compro este trimestre?»",
     caption: "La misma pregunta, dos empresas.",
@@ -174,6 +187,19 @@ const en = {
     spectrumNote:
       "An astronomer knows what a star is made of by reading its emission lines. A chromatographer identifies a compound by its retention peak. Same gesture: measure a signal to learn what is inside.",
     spectrumStrong: "Astraion does that with a company's operation.",
+  },
+
+  forecast: {
+    tag: "Example",
+    title: "Monthly consumption",
+    part: "Pump seal · WAT270919",
+    history: "history",
+    model: "forecast",
+    today: "today",
+    readoutLabel: "Suggested reorder point",
+    readoutValue: "8",
+    readoutUnit: "units",
+    foot: "It comes from the inventory ledger. Nobody keys in anything extra.",
   },
 
   duel: {
