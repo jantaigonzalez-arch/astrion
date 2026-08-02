@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { setRequestLocale } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
-import { getCopy } from "@/components/plataforma/copy";
-import { Starfield } from "@/components/plataforma/starfield";
-import { GapMeter } from "@/components/plataforma/gap-meter";
-import s from "./plataforma.module.css";
+import { getCopy } from "@/components/astraion/copy";
+import { Starfield } from "@/components/astraion/starfield";
+import { GapMeter } from "@/components/astraion/gap-meter";
+import s from "./astraion.module.css";
 
 export async function generateMetadata({
   params,
@@ -14,9 +14,13 @@ export async function generateMetadata({
   const { locale } = await params;
   const en = locale === "en";
   return {
-    title: en
-      ? "Closing the gap — ERP with Machine Learning for small companies"
-      : "Cerrar la brecha — ERP con Machine Learning para empresas pequeñas",
+    // `absolute` ignora la plantilla del layout raíz: el título ya dice
+    // Astraion y repetirlo daría "Astraion — … · Astraion".
+    title: {
+      absolute: en
+        ? "Astraion — ERP with Machine Learning for small companies"
+        : "Astraion — ERP con Machine Learning para empresas pequeñas",
+    },
     description: en
       ? "Small companies don't decide worse. They decide with less. An ERP that keeps its history so the models can ride along."
       : "La empresa chica no decide peor: decide con menos. Un ERP que guarda su historia para que los modelos viajen con él.",
@@ -57,8 +61,8 @@ export default async function PlataformaPage({
               <span className={s.brandName}>{t.brand}</span>
             </div>
             <div className={s.topLinks}>
-              <Link href="/" className={s.linkGhost}>
-                {t.nav.producto}
+              <Link href="/evoelution" className={s.linkGhost}>
+                {t.nav.caso}
               </Link>
               <Link href="/login" className={s.linkSolid}>
                 {t.nav.entrar}
@@ -227,6 +231,13 @@ export default async function PlataformaPage({
             <br />
             <em>{t.status.title2}</em>
           </h2>
+
+          {/* El caso: quién es Evoelution y por qué sus cifras son reales */}
+          <article className={s.caseCard}>
+            <p className={s.kicker}>{t.status.caseKicker}</p>
+            <h3>{t.status.caseTitle}</h3>
+            <p>{t.status.caseBody}</p>
+          </article>
 
           <div className={s.figures}>
             {t.status.figures.map((f) => (

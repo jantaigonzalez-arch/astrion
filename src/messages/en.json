@@ -1,7 +1,9 @@
 {
   "meta": {
-    "title": "Evoelution — Analytical automation & chromatography",
-    "description": "A 100% Mexican company specialized in chromatography. Maintenance, validation, training and analytical automation for laboratories, backed by 20 years of experience."
+    "title": "Astraion — ERP with Machine Learning for small companies",
+    "description": "An ERP that keeps its history so the models can ride along. So small companies stop deciding from memory.",
+    "evoTitle": "Evoelution — Analytical automation & chromatography",
+    "evoDescription": "A 100% Mexican company specialized in chromatography. Maintenance, validation, training and analytical automation for laboratories, backed by 20 years of experience."
   },
   "nav": {
     "home": "Home",
@@ -66,10 +68,22 @@
     "eyebrow": "Why Evoelution",
     "title": "The technical partner your operation deserves",
     "items": {
-      "experience": { "title": "Two decades of expertise", "desc": "Over 50,000 services delivered with precision." },
-      "response": { "title": "Immediate response", "desc": "Guaranteed remote contact in under 2 hours." },
-      "traceable": { "title": "NIST traceability", "desc": "Auditable calibrations and validations end to end." },
-      "automation": { "title": "Analytical automation", "desc": "We digitize lab workflows with ML and data integration." }
+      "experience": {
+        "title": "Two decades of expertise",
+        "desc": "Over 50,000 services delivered with precision."
+      },
+      "response": {
+        "title": "Immediate response",
+        "desc": "Guaranteed remote contact in under 2 hours."
+      },
+      "traceable": {
+        "title": "NIST traceability",
+        "desc": "Auditable calibrations and validations end to end."
+      },
+      "automation": {
+        "title": "Analytical automation",
+        "desc": "We digitize lab workflows with ML and data integration."
+      }
     }
   },
   "brands": {
@@ -133,23 +147,42 @@
       "stats": {
         "lead": "Built for the rigor of a regulated lab",
         "items": [
-          { "value": "Waters Empower 3", "label": "native .dat parser" },
-          { "value": "< 60 s", "label": "from file to report" },
-          { "value": "±2σ / ±3σ", "label": "Levey-Jennings limits" },
-          { "value": "0–100%", "label": "anomaly score per run" }
+          {
+            "value": "Waters Empower 3",
+            "label": "native .dat parser"
+          },
+          {
+            "value": "< 60 s",
+            "label": "from file to report"
+          },
+          {
+            "value": "±2σ / ±3σ",
+            "label": "Levey-Jennings limits"
+          },
+          {
+            "value": "0–100%",
+            "label": "anomaly score per run"
+          }
         ]
       },
       "problem": {
         "eyebrow": "The problem",
         "kicker": "From raw data to resolved",
-        "tags": ["Proprietary binary", "Hard to audit"],
+        "tags": [
+          "Proprietary binary",
+          "Hard to audit"
+        ],
         "points": [
           "Every run stays as a .dat binary on the instrument's PC",
           "Proprietary formats and unprocessed signal block any analysis",
           "No traceability or comparison across sequences",
           "Quality control is reactive, never predictive"
         ],
-        "annotations": ["Unfiltered noise", "Unresolved peaks", "Drifting baseline"],
+        "annotations": [
+          "Unfiltered noise",
+          "Unresolved peaks",
+          "Drifting baseline"
+        ],
         "link": "Why chromatography needs to be replatformed"
       },
       "pipeline": {
@@ -157,11 +190,31 @@
         "title": "One pipeline, from raw signal to insight",
         "subtitle": "Every run flows through the same deterministic, auditable path.",
         "steps": [
-          { "name": "Ingest", "tag": ".dat", "desc": "Drag & drop upload, single or batch. Native Waters Empower 3 parser." },
-          { "name": "Signal processing", "tag": "SciPy", "desc": "Savitzky-Golay smoothing and ALS baseline correction (Eilers & Boelens)." },
-          { "name": "Peak detection", "tag": "find_peaks", "desc": "RT, height, area, FWHM and SNR per peak, with parameters tunable live." },
-          { "name": "Quality control", "tag": "Levey-Jennings", "desc": "Control charts with ±2σ / ±3σ limits and configurable specifications." },
-          { "name": "ML Insights", "tag": "scikit-learn", "desc": "Unsupervised anomaly detection and automatic run clustering." }
+          {
+            "name": "Ingest",
+            "tag": ".dat",
+            "desc": "Drag & drop upload, single or batch. Native Waters Empower 3 parser."
+          },
+          {
+            "name": "Signal processing",
+            "tag": "SciPy",
+            "desc": "Savitzky-Golay smoothing and ALS baseline correction (Eilers & Boelens)."
+          },
+          {
+            "name": "Peak detection",
+            "tag": "find_peaks",
+            "desc": "RT, height, area, FWHM and SNR per peak, with parameters tunable live."
+          },
+          {
+            "name": "Quality control",
+            "tag": "Levey-Jennings",
+            "desc": "Control charts with ±2σ / ±3σ limits and configurable specifications."
+          },
+          {
+            "name": "ML Insights",
+            "tag": "scikit-learn",
+            "desc": "Unsupervised anomaly detection and automatic run clustering."
+          }
         ]
       },
       "features": {
@@ -169,12 +222,30 @@
         "title": "The whole analytical cycle, in one platform",
         "subtitle": "Designed with and for analytical chemists.",
         "items": [
-          { "name": "Single analysis", "desc": "Interactive chromatogram: raw, smoothed, baseline and corrected signal. Peak table per run." },
-          { "name": "Trending & QC", "desc": "Levey-Jennings charts, automatic statistical limits and an alert panel linking straight to each run." },
-          { "name": "ML Insights", "desc": "Isolation Forest for anomalies, 2D PCA of the feature space and KMeans to cluster similar runs." },
-          { "name": "Auditable reports", "desc": "Export to PDF with Evoelution branding and CSV, ready for quality review." },
-          { "name": "API-first", "desc": "Documented FastAPI backend: integrate Evo_AI with your LIMS or existing workflows." },
-          { "name": "Simple deployment", "desc": "Docker Compose + Nginx. On-premise or in the cloud — you decide where the data lives." }
+          {
+            "name": "Single analysis",
+            "desc": "Interactive chromatogram: raw, smoothed, baseline and corrected signal. Peak table per run."
+          },
+          {
+            "name": "Trending & QC",
+            "desc": "Levey-Jennings charts, automatic statistical limits and an alert panel linking straight to each run."
+          },
+          {
+            "name": "ML Insights",
+            "desc": "Isolation Forest for anomalies, 2D PCA of the feature space and KMeans to cluster similar runs."
+          },
+          {
+            "name": "Auditable reports",
+            "desc": "Export to PDF with Evoelution branding and CSV, ready for quality review."
+          },
+          {
+            "name": "API-first",
+            "desc": "Documented FastAPI backend: integrate Evo_AI with your LIMS or existing workflows."
+          },
+          {
+            "name": "Simple deployment",
+            "desc": "Docker Compose + Nginx. On-premise or in the cloud — you decide where the data lives."
+          }
         ]
       },
       "ml": {
@@ -182,9 +253,18 @@
         "title": "Machine learning an analyst can understand",
         "body": "No black boxes. Evo_AI uses interpretable, industry-standard methods to flag which run is off-pattern and why.",
         "methods": [
-          { "name": "Isolation Forest", "desc": "Unsupervised anomaly detection. Runs ranked with a 0–100% score." },
-          { "name": "2D PCA", "desc": "Feature-space projection to visually see what clusters and what drifts away." },
-          { "name": "KMeans", "desc": "Automatic clustering that identifies distinct methods or conditions." }
+          {
+            "name": "Isolation Forest",
+            "desc": "Unsupervised anomaly detection. Runs ranked with a 0–100% score."
+          },
+          {
+            "name": "2D PCA",
+            "desc": "Feature-space projection to visually see what clusters and what drifts away."
+          },
+          {
+            "name": "KMeans",
+            "desc": "Automatic clustering that identifies distinct methods or conditions."
+          }
         ]
       },
       "compliance": {
@@ -211,7 +291,12 @@
   },
   "footer": {
     "tagline": "Analytical automation & chromatography. 100% Mexican.",
-    "sections": { "company": "Company", "services": "Services", "legal": "Legal", "contact": "Contact" },
+    "sections": {
+      "company": "Company",
+      "services": "Services",
+      "legal": "Legal",
+      "contact": "Contact"
+    },
     "privacy": "Privacy policy",
     "terms": "Terms",
     "rights": "All rights reserved."

@@ -42,7 +42,7 @@ export function Navbar() {
       )}
     >
       <Container className="flex h-16 items-center justify-between gap-4">
-        <Link href="/" aria-label="Evoelution" className="shrink-0">
+        <Link href="/evoelution" aria-label="Evoelution" className="shrink-0">
           <Logo />
         </Link>
 

@@ -1,7 +1,9 @@
 {
   "meta": {
-    "title": "Evoelution — Automatización analítica y cromatografía",
-    "description": "Empresa 100% mexicana especializada en cromatografía. Mantenimiento, validación, capacitación y automatización analítica para laboratorios con 20 años de experiencia."
+    "title": "Astraion — ERP con Machine Learning para empresas pequeñas",
+    "description": "Un ERP que guarda su historia para que los modelos viajen con él. Para que la empresa chica deje de decidir de memoria.",
+    "evoTitle": "Evoelution — Automatización analítica y cromatografía",
+    "evoDescription": "Empresa 100% mexicana especializada en cromatografía. Mantenimiento, validación, capacitación y automatización analítica para laboratorios con 20 años de experiencia."
   },
   "nav": {
     "home": "Inicio",
@@ -66,10 +68,22 @@
     "eyebrow": "Por qué Evoelution",
     "title": "El aliado técnico que tu operación merece",
     "items": {
-      "experience": { "title": "Dos décadas de experiencia", "desc": "Más de 50,000 servicios ejecutados con precisión." },
-      "response": { "title": "Respuesta inmediata", "desc": "Contacto remoto en menos de 2 horas garantizado." },
-      "traceable": { "title": "Trazabilidad NIST", "desc": "Calibraciones y validaciones auditables de extremo a extremo." },
-      "automation": { "title": "Automatización analítica", "desc": "Digitalizamos flujos de laboratorio con ML e integración de datos." }
+      "experience": {
+        "title": "Dos décadas de experiencia",
+        "desc": "Más de 50,000 servicios ejecutados con precisión."
+      },
+      "response": {
+        "title": "Respuesta inmediata",
+        "desc": "Contacto remoto en menos de 2 horas garantizado."
+      },
+      "traceable": {
+        "title": "Trazabilidad NIST",
+        "desc": "Calibraciones y validaciones auditables de extremo a extremo."
+      },
+      "automation": {
+        "title": "Automatización analítica",
+        "desc": "Digitalizamos flujos de laboratorio con ML e integración de datos."
+      }
     }
   },
   "brands": {
@@ -133,23 +147,42 @@
       "stats": {
         "lead": "Construida para el rigor de un laboratorio regulado",
         "items": [
-          { "value": "Waters Empower 3", "label": "parser nativo de .dat" },
-          { "value": "< 60 s", "label": "de archivo a reporte" },
-          { "value": "±2σ / ±3σ", "label": "límites Levey-Jennings" },
-          { "value": "0–100%", "label": "score de anomalía por corrida" }
+          {
+            "value": "Waters Empower 3",
+            "label": "parser nativo de .dat"
+          },
+          {
+            "value": "< 60 s",
+            "label": "de archivo a reporte"
+          },
+          {
+            "value": "±2σ / ±3σ",
+            "label": "límites Levey-Jennings"
+          },
+          {
+            "value": "0–100%",
+            "label": "score de anomalía por corrida"
+          }
         ]
       },
       "problem": {
         "eyebrow": "El problema",
         "kicker": "De datos crudos a resueltos",
-        "tags": ["Binario propietario", "Difícil de auditar"],
+        "tags": [
+          "Binario propietario",
+          "Difícil de auditar"
+        ],
         "points": [
           "Cada corrida queda como un binario .dat en la PC del equipo",
           "Formatos propietarios y señal sin procesar frenan cualquier análisis",
           "Sin trazabilidad ni comparación entre secuencias",
           "El control de calidad es reactivo, nunca predictivo"
         ],
-        "annotations": ["Ruido sin filtrar", "Picos sin resolver", "Línea base a la deriva"],
+        "annotations": [
+          "Ruido sin filtrar",
+          "Picos sin resolver",
+          "Línea base a la deriva"
+        ],
         "link": "Por qué la cromatografía necesita replataformizarse"
       },
       "pipeline": {
@@ -157,11 +190,31 @@
         "title": "Un pipeline, de la señal cruda al insight",
         "subtitle": "Cada corrida atraviesa el mismo flujo determinista y auditable.",
         "steps": [
-          { "name": "Ingesta", "tag": ".dat", "desc": "Carga por drag & drop, individual o por lote. Parser nativo de Waters Empower 3." },
-          { "name": "Procesamiento de señal", "tag": "SciPy", "desc": "Suavizado Savitzky-Golay y corrección de baseline ALS (Eilers & Boelens)." },
-          { "name": "Detección de picos", "tag": "find_peaks", "desc": "RT, altura, área, FWHM y SNR por pico, con parámetros ajustables en vivo." },
-          { "name": "Control de calidad", "tag": "Levey-Jennings", "desc": "Cartas de control con límites ±2σ / ±3σ y especificaciones configurables." },
-          { "name": "ML Insights", "tag": "scikit-learn", "desc": "Anomalías no supervisadas y agrupamiento automático de corridas." }
+          {
+            "name": "Ingesta",
+            "tag": ".dat",
+            "desc": "Carga por drag & drop, individual o por lote. Parser nativo de Waters Empower 3."
+          },
+          {
+            "name": "Procesamiento de señal",
+            "tag": "SciPy",
+            "desc": "Suavizado Savitzky-Golay y corrección de baseline ALS (Eilers & Boelens)."
+          },
+          {
+            "name": "Detección de picos",
+            "tag": "find_peaks",
+            "desc": "RT, altura, área, FWHM y SNR por pico, con parámetros ajustables en vivo."
+          },
+          {
+            "name": "Control de calidad",
+            "tag": "Levey-Jennings",
+            "desc": "Cartas de control con límites ±2σ / ±3σ y especificaciones configurables."
+          },
+          {
+            "name": "ML Insights",
+            "tag": "scikit-learn",
+            "desc": "Anomalías no supervisadas y agrupamiento automático de corridas."
+          }
         ]
       },
       "features": {
@@ -169,12 +222,30 @@
         "title": "Todo el ciclo analítico, en una sola plataforma",
         "subtitle": "Diseñada con y para químicos analíticos.",
         "items": [
-          { "name": "Análisis individual", "desc": "Cromatograma interactivo: señal raw, suavizada, baseline y corregida. Tabla de picos por corrida." },
-          { "name": "Trending & QC", "desc": "Cartas Levey-Jennings, límites estadísticos automáticos y panel de alertas con acceso directo a cada corrida." },
-          { "name": "ML Insights", "desc": "Isolation Forest para anomalías, PCA 2D del espacio de features y KMeans para agrupar corridas similares." },
-          { "name": "Reportes auditables", "desc": "Exportación a PDF con marca Evoelution y CSV, listos para revisión de calidad." },
-          { "name": "API-first", "desc": "Backend FastAPI documentado: integra Evo_AI con tu LIMS o tus flujos existentes." },
-          { "name": "Despliegue simple", "desc": "Docker Compose + Nginx. On-premise o en la nube — tú decides dónde vive el dato." }
+          {
+            "name": "Análisis individual",
+            "desc": "Cromatograma interactivo: señal raw, suavizada, baseline y corregida. Tabla de picos por corrida."
+          },
+          {
+            "name": "Trending & QC",
+            "desc": "Cartas Levey-Jennings, límites estadísticos automáticos y panel de alertas con acceso directo a cada corrida."
+          },
+          {
+            "name": "ML Insights",
+            "desc": "Isolation Forest para anomalías, PCA 2D del espacio de features y KMeans para agrupar corridas similares."
+          },
+          {
+            "name": "Reportes auditables",
+            "desc": "Exportación a PDF con marca Evoelution y CSV, listos para revisión de calidad."
+          },
+          {
+            "name": "API-first",
+            "desc": "Backend FastAPI documentado: integra Evo_AI con tu LIMS o tus flujos existentes."
+          },
+          {
+            "name": "Despliegue simple",
+            "desc": "Docker Compose + Nginx. On-premise o en la nube — tú decides dónde vive el dato."
+          }
         ]
       },
       "ml": {
@@ -182,9 +253,18 @@
         "title": "Machine learning que un analista entiende",
         "body": "Nada de cajas negras. Evo_AI usa métodos interpretables y estándar en la industria para señalar qué corrida se sale de patrón y por qué.",
         "methods": [
-          { "name": "Isolation Forest", "desc": "Detección de anomalías sin supervisión. Ranking de corridas con score 0–100%." },
-          { "name": "PCA 2D", "desc": "Proyección del espacio de features para ver visualmente qué se agrupa y qué se aleja." },
-          { "name": "KMeans", "desc": "Agrupamiento automático que identifica métodos o condiciones distintas." }
+          {
+            "name": "Isolation Forest",
+            "desc": "Detección de anomalías sin supervisión. Ranking de corridas con score 0–100%."
+          },
+          {
+            "name": "PCA 2D",
+            "desc": "Proyección del espacio de features para ver visualmente qué se agrupa y qué se aleja."
+          },
+          {
+            "name": "KMeans",
+            "desc": "Agrupamiento automático que identifica métodos o condiciones distintas."
+          }
         ]
       },
       "compliance": {
@@ -211,7 +291,12 @@
   },
   "footer": {
     "tagline": "Automatización analítica y cromatografía. 100% mexicana.",
-    "sections": { "company": "Empresa", "services": "Servicios", "legal": "Legal", "contact": "Contacto" },
+    "sections": {
+      "company": "Empresa",
+      "services": "Servicios",
+      "legal": "Legal",
+      "contact": "Contacto"
+    },
     "privacy": "Aviso de privacidad",
     "terms": "Términos",
     "rights": "Todos los derechos reservados."

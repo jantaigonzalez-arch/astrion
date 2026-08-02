@@ -10,8 +10,8 @@
 export type PlatformCopy = ReturnType<typeof getCopy>;
 
 const es = {
-  brand: "Evoelution · iniciativa",
-  nav: { producto: "Ver la plataforma", entrar: "Entrar" },
+  brand: "Astraion",
+  nav: { caso: "El caso Evoelution", entrar: "Entrar" },
 
   hero: {
     eyebrow: "ERP + Machine Learning",
@@ -21,7 +21,7 @@ const es = {
       "La brecha con las grandes nunca fue de talento ni de ambición. Fue de infraestructura: equipos de datos, almacenes, ingenieros de modelos. Cosas que se pagan con una nómina que una empresa de treinta personas no tiene. Esta iniciativa parte de que esa brecha ya se puede cerrar.",
     spectrumNote:
       "Un astrónomo sabe de qué está hecha una estrella leyendo sus líneas de emisión. Un cromatógrafo identifica un compuesto por su pico de retención. Es el mismo gesto: medir una señal para saber qué hay dentro.",
-    spectrumStrong: "Esta plataforma hace eso con la operación de una empresa.",
+    spectrumStrong: "Astraion hace eso con la operación de una empresa.",
   },
 
   duel: {
@@ -141,6 +141,10 @@ const es = {
     eyebrow: "Dónde está hoy",
     title1: "El ERP ya opera.",
     title2: "Los modelos vienen detrás de la historia.",
+    caseKicker: "Primer cliente",
+    caseTitle: "Evoelution",
+    caseBody:
+      "Servicio a instrumentación analítica en México. Es el cliente con el que Astraion se está construyendo: dos años y medio de operación real migrados, verificados y corriendo hoy sobre la plataforma. No es una demostración armada para enseñar — es una empresa trabajando.",
     figures: [
       { n: "602", l: "Tickets" },
       { n: "257", l: "Equipos" },
@@ -152,14 +156,14 @@ const es = {
   },
 
   footer: {
-    a: "Evoelution · ERP con Machine Learning",
-    b: "Iniciativa en curso",
+    a: "Astraion · ERP con Machine Learning",
+    b: "Para empresas pequeñas que deciden con datos",
   },
 } as const;
 
 const en = {
-  brand: "Evoelution · initiative",
-  nav: { producto: "See the platform", entrar: "Sign in" },
+  brand: "Astraion",
+  nav: { caso: "The Evoelution case", entrar: "Sign in" },
 
   hero: {
     eyebrow: "ERP + Machine Learning",
@@ -169,7 +173,7 @@ const en = {
       "The gap with large companies was never about talent or ambition. It was infrastructure: data teams, warehouses, ML engineers — things paid for with a payroll a thirty-person company does not have. This initiative starts from the fact that the gap can now be closed.",
     spectrumNote:
       "An astronomer knows what a star is made of by reading its emission lines. A chromatographer identifies a compound by its retention peak. Same gesture: measure a signal to learn what is inside.",
-    spectrumStrong: "This platform does that with a company's operation.",
+    spectrumStrong: "Astraion does that with a company's operation.",
   },
 
   duel: {
@@ -289,6 +293,10 @@ const en = {
     eyebrow: "Where it stands today",
     title1: "The ERP is running.",
     title2: "The models follow the history.",
+    caseKicker: "First client",
+    caseTitle: "Evoelution",
+    caseBody:
+      "Analytical instrument service in Mexico. The client Astraion is being built with: two and a half years of real operation, migrated, verified and running on the platform today. Not a demo assembled to show — a company at work.",
     figures: [
       { n: "602", l: "Tickets" },
       { n: "257", l: "Machines" },
@@ -300,8 +308,8 @@ const en = {
   },
 
   footer: {
-    a: "Evoelution · ERP with Machine Learning",
-    b: "Initiative in progress",
+    a: "Astraion · ERP with Machine Learning",
+    b: "For small companies that decide with data",
   },
 } as const;
 

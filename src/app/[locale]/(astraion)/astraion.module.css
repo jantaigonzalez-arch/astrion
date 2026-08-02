@@ -509,6 +509,26 @@
   font-weight: 500;
 }
 
+.caseCard {
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--halpha);
+  background: var(--panel);
+  border-radius: 3px;
+  padding: 26px;
+  display: grid;
+  gap: 10px;
+  margin-bottom: 22px;
+  max-width: 72ch;
+}
+.caseCard h3 {
+  font-size: 1.5rem;
+}
+.caseCard p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.94rem;
+}
+
 /* ---------------- Cifras ---------------- */
 .figures {
   display: grid;
