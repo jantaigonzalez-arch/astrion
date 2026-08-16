@@ -251,7 +251,13 @@ const BUILTIN: Array<Omit<Row, "builtin">> = [
 
 /** Siembra las de fábrica si faltan. Idempotente: se puede llamar siempre. */
 export async function ensureBuiltins(): Promise<void> {
-  const db = await tenantDb();
+  return ensureBuiltinsIn(await tenantDb());
+}
+
+/** Igual que la anterior con el cliente explícito. Ver `countForIn`. */
+export async function ensureBuiltinsIn(
+  db: Awaited<ReturnType<typeof tenantDb>>,
+): Promise<void> {
   await db
     .insert(mlTemplates)
     .values(BUILTIN.map((b) => ({ ...b, builtin: true })))
@@ -261,13 +267,15 @@ export async function ensureBuiltins(): Promise<void> {
 /* ------------------------- Lectura ------------------------- */
 
 export async function listTemplates(): Promise<Template[]> {
-  await ensureBuiltins();
-  const db = await tenantDb();
-  const rows = await db
-    .select()
-    .from(mlTemplates)
-    .orderBy(asc(mlTemplates.createdAt));
+  return listTemplatesIn(await tenantDb());
+}
 
+/** Igual que la anterior con el cliente explícito. Ver `countForIn`. */
+export async function listTemplatesIn(
+  db: Awaited<ReturnType<typeof tenantDb>>,
+): Promise<Template[]> {
+  await ensureBuiltinsIn(db);
+  const rows = await db.select().from(mlTemplates).orderBy(asc(mlTemplates.createdAt));
   return rows.map((r) => build(r as Row)).filter((t) => t !== null);
 }
 
@@ -342,7 +350,14 @@ async function historyFrom(
  * atrás. Ver `analytics/features.ts`.
  */
 export async function datasetFor(t: Template): Promise<Sample[]> {
-  const db = await tenantDb();
+  return datasetForIn(await tenantDb(), t);
+}
+
+/** Igual que la anterior con el cliente explícito. Ver `countForIn`. */
+export async function datasetForIn(
+  db: Awaited<ReturnType<typeof tenantDb>>,
+  t: Template,
+): Promise<Sample[]> {
   const rows = (await db.execute(sql`
     select * from (${t.query}) d order by at
   `)) as unknown as Array<Record<string, unknown>>;
