@@ -1,11 +1,18 @@
 "use server";
 
 import { z } from "zod";
-import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { revalidateTenant } from "@/lib/revalidate";
+import { redirectAfterAction } from "@/lib/nav-server";
 import { and, eq } from "drizzle-orm";
-import { tenantDb } from "@/lib/tenancy/context";
-import { contracts, contractEquipment, equipment } from "@/lib/db/schema";
+import { tenantDb, currentRole } from "@/lib/tenancy/context";
+import {
+  contracts,
+  contractEquipment,
+  crmDeals,
+  crmOrganizations,
+  equipment,
+} from "@/lib/db/schema";
+import { getTenantMember } from "@/lib/data/people";
 import { auth } from "@/lib/auth";
 import { isAdminRole, isSalesRole } from "@/lib/roles";
 import { recordDeletion } from "@/lib/domain/events";
@@ -42,13 +49,59 @@ const ContractSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 
+/**
+ * Comprueba que las personas del contrato sean de ESTA empresa.
+ *
+ * `clientId` y `salesRepId` solo se validaban como uuid, y la clave foránea
+ * apunta a `public.users` —el padrón de toda la plataforma—, así que bastaba
+ * mandar un uuid con formato correcto para firmar un contrato a nombre de
+ * alguien de otro inquilino. Es la misma comprobación que ya hacen `assignTicket`
+ * y el CRM; aquí faltaba.
+ *
+ * Devuelve `null` cuando algo no cuadra, para que quien llama lo trate como
+ * dato inválido en vez de guardar a medias.
+ */
+async function validateParties(clientId: string, salesRepId?: string) {
+  const client = await getTenantMember(clientId);
+  if (!client?.memberActive || !client.accountActive) return null;
+  // El titular de un contrato es un laboratorio, no un empleado.
+  if (client.role !== "client") return null;
+
+  if (salesRepId) {
+    const rep = await getTenantMember(salesRepId);
+    if (!rep?.memberActive || !rep.accountActive || !isSalesRole(rep.role)) return null;
+    return { clientId: client.id, salesRepId: rep.id };
+  }
+  return { clientId: client.id, salesRepId: null as string | null };
+}
+
+/**
+ * El negocio de origen debe ser del MISMO cliente que el contrato.
+ *
+ * Importa más desde que existe el módulo de Clientes: la regla `ES_CLIENTE`
+ * cuenta «contrato unido a negocio» como prueba de compra, así que un enlace
+ * cruzado convertiría en cliente a una organización que nunca compró nada.
+ * Devuelve `undefined` si el negocio no sirve, para guardarlo sin enlace en vez
+ * de rechazar el contrato entero por un campo opcional.
+ */
+async function validateDeal(dealId: string | undefined, clientId: string) {
+  if (!dealId) return undefined;
+  const db = await tenantDb();
+  const [row] = await db
+    .select({ id: crmDeals.id })
+    .from(crmDeals)
+    .innerJoin(crmOrganizations, eq(crmOrganizations.id, crmDeals.organizationId))
+    .where(and(eq(crmDeals.id, dealId), eq(crmOrganizations.clientId, clientId)))
+    .limit(1);
+  return row?.id;
+}
+
 export async function createContract(
   _prev: ContractState,
   formData: FormData,
 ): Promise<ContractState> {
-  const session = await auth();
   // El administrador da de alta los contratos.
-  if (!isAdminRole(session?.user?.role)) return { ok: false, error: "auth" };
+  if (!isAdminRole(await currentRole())) return { ok: false, error: "auth" };
 
   const parsed = ContractSchema.safeParse({
     number: formData.get("number"),
@@ -65,8 +118,12 @@ export async function createContract(
 
   const number = parsed.data.number.trim();
 
+  const parties = await validateParties(parsed.data.clientId, parsed.data.salesRepId);
+  if (!parties) return { ok: false, error: "invalid" };
+
   try {
     const db = await tenantDb();
+    const dealId = await validateDeal(parsed.data.dealId, parties.clientId);
 
     const [dup] = await db
       .select({ id: contracts.id })
@@ -79,9 +136,9 @@ export async function createContract(
       .insert(contracts)
       .values({
         number,
-        clientId: parsed.data.clientId,
-        salesRepId: parsed.data.salesRepId ?? null,
-        dealId: parsed.data.dealId ?? null,
+        clientId: parties.clientId,
+        salesRepId: parties.salesRepId,
+        dealId: dealId ?? null,
         amountMxn: parsed.data.amountMxn ?? null,
         amountUsd: parsed.data.amountUsd ?? null,
         startDate: parsed.data.startDate ?? null,
@@ -96,7 +153,7 @@ export async function createContract(
       const owned = await db
         .select({ id: equipment.id })
         .from(equipment)
-        .where(eq(equipment.ownerId, parsed.data.clientId));
+        .where(eq(equipment.ownerId, parties.clientId));
       const allowed = new Set(owned.map((e) => e.id));
       const rows = selected
         .filter((id) => allowed.has(id))
@@ -104,11 +161,9 @@ export async function createContract(
       if (rows.length) await db.insert(contractEquipment).values(rows);
     }
 
-    revalidatePath("/admin/contratos");
-    // Si nació de un negocio, su ficha debe mostrar el contrato ya enlazado.
-    if (parsed.data.dealId) {
-      revalidatePath(`/admin/crm/negocios/${parsed.data.dealId}`);
-    }
+    // Una sola llamada cubre el subárbol de la empresa, incluida la ficha del
+    // negocio que originó el contrato.
+    revalidateTenant();
     return { ok: true, number };
   } catch (e) {
     console.error("[contract] create error:", e);
@@ -126,7 +181,9 @@ export async function updateContract(
   formData: FormData,
 ): Promise<ContractState> {
   const session = await auth();
-  if (!isAdminRole(session?.user?.role)) return { ok: false, error: "auth" };
+  if (!session?.user || !isAdminRole(await currentRole())) {
+    return { ok: false, error: "auth" };
+  }
 
   const parsed = UpdateContractSchema.safeParse({
     id: formData.get("id"),
@@ -152,6 +209,12 @@ export async function updateContract(
       .limit(1);
     if (!current) return { ok: false, error: "invalid" };
 
+    // El cliente del contrato no se puede cambiar (el esquema de edición lo
+    // omite), pero el vendedor sí, y llega por formulario: se valida contra el
+    // padrón de la empresa igual que al crearlo.
+    const parties = await validateParties(current.clientId, parsed.data.salesRepId);
+    if (!parties) return { ok: false, error: "invalid" };
+
     // El número debe seguir siendo único (excluyendo este mismo contrato).
     const [dup] = await db
       .select({ id: contracts.id })
@@ -164,7 +227,7 @@ export async function updateContract(
       .update(contracts)
       .set({
         number,
-        salesRepId: parsed.data.salesRepId ?? null,
+        salesRepId: parties.salesRepId,
         amountMxn: parsed.data.amountMxn ?? null,
         amountUsd: parsed.data.amountUsd ?? null,
         startDate: parsed.data.startDate ?? null,
@@ -190,9 +253,7 @@ export async function updateContract(
       .map((equipmentId) => ({ contractId: current.id, equipmentId }));
     if (rows.length) await db.insert(contractEquipment).values(rows);
 
-    revalidatePath("/admin/contratos");
-    revalidatePath(`/admin/contratos/${current.id}`);
-    revalidatePath(`/admin/contratos/${current.id}/editar`);
+    revalidateTenant();
     return { ok: true, number };
   } catch (e) {
     console.error("[contract] update error:", e);
@@ -202,7 +263,7 @@ export async function updateContract(
 
 export async function deleteContract(formData: FormData) {
   const session = await auth();
-  if (!isAdminRole(session?.user?.role)) return;
+  if (!session?.user || !isAdminRole(await currentRole())) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = await tenantDb();
@@ -226,14 +287,35 @@ export async function deleteContract(formData: FormData) {
       extra: { equipmentIds: covered.map((e) => e.equipmentId) },
     });
   });
-  revalidatePath("/admin/contratos");
-  redirect("/admin/contratos");
+  revalidateTenant();
+  await redirectAfterAction("/admin/contratos");
 }
 
-/** Vincula o desvincula un equipo de un contrato existente. */
+/**
+ * Vincula o desvincula un equipo de un contrato existente.
+ *
+ * **Un contrato solo puede amparar equipo de su propio cliente**, y esa
+ * comprobación faltaba justo aquí.
+ *
+ * `createContract` sí filtra —cruza los equipos elegidos contra los del
+ * laboratorio y descarta el resto—, pero esta acción insertaba cualquier id que
+ * llegara en el formulario. La comprobación existía en un camino y faltaba en
+ * el otro, que es exactamente como se cuelan estas cosas.
+ *
+ * Lo que costaba no era teórico. Un equipo ajeno amparado arrastra sus tickets
+ * a la pantalla del contrato —`getTicketsForEquipmentIds` los busca por equipo,
+ * no por cliente—, así que el contrato de un laboratorio terminaba mostrando el
+ * historial de servicio de otro, con sus horas y sus refacciones sumando a la
+ * utilidad consolidada. En estos datos ya hay tres enlaces así, heredados del
+ * importador, que enlaza por número de serie sin mirar de quién es el equipo.
+ *
+ * Desvincular NO se valida: si un enlace equivocado ya existe, hay que poder
+ * quitarlo. Exigir que el equipo fuera del cliente para poder soltarlo dejaría
+ * los errores clavados para siempre.
+ */
 export async function toggleContractEquipment(formData: FormData) {
   const session = await auth();
-  if (!isSalesRole(session?.user?.role)) return;
+  if (!session?.user || !isSalesRole(await currentRole())) return;
 
   const contractId = String(formData.get("contractId") ?? "");
   const equipmentId = String(formData.get("equipmentId") ?? "");
@@ -242,6 +324,14 @@ export async function toggleContractEquipment(formData: FormData) {
 
   const db = await tenantDb();
   if (attach) {
+    const [ok] = await db
+      .select({ id: equipment.id })
+      .from(equipment)
+      .innerJoin(contracts, eq(contracts.clientId, equipment.ownerId))
+      .where(and(eq(equipment.id, equipmentId), eq(contracts.id, contractId)))
+      .limit(1);
+    if (!ok) return;
+
     await db.insert(contractEquipment).values({ contractId, equipmentId }).onConflictDoNothing();
   } else {
     await db
@@ -253,6 +343,5 @@ export async function toggleContractEquipment(formData: FormData) {
         ),
       );
   }
-  revalidatePath(`/admin/contratos/${contractId}`);
-  revalidatePath("/admin/contratos");
+  revalidateTenant();
 }

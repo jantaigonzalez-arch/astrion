@@ -1,9 +1,9 @@
 "use server";
 
 import { z } from "zod";
-import { revalidatePath } from "next/cache";
+import { revalidateTenant } from "@/lib/revalidate";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { tenantDb } from "@/lib/tenancy/context";
+import { tenantDb, currentRole } from "@/lib/tenancy/context";
 import {
   tickets,
   ticketComments,
@@ -13,7 +13,7 @@ import {
   spareParts,
   commentParts,
 } from "@/lib/db/schema";
-import { users } from "@/lib/db/platform";
+import { getTenantMember } from "@/lib/data/people";
 import { auth } from "@/lib/auth";
 import { isSupport } from "@/lib/roles";
 import {
@@ -25,6 +25,7 @@ import {
 import { nextTicketReference } from "@/lib/domain/references";
 import { recordEvent } from "@/lib/domain/events";
 import { consumePart } from "@/lib/domain/inventory";
+import { onTicketOpened, onTicketSettled } from "@/lib/ml/hooks";
 
 const CreateSchema = z.object({
   subject: z.string().min(4).max(240),
@@ -43,7 +44,7 @@ export async function createTicket(
 ): Promise<TicketFormState> {
   const session = await auth();
   if (!session?.user) return { ok: false, error: "auth" };
-  const isStaff = isSupport(session.user.role);
+  const isStaff = isSupport(await currentRole());
 
   const parsed = CreateSchema.safeParse({
     subject: formData.get("subject"),
@@ -133,8 +134,12 @@ export async function createTicket(
       return created;
     });
 
-    revalidatePath("/tickets");
-    revalidatePath("/admin/tickets");
+    // Solo si ya entró a la cola. Una solicitud pendiente de revisión todavía
+    // puede rechazarse, y predecir sobre algo que quizá no ocurra ensucia la
+    // medición con casos que nunca van a tener desenlace.
+    if (isStaff) await onTicketOpened(row.id);
+
+    revalidateTenant();
     return { ok: true, reference: row.reference };
   } catch (e) {
     console.error("[ticket] create error:", e);
@@ -152,7 +157,7 @@ export async function createServiceTicket(
   formData: FormData,
 ): Promise<TicketFormState> {
   const session = await auth();
-  if (!isSupport(session?.user?.role)) {
+  if (!session?.user || !isSupport(await currentRole())) {
     return { ok: false, error: "auth" };
   }
 
@@ -247,8 +252,10 @@ export async function createServiceTicket(
       return created;
     });
 
-    revalidatePath("/admin/tickets");
-    revalidatePath("/tickets");
+    // Un levantamiento del staff nace en la cola: se predice de una vez.
+    await onTicketOpened(row.id);
+
+    revalidateTenant();
     return { ok: true, reference: row.reference };
   } catch (e) {
     console.error("[ticket] service create error:", e);
@@ -259,13 +266,13 @@ export async function createServiceTicket(
 /* ---------- Revisión: aprobar / rechazar solicitudes ---------- */
 export async function approveTicket(formData: FormData) {
   const session = await auth();
-  if (!isSupport(session?.user?.role)) return;
+  if (!session?.user || !isSupport(await currentRole())) return;
 
   const ticketId = String(formData.get("ticketId"));
   if (!ticketId) return;
 
   const db = await tenantDb();
-  await db
+  const approved = await db
     .update(tickets)
     .set({
       status: "open", // pasa: entra a la cola de atención
@@ -274,15 +281,20 @@ export async function approveTicket(formData: FormData) {
       rejectionReason: null,
       updatedAt: new Date(),
     })
-    .where(and(eq(tickets.id, ticketId), eq(tickets.status, "pending_review")));
+    .where(and(eq(tickets.id, ticketId), eq(tickets.status, "pending_review")))
+    .returning({ id: tickets.id });
 
-  revalidatePath(`/tickets/${ticketId}`);
-  revalidatePath("/admin/tickets");
+  // Recién aquí la solicitud se vuelve un servicio que va a ocurrir. Se
+  // comprueba que el UPDATE haya tocado algo: el `where` filtra por estado, así
+  // que un doble clic no debe emitir una segunda predicción.
+  if (approved.length > 0) await onTicketOpened(ticketId);
+
+  revalidateTenant();
 }
 
 export async function rejectTicket(formData: FormData) {
   const session = await auth();
-  if (!isSupport(session?.user?.role)) return;
+  if (!session?.user || !isSupport(await currentRole())) return;
 
   const ticketId = String(formData.get("ticketId"));
   const reason = String(formData.get("reason") ?? "").trim();
@@ -300,8 +312,7 @@ export async function rejectTicket(formData: FormData) {
     })
     .where(and(eq(tickets.id, ticketId), eq(tickets.status, "pending_review")));
 
-  revalidatePath(`/tickets/${ticketId}`);
-  revalidatePath("/admin/tickets");
+  revalidateTenant();
 }
 
 export async function addComment(formData: FormData) {
@@ -310,11 +321,33 @@ export async function addComment(formData: FormData) {
 
   const ticketId = String(formData.get("ticketId"));
   const body = String(formData.get("body") ?? "").trim();
-  const internal =
-    formData.get("internal") === "on" && isSupport(session.user.role);
+  const role = await currentRole();
+  const staff = isSupport(role);
+  const internal = formData.get("internal") === "on" && staff;
   if (!ticketId || body.length < 1) return;
 
   const db = await tenantDb();
+
+  /*
+    A qué ticket se escribe: se comprueba, no se acepta.
+
+    Esta acción solo verificaba que hubiera sesión. El `ticketId` llega en el
+    formulario, así que cualquiera con cuenta en la empresa podía escribir en el
+    ticket de otro cliente con solo cambiar ese campo. La LECTURA sí estaba
+    protegida —la ficha devuelve 404 si el ticket no es tuyo—, y esa asimetría
+    es lo que la hacía fácil de pasar por alto: la pantalla se veía correcta.
+
+    El staff escribe en cualquier ticket de su empresa; el cliente, solo en los
+    suyos. El `tenantDb()` ya acota al esquema de la empresa, así que lo que
+    falta comprobar es la pertenencia dentro de ella.
+  */
+  const [target] = await db
+    .select({ id: tickets.id, createdById: tickets.createdById })
+    .from(tickets)
+    .where(eq(tickets.id, ticketId))
+    .limit(1);
+  if (!target) return;
+  if (!staff && target.createdById !== session.user.id) return;
 
   // Componente al que se refiere la actividad. Se valida la jerarquía:
   // el submódulo debe pertenecer al módulo, y el módulo al equipo.
@@ -367,16 +400,27 @@ export async function addComment(formData: FormData) {
     }
   }
 
-  // Horas de servicio de la actividad (0 – 999.99).
-  const rawHours = pick(formData.get("hours"));
+  /*
+    Horas y refacciones son SOLO del staff.
+
+    No es una restricción de interfaz sino de consecuencias: las horas entran en
+    la rentabilidad del servicio y del contrato, y cada refacción declarada
+    descuenta existencias del almacén por el ledger de inventario. La pantalla
+    del cliente nunca ofreció esos campos, pero la acción los leía igual de
+    quien fuera —y una acción acepta el formulario que le manden, no el que se
+    dibujó—. Un cliente podía mover el inventario de la empresa.
+  */
+  const rawHours = staff ? pick(formData.get("hours")) : null;
   let hours: string | null = null;
   if (rawHours) {
     const n = Number(rawHours.replace(",", "."));
     if (!Number.isNaN(n) && n > 0 && n < 1000) hours = n.toFixed(2);
   }
 
-  const partIds = formData.getAll("partIds").map(String).filter(Boolean);
-  const qtys = formData.getAll("partQtys").map(String);
+  const partIds = staff
+    ? formData.getAll("partIds").map(String).filter(Boolean)
+    : [];
+  const qtys = staff ? formData.getAll("partQtys").map(String) : [];
 
   // La bitácora, el consumo de refacciones, el movimiento de inventario y la
   // marca de SLA son un solo hecho operativo. Antes eran escrituras sueltas:
@@ -475,8 +519,21 @@ export async function addComment(formData: FormData) {
       }
     }
 
-    // Marca primera respuesta si un agente/admin contesta (SLA).
-    if (isSupport(session.user.role)) {
+    /*
+      El reloj del SLA para con una respuesta PÚBLICA del staff, no con
+      cualquiera.
+
+      Antes lo paraba también una nota interna, y eso mide lo contrario de lo
+      prometido: el compromiso es con el cliente, y el cliente no ve las notas
+      internas. Contarlas habría inflado el cumplimiento contra uno mismo —el
+      tablero diría «respondido en 12 minutos» mientras el laboratorio sigue sin
+      recibir noticia—.
+
+      No es hipotético: los 534 comentarios traídos del sistema anterior están
+      marcados como internos, así que bajo la regla vieja habrían parado 534
+      relojes sin que nadie le contestara nunca a nadie.
+    */
+    if (staff && !internal) {
       await tx
         .update(tickets)
         .set({
@@ -487,14 +544,12 @@ export async function addComment(formData: FormData) {
     }
   });
 
-  revalidatePath(`/tickets/${ticketId}`);
-  revalidatePath(`/admin/tickets`);
-  revalidatePath(`/admin/refacciones`);
+  revalidateTenant();
 }
 
 export async function updateTicketStatus(formData: FormData) {
   const session = await auth();
-  if (!isSupport(session?.user?.role)) return;
+  if (!session?.user || !isSupport(await currentRole())) return;
 
   const ticketId = String(formData.get("ticketId"));
   const status = String(formData.get("status"));
@@ -502,22 +557,60 @@ export async function updateTicketStatus(formData: FormData) {
   if (!STAFF_SETTABLE_STATUSES.includes(status as never)) return;
 
   const db = await tenantDb();
+
+  /*
+    Dos cosas que este UPDATE no hacía y ahora sí.
+
+    **No se salta la revisión.** El `where` solo filtraba por id, así que una
+    solicitud en `pending_review` podía pasar directo a `resolved` sin aprobarse
+    nunca —quedando con `reviewed_by_id` en nulo, o sea sin constancia de quién
+    la autorizó—, y un ticket `rejected` podía revivir a `open` sin dejar
+    rastro. Esos dos estados tienen su propio flujo (`approveTicket` /
+    `rejectTicket`), que sí se protege así; aquí faltaba el mismo cuidado.
+
+    **La fecha de resolución se limpia al reabrir.** Antes solo se escribía al
+    resolver y no se tocaba nunca más: un ticket reabierto quedaba «en proceso»
+    con fecha de resolución puesta. Eso no es solo raro de leer — es la columna
+    con la que el laboratorio de ML aprende «días hasta resolverse», así que un
+    reabierto le enseñaba un desenlace que no ocurrió. Hoy no hay ninguno así en
+    los datos porque nadie ha reabierto un ticket todavía; el primero que lo
+    haga estrena el problema.
+  */
+  const reopening = status === "open" || status === "in_progress" || status === "waiting";
+
   await db
     .update(tickets)
     .set({
       status: status as never,
       updatedAt: new Date(),
       ...(status === "resolved" ? { resolvedAt: new Date() } : {}),
+      ...(reopening ? { resolvedAt: null } : {}),
     })
-    .where(eq(tickets.id, ticketId));
+    .where(
+      and(
+        eq(tickets.id, ticketId),
+        sql`${tickets.status} not in ('pending_review', 'rejected')`,
+      ),
+    );
 
-  revalidatePath(`/tickets/${ticketId}`);
-  revalidatePath(`/admin/tickets`);
+  // El servicio terminó: ya se sabe cuántas horas llevó de verdad.
+  //
+  // Se intenta en los dos estados terminales, y no en uno solo, porque los dos
+  // flujos existen: hay tickets que se cierran sin pasar por resuelto y
+  // técnicos que registran la última actividad después de marcar resuelto. El
+  // desenlace se escribe la primera vez que hay horas en la bitácora y no se
+  // vuelve a tocar —una predicción tiene un desenlace—, así que llamar dos
+  // veces es inofensivo.
+  if (status === "resolved" || status === "closed") {
+    await onTicketSettled(ticketId);
+  }
+
+  revalidateTenant();
 }
 
 export async function assignTicket(formData: FormData) {
   const session = await auth();
-  if (!isSupport(session?.user?.role)) return;
+  if (!session?.user || !isSupport(await currentRole())) return;
 
   const ticketId = String(formData.get("ticketId") ?? "");
   const raw = formData.get("assignedToId");
@@ -527,21 +620,14 @@ export async function assignTicket(formData: FormData) {
 
   const db = await tenantDb();
 
-  // Solo se puede asignar a personal activo (agente o admin).
+  // Solo se puede asignar a personal activo DE ESTA empresa. La pertenencia no
+  // es un detalle: el id viaja en el formulario, y sin comprobarla se le podía
+  // asignar un ticket al agente de otro inquilino — que además lo vería en su
+  // bandeja sin tener nada que ver con este cliente.
   let assignedToId: string | null = null;
   if (candidate) {
-    const [staff] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(
-        and(
-          eq(users.id, candidate),
-          eq(users.active, true),
-          inArray(users.role, ["agent", "admin"]),
-        ),
-      )
-      .limit(1);
-    if (!staff) return; // asignado inválido: no hacemos nada
+    const staff = await getTenantMember(candidate);
+    if (!staff?.memberActive || !staff.accountActive || !isSupport(staff.role)) return;
     assignedToId = staff.id;
   }
 
@@ -550,8 +636,5 @@ export async function assignTicket(formData: FormData) {
     .set({ assignedToId, updatedAt: new Date() })
     .where(eq(tickets.id, ticketId));
 
-  revalidatePath("/admin/tickets");
-  revalidatePath(`/tickets/${ticketId}`);
-  revalidatePath(`/en/tickets/${ticketId}`);
-  revalidatePath("/dashboard");
+  revalidateTenant();
 }

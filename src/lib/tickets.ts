@@ -11,6 +11,23 @@ export const TICKET_STATUSES = [
 ] as const;
 export type TicketStatusValue = (typeof TICKET_STATUSES)[number];
 
+// Estados que cuentan como trabajo VIVO: lo que todavía le debe algo a alguien.
+// Se declara aquí, junto al resto de las constantes de ticket, porque el panel
+// y las consultas de datos tienen que estar de acuerdo en qué es "pendiente";
+// cuando la lista vivía escrita a mano en el JSX del panel, el conteo de la
+// insignia y el contenido de la lista podían discrepar.
+export const ACTIVE_STATUSES = [
+  "pending_review",
+  "open",
+  "in_progress",
+  "waiting",
+] as const;
+
+// La cola atendible: lo vivo MENOS lo que espera aprobación. Un ticket sin
+// revisar no está "sin asignar", está sin aceptar, y mezclarlos hacía que la
+// bandeja de pendientes contara dos veces el mismo trabajo.
+export const QUEUE_STATUSES = ["open", "in_progress", "waiting"] as const;
+
 // Estados que el staff puede fijar manualmente (la aprobación/rechazo tiene
 // su propio flujo, por eso pending_review y rejected no están aquí).
 export const STAFF_SETTABLE_STATUSES = [
@@ -98,12 +115,69 @@ export const PRIORITY_STYLES: Record<TicketPriorityValue, string> = {
 // SLA de primera respuesta: la web promete < 2 h.
 export const SLA_HOURS = 2;
 
-export function slaDueFrom(createdAt: Date): Date {
-  return new Date(createdAt.getTime() + SLA_HOURS * 60 * 60 * 1000);
+/* ------------------------- Estado del SLA ------------------------- */
+/**
+ * En qué punto está el compromiso de primera respuesta de un ticket.
+ *
+ * El SLA estaba a medias: la fecha límite se calculaba al crear el ticket y se
+ * mostraba en la ficha, pero nada la comparaba nunca contra nada. Medido sobre
+ * estos datos, 260 tickets tenían plazo y **cero** tenían primera respuesta
+ * registrada. Un compromiso que no se mide es peor que no tenerlo, porque
+ * aparenta existir.
+ *
+ * `sin-reloj` no es un estado de incumplimiento sino de ignorancia, y merece
+ * decirse aparte: son los tickets traídos del sistema anterior, que nacieron
+ * sin plazo. Pintarlos junto a los vencidos mezclaría «llegamos tarde» con «no
+ * sabemos», que es justo la confusión que hace que nadie confíe en un tablero.
+ */
+export type SlaState = "sin-reloj" | "cumplido" | "a-tiempo" | "por-vencer" | "vencido";
+
+/** Margen en el que el plazo ya aprieta pero todavía se puede cumplir. */
+const SLA_WARN_MINUTES = 30;
+
+export function slaState(t: {
+  slaDueAt: Date | string | null;
+  firstRespondedAt: Date | string | null;
+  status: string;
+  /** Ahora. Se pasa para que el servidor y el cliente no discrepen al hidratar. */
+  now?: Date;
+}): SlaState {
+  if (!t.slaDueAt) return "sin-reloj";
+
+  const due = new Date(t.slaDueAt).getTime();
+
+  // Respondido: el reloj paró. Que fuera tarde ya es historia, no trabajo
+  // pendiente, y esta función existe para decidir a qué hay que correr hoy.
+  if (t.firstRespondedAt) return "cumplido";
+
+  // Cerrado sin haber respondido nunca: tampoco hay nada que hacer. Se informa
+  // como falta de reloj y no como vencido, porque nadie puede ya cumplirlo.
+  if (["resolved", "closed", "rejected"].includes(t.status)) return "sin-reloj";
+
+  const ahora = (t.now ?? new Date()).getTime();
+  if (ahora > due) return "vencido";
+  if (due - ahora <= SLA_WARN_MINUTES * 60_000) return "por-vencer";
+  return "a-tiempo";
 }
 
-export function generateReference(seq: number): string {
-  return `EVO-${String(seq).padStart(6, "0")}`;
+export const SLA_LABELS: Record<SlaState, { es: string; en: string }> = {
+  "sin-reloj": { es: "Sin SLA", en: "No SLA" },
+  cumplido: { es: "Respondido", en: "Answered" },
+  "a-tiempo": { es: "En plazo", en: "On time" },
+  "por-vencer": { es: "Por vencer", en: "Due soon" },
+  vencido: { es: "SLA vencido", en: "SLA breached" },
+};
+
+export const SLA_STYLES: Record<SlaState, string> = {
+  "sin-reloj": "bg-muted text-muted-foreground ring-border",
+  cumplido: "bg-success/15 text-success ring-success/25",
+  "a-tiempo": "bg-secondary text-muted-foreground ring-border",
+  "por-vencer": "bg-warning/15 text-warning ring-warning/30",
+  vencido: "bg-destructive/12 text-destructive ring-destructive/25",
+};
+
+export function slaDueFrom(createdAt: Date): Date {
+  return new Date(createdAt.getTime() + SLA_HOURS * 60 * 60 * 1000);
 }
 
 export function label(
