@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import {
@@ -6,6 +7,7 @@ import {
   platformEvents,
   tenants,
   tenantSchemas,
+  tenantSignups,
   users,
 } from "@/lib/db/platform";
 
@@ -111,6 +113,132 @@ export async function getTenants(): Promise<TenantRow[]> {
       stats: r.schemaName ? await statsFor(r.schemaName) : null,
     })),
   );
+}
+
+/** Etiqueta de caché de la marca de una empresa. Ver `getTenantBrand`. */
+export const brandTag = (slug: string) => `tenant-brand:${slug}`;
+
+/**
+ * Marca de una empresa, por slug.
+ *
+ * Se consulta con `getDb()` —plano de control— porque la pantalla de acceso la
+ * necesita ANTES de que exista sesión, y sin sesión no hay conexión al esquema
+ * del inquilino.
+ *
+ * **Va en caché** porque la pide el layout del portal: una consulta en CADA
+ * navegación de CADA usuario, para leer un nombre y la ruta de un logo que
+ * cambian, con suerte, una vez al año. Es el ejemplo de libro de dato caliente
+ * e inmóvil.
+ *
+ * Tres decisiones que sostienen que esto sea seguro:
+ *
+ * - **La clave lleva el slug.** Es lo único que separa la marca de una empresa
+ *   de la de otra; sin el slug en la clave, el primer inquilino en cargar le
+ *   pondría su logo a todos los demás. `unstable_cache` ya incluye los
+ *   argumentos, pero se escribe explícito porque de eso depende el aislamiento.
+ * - **No lee cookies ni sesión.** Solo el slug que le pasan. Es requisito de
+ *   `unstable_cache` y también la razón por la que aquí no puede haber una fuga:
+ *   no hay nada del usuario dentro del alcance cacheado.
+ * - **Se invalida al guardar**, por etiqueta, desde `actions/brand.ts`. El
+ *   `revalidate` de una hora es la red de seguridad para lo que se cambie por
+ *   fuera de la aplicación (una migración, un `update` a mano), no el
+ *   mecanismo principal.
+ */
+export function getTenantBrand(slug: string) {
+  return unstable_cache(
+    async () => {
+      const db = getDb();
+      const [row] = await db
+        .select({
+          name: tenants.name,
+          brandName: tenants.brandName,
+          logoUrl: tenants.logoUrl,
+          folioPrefix: tenants.folioPrefix,
+        })
+        .from(tenants)
+        .where(eq(tenants.slug, slug))
+        .limit(1);
+      return row ?? null;
+    },
+    ["tenant-brand", slug],
+    { tags: [brandTag(slug)], revalidate: 3600 },
+  )();
+}
+
+/* ------------------------- Bandeja de solicitudes ------------------------- */
+
+export type SignupRow = {
+  id: string;
+  companyName: string;
+  desiredSlug: string | null;
+  contactName: string;
+  email: string;
+  phone: string | null;
+  size: string | null;
+  industry: string | null;
+  note: string | null;
+  locale: string;
+  status: "pending" | "approved" | "rejected";
+  rejectionReason: string | null;
+  createdAt: Date;
+  reviewedAt: Date | null;
+  reviewerName: string | null;
+  tenantSlug: string | null;
+  /** El identificador propuesto ya lo ocupa un inquilino: hay que corregirlo. */
+  slugTaken: boolean;
+  /** Cuántas veces pidió este mismo correo. >1 es señal de insistencia o error. */
+  attempts: number;
+};
+
+/**
+ * Solicitudes de alta.
+ *
+ * Las pendientes primero y, dentro de ellas, la más vieja arriba: una bandeja
+ * ordenada por "lo más reciente" hace que lo que nadie atendió se hunda, que es
+ * exactamente lo contrario de lo que se necesita aquí.
+ */
+export async function getSignups(limit = 60): Promise<SignupRow[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: tenantSignups.id,
+      companyName: tenantSignups.companyName,
+      desiredSlug: tenantSignups.desiredSlug,
+      contactName: tenantSignups.contactName,
+      email: tenantSignups.email,
+      phone: tenantSignups.phone,
+      size: tenantSignups.size,
+      industry: tenantSignups.industry,
+      note: tenantSignups.note,
+      locale: tenantSignups.locale,
+      status: tenantSignups.status,
+      rejectionReason: tenantSignups.rejectionReason,
+      createdAt: tenantSignups.createdAt,
+      reviewedAt: tenantSignups.reviewedAt,
+      reviewerName: users.name,
+      tenantSlug: tenants.slug,
+      slugTaken: sql<boolean>`exists (
+        select 1 from ${tenants} tt where tt.slug = ${tenantSignups.desiredSlug}
+      )`,
+      attempts: sql<number>`(
+        select count(*)::int from ${tenantSignups} s2 where s2.email = ${tenantSignups.email}
+      )`,
+    })
+    .from(tenantSignups)
+    .leftJoin(users, eq(users.id, tenantSignups.reviewedBy))
+    .leftJoin(tenants, eq(tenants.id, tenantSignups.tenantId))
+    // `pending` primero por orden explícito, no por el orden del enum: si
+    // mañana se agrega un estado, esto no cambia de significado en silencio.
+    // Dentro de las pendientes, la más vieja arriba (segunda clave; para las
+    // ya resueltas la expresión es NULL y empatan); el resto, lo más reciente.
+    .orderBy(
+      sql`case when ${tenantSignups.status} = 'pending' then 0 else 1 end`,
+      sql`case when ${tenantSignups.status} = 'pending' then ${tenantSignups.createdAt} end asc nulls last`,
+      desc(tenantSignups.createdAt),
+    )
+    .limit(limit);
+
+  return rows as SignupRow[];
 }
 
 /** Últimos movimientos de la plataforma: altas, accesos, consentimientos. */
