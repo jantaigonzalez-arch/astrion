@@ -17,7 +17,7 @@ import {
   uniqueIndex,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 /**
  * TABLAS DE NEGOCIO — viven en el esquema de CADA inquilino (`tenant_<slug>`),
@@ -91,12 +91,105 @@ export const leadStatus = pgEnum("lead_status", [
  * purchase     entrada por compra a proveedor
  * return       devolución al inventario (entrada)
  * adjustment   corrección manual tras conteo físico */
+/* Compras: estado de una orden.
+ * draft      se está armando, todavía no se mandó al proveedor
+ * sent       enviada; se espera mercancía
+ * partial    llegó parte de lo pedido
+ * received   llegó todo
+ * cancelled  se canceló; lo ya recibido NO se revierte (ver purchasing.ts) */
+export const purchaseOrderStatus = pgEnum("purchase_order_status", [
+  "draft",
+  "sent",
+  "partial",
+  "received",
+  "cancelled",
+]);
+
 export const inventoryMovementKind = pgEnum("inventory_movement_kind", [
   "opening",
   "consumption",
   "purchase",
   "return",
   "adjustment",
+]);
+
+/* Estado de una requisición.
+ *
+ * `draft → submitted → approved → (partial) → ordered`, con `rejected` y
+ * `cancelled` como salidas. La autorización es un estado y no una casilla
+ * porque es el único punto del circuito donde alguien distinto al que pide
+ * asume el gasto: sin ese corte, «requisición» es un sinónimo caro de «orden».
+ *
+ * draft      se está armando; las líneas se pueden tocar
+ * submitted  pedida la autorización; ya no se toca
+ * approved   autorizada; se puede convertir en órdenes
+ * partial    parte de las líneas ya se convirtió
+ * ordered    todo lo aprobado se convirtió en órdenes
+ * rejected   no se autoriza, con motivo escrito
+ * cancelled  se dio de baja; lo ya convertido NO se revierte */
+export const requisitionStatus = pgEnum("requisition_status", [
+  "draft",
+  "submitted",
+  "approved",
+  "partial",
+  "ordered",
+  "rejected",
+  "cancelled",
+]);
+
+/* Estado de una factura de proveedor. Lo deduce el saldo, no se elige a mano:
+ * ver `payables.ts`.
+ *
+ * pending    capturada, sin un solo pago
+ * partial    pagada en parte
+ * paid       saldada
+ * cancelled  anulada; solo mientras no tenga pagos aplicados */
+export const supplierInvoiceStatus = pgEnum("supplier_invoice_status", [
+  "pending",
+  "partial",
+  "paid",
+  "cancelled",
+]);
+
+/**
+ * Estado de una nota de crédito.
+ *
+ * `open` incluye la aplicada en parte: mientras le quede saldo a favor sigue
+ * sirviendo para la próxima factura. Solo pasa a `applied` cuando se consume
+ * entera, igual que una factura solo pasa a `paid` cuando se salda.
+ */
+export const supplierCreditNoteStatus = pgEnum("supplier_credit_note_status", [
+  "open",
+  "applied",
+  "cancelled",
+]);
+
+/**
+ * Estado de un anticipo.
+ *
+ * Mismo criterio que la nota de crédito: `open` incluye el aplicado en parte,
+ * porque mientras le quede saldo sigue sirviendo para la próxima factura.
+ */
+export const supplierAdvanceStatus = pgEnum("supplier_advance_status", [
+  "open",
+  "applied",
+  "cancelled",
+]);
+
+/** Qué se cargó en un lote de importación y desde qué formato. */
+export const payableImportKind = pgEnum("payable_import_kind", [
+  "charges_csv",
+  "credits_csv",
+  "charges_cfdi",
+]);
+
+/** Cómo se pagó. `other` existe para no perder un pago por falta de categoría. */
+export const paymentMethod = pgEnum("payment_method", [
+  "transfer",
+  "cash",
+  "check",
+  "card",
+  "other",
 ]);
 
 
@@ -339,6 +432,17 @@ export const settings = pgTable("settings", {
   id: varchar("id", { length: 20 }).primaryKey().default("global"),
   laborCostPerHour: numeric("labor_cost_per_hour", { precision: 12, scale: 2 }),
   laborRatePerHour: numeric("labor_rate_per_hour", { precision: 12, scale: 2 }),
+  /**
+   * Tipo de cambio USD→MXN vigente, el que la empresa fija en
+   * Configuración → Moneda.
+   *
+   * Es el valor de HOY, no la historia: al guardar un negocio en dólares este
+   * número se **estampa** en el propio negocio (`crm_deals.fx_rate`) junto con
+   * la fecha. Por eso cambiarlo aquí mañana no reescribe lo que ya se informó
+   * del mes pasado — que es justo lo que pasaría si los informes leyeran esta
+   * fila en vez de la copia estampada.
+   */
+  usdRate: numeric("usd_rate", { precision: 12, scale: 4 }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -1054,6 +1158,30 @@ export const dealReferenceSeq = pgSequence("crm_deal_reference_seq", {
   startWith: 1,
   increment: 1,
 });
+export const purchaseOrderSeq = pgSequence("purchase_order_reference_seq", {
+  startWith: 1,
+  increment: 1,
+});
+export const supplierInvoiceSeq = pgSequence("supplier_invoice_reference_seq", {
+  startWith: 1,
+  increment: 1,
+});
+export const supplierCreditNoteSeq = pgSequence(
+  "supplier_credit_note_reference_seq",
+  { startWith: 1, increment: 1 },
+);
+export const payableImportSeq = pgSequence("payable_import_reference_seq", {
+  startWith: 1,
+  increment: 1,
+});
+export const supplierAdvanceSeq = pgSequence("supplier_advance_reference_seq", {
+  startWith: 1,
+  increment: 1,
+});
+export const requisitionSeq = pgSequence("requisition_reference_seq", {
+  startWith: 1,
+  increment: 1,
+});
 
 
 // APPEND-ONLY. Nunca se hace UPDATE ni DELETE sobre esta tabla: es la única
@@ -1118,6 +1246,16 @@ export const inventoryMovements = pgTable(
       () => ticketComments.id,
       { onDelete: "set null" },
     ),
+    // Origen de la ENTRADA, si vino de recibir una orden de compra.
+    //
+    // El movimiento ES la recepción: no hay una tabla aparte de recepciones
+    // porque duplicaría el mismo hecho en dos lugares que después habría que
+    // mantener de acuerdo. Con este enganche, «qué llegó de esta orden y
+    // cuándo» se responde leyendo el ledger, que ya es append-only y auditable.
+    purchaseOrderLineId: uuid("purchase_order_line_id").references(
+      (): AnyPgColumn => purchaseOrderLines.id,
+      { onDelete: "set null" },
+    ),
     // Costo vigente al momento del movimiento (valuación histórica).
     unitCostMxn: numeric("unit_cost_mxn", { precision: 12, scale: 2 }),
     unitCostUsd: numeric("unit_cost_usd", { precision: 12, scale: 2 }),
@@ -1129,8 +1267,747 @@ export const inventoryMovements = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (t) => [index("inventory_movements_part_idx").on(t.partId, t.occurredAt)],
+  (t) => [
+    index("inventory_movements_part_idx").on(t.partId, t.occurredAt),
+    // Recepciones de una línea de orden: se lee al abrir la orden.
+    index("inventory_movements_po_line_idx").on(t.purchaseOrderLineId),
+  ],
 );
+
+/* ------------------------- Compras ------------------------- */
+
+/**
+ * Proveedores.
+ *
+ * Contraparte de `users` con rol cliente: de un lado a quién se le presta el
+ * servicio, del otro a quién se le compra la refacción. Se separan porque casi
+ * nunca son la misma persona y porque el ciclo de dinero corre en sentidos
+ * opuestos —cuentas por cobrar contra cuentas por pagar—.
+ */
+export const suppliers = pgTable(
+  "suppliers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: varchar("name", { length: 200 }).notNull(),
+    // RFC para poder conciliar el CFDI que emite el proveedor cuando exista
+    // el módulo de cuentas por pagar. Opcional: hay proveedores del extranjero.
+    rfc: varchar("rfc", { length: 13 }),
+    contactName: varchar("contact_name", { length: 160 }),
+    email: varchar("email", { length: 255 }),
+    phone: varchar("phone", { length: 40 }),
+    address: text("address"),
+    /** Días de crédito pactados. 0 = de contado. */
+    paymentTermsDays: integer("payment_terms_days").notNull().default(0),
+    /** Moneda habitual. La orden puede pactarse en otra. */
+    currency: varchar("currency", { length: 3 }).notNull().default("MXN"),
+    notes: text("notes"),
+    // Se desactivan, no se borran: sus órdenes son historial de compra.
+    active: boolean("active").notNull().default(true),
+
+    /**
+     * Suspensión de compras.
+     *
+     * Distinta de `active`, y por eso son dos campos y no un estado. Inactivo
+     * significa «ya no trabajamos con él»: desaparece de los selectores y es
+     * casi una baja. Suspendido significa «no le compres MIENTRAS», que es una
+     * medida temporal con causa —entregó fuera de especificación, está en la
+     * lista del SAT, hay una disputa abierta— y que alguien va a levantar.
+     *
+     * Bloquea órdenes nuevas. NO bloquea pagarle: lo que ya se le debe se le
+     * sigue debiendo, y dejar de pagar por estar suspendido convierte una
+     * medida de compras en un incumplimiento.
+     */
+    suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+    /** Por qué. Obligatorio al suspender: sin causa escrita nadie sabe qué
+     *  tiene que pasar para levantarla. */
+    suspendReason: text("suspend_reason"),
+    suspendedById: uuid("suspended_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("suppliers_name_idx").on(t.name),
+    index("suppliers_active_idx").on(t.active),
+    index("suppliers_suspended_idx").on(t.suspendedAt),
+  ],
+);
+
+/**
+ * Orden de compra.
+ *
+ * `sent` no es decorativo: mientras está en `draft` las líneas se pueden tocar,
+ * y a partir de `sent` no — porque el proveedor ya tiene una copia y cambiarla
+ * de este lado dejaría dos documentos distintos con el mismo folio.
+ */
+export const purchaseOrders = pgTable(
+  "purchase_orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Folio legible: EVO-C-000123. La C lo distingue del ticket y del negocio. */
+    reference: varchar("reference", { length: 30 }).notNull().unique(),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id, { onDelete: "restrict" }),
+    status: purchaseOrderStatus("status").notNull().default("draft"),
+    currency: varchar("currency", { length: 3 }).notNull().default("MXN"),
+    // Tipo de cambio pactado y su fecha. Sin fechar, todo importe convertido se
+    // recalcularía con la cotización de hoy y el costo histórico cambiaría solo.
+    fxRate: numeric("fx_rate", { precision: 18, scale: 8 }),
+    fxDate: date("fx_date"),
+    /** Cuándo se espera la mercancía. Alimenta el análisis de faltantes. */
+    expectedAt: date("expected_at"),
+    notes: text("notes"),
+    createdById: uuid("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("purchase_orders_supplier_idx").on(t.supplierId, t.createdAt),
+    index("purchase_orders_status_idx").on(t.status),
+    index("purchase_orders_expected_idx").on(t.expectedAt),
+  ],
+);
+
+/**
+ * Renglón de una orden.
+ *
+ * `partId` es OBLIGATORIO, y es la decisión de diseño del módulo. Aspel permite
+ * comprar texto libre; aquí no, porque una línea sin refacción del catálogo no
+ * se puede recibir contra el inventario y dejaría un hueco silencioso entre lo
+ * que se compró y lo que hay. Si la pieza no existe todavía, se da de alta —un
+ * formulario— y así el ledger sigue siendo la única verdad de las existencias.
+ */
+export const purchaseOrderLines = pgTable(
+  "purchase_order_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references((): AnyPgColumn => purchaseOrders.id, { onDelete: "cascade" }),
+    partId: uuid("part_id")
+      .notNull()
+      .references(() => spareParts.id, { onDelete: "restrict" }),
+    // Copia histórica, igual que en la bitácora: si mañana se corrige el
+    // catálogo, lo que decía la orden el día que se mandó no debe cambiar.
+    partNumber: varchar("part_number", { length: 80 }).notNull(),
+    description: varchar("description", { length: 300 }).notNull(),
+    quantity: integer("quantity").notNull(),
+    /**
+     * CACHÉ MATERIALIZADO, no fuente de verdad: es la suma de los movimientos
+     * de inventario que apuntan a esta línea. Se actualiza solo al insertar un
+     * movimiento, en la misma transacción. Mismo trato que `spare_parts.stock`.
+     */
+    receivedQuantity: integer("received_quantity").notNull().default(0),
+    unitCostMxn: numeric("unit_cost_mxn", { precision: 12, scale: 2 }),
+    unitCostUsd: numeric("unit_cost_usd", { precision: 12, scale: 2 }),
+    /**
+     * De qué línea de requisición salió este renglón. Nulo: la orden se capturó
+     * directo, sin requisición, y eso sigue siendo válido.
+     *
+     * `set null` y no `cascade`: si alguien borra la requisición, la orden ya
+     * está en manos del proveedor y no puede desaparecer con ella. Se pierde el
+     * hilo, no el documento.
+     */
+    requisitionLineId: uuid("requisition_line_id").references(
+      (): AnyPgColumn => requisitionLines.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("purchase_order_lines_order_idx").on(t.orderId),
+    // Historial de compra de una refacción: alimenta el costo y, más adelante,
+    // el modelo de reposición.
+    index("purchase_order_lines_part_idx").on(t.partId),
+    // El camino de vuelta: de la orden a la requisición y de ahí al pedido.
+    index("purchase_order_lines_requisition_idx").on(t.requisitionLineId),
+  ],
+);
+
+/* ------------------------- Requisiciones ------------------------- */
+
+/**
+ * Requisición: lo que HACE FALTA, antes de saber a quién comprárselo.
+ *
+ * Es un documento aparte de la orden de compra y no un borrador suyo, porque
+ * responden a dos preguntas distintas que hacen dos personas distintas. Quien
+ * vendió sabe QUÉ se necesita, para qué pedido y para cuándo; quien compra sabe
+ * A QUIÉN, a qué precio y en qué moneda. Meter las dos en la orden borra al
+ * primero del expediente: cuando alguien pregunte medio año después por qué se
+ * compraron seis bombas, la orden solo sabrá decir a quién se le compraron.
+ *
+ * De ahí sale lo demás: una requisición produce VARIAS órdenes —una por
+ * proveedor— y una línea sabe siempre de qué línea del pedido nació.
+ *
+ * `dealId` es opcional a propósito. El caso que la pide es el pedido del
+ * cliente, pero la reposición de existencias es la misma necesidad sin negocio
+ * detrás, y obligar a inventar un negocio falso para poder requisitar es el
+ * atajo que acaba ensuciando el CRM.
+ */
+export const requisitions = pgTable(
+  "requisitions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Folio legible: EVO-R-000123. La R lo distingue de la orden (C). */
+    reference: varchar("reference", { length: 30 }).notNull().unique(),
+    /** El pedido que la originó. Nulo = reposición de existencias. */
+    dealId: uuid("deal_id").references((): AnyPgColumn => crmDeals.id, {
+      onDelete: "set null",
+    }),
+    title: varchar("title", { length: 240 }).notNull(),
+    status: requisitionStatus("status").notNull().default("draft"),
+    /** Para cuándo se necesita. Es lo que ordena la cola del comprador. */
+    neededBy: date("needed_by"),
+    notes: text("notes"),
+
+    requestedById: uuid("requested_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    /**
+     * Quién autorizó. Se guarda aparte de quién pidió porque el valor entero
+     * del documento está en que sean dos: si el mismo firma las dos casillas,
+     * la autorización no autoriza nada.
+     */
+    approvedById: uuid("approved_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    /** Motivo del rechazo o de la baja. Obligatorio en ambos casos. */
+    resolutionReason: text("resolution_reason"),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("requisitions_status_idx").on(t.status, t.neededBy),
+    // Qué se requisitó para un pedido: se lee desde el detalle del negocio.
+    index("requisitions_deal_idx").on(t.dealId),
+  ],
+);
+
+/**
+ * Renglón de una requisición.
+ *
+ * A diferencia de la orden, aquí `partId` es OPCIONAL. Esa es toda la razón de
+ * ser de este documento: el vendedor pide «la bomba de la 1525» sin que la
+ * pieza esté aún en el catálogo, y el comprador la resuelve. Obligar al
+ * catálogo en el momento de pedir empujaría a dar de alta refacciones
+ * inventadas con tal de poder seguir, que es exactamente lo que ensucia el
+ * inventario. Lo que no se puede es CONVERTIR una línea sin `partId`: ahí la
+ * orden vuelve a exigirla, porque sin ella no hay contra qué recibir.
+ */
+export const requisitionLines = pgTable(
+  "requisition_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    requisitionId: uuid("requisition_id")
+      .notNull()
+      .references((): AnyPgColumn => requisitions.id, { onDelete: "cascade" }),
+    /** De qué línea del pedido nació. Nulo si se añadió a mano. */
+    dealProductId: uuid("deal_product_id").references(
+      (): AnyPgColumn => crmDealProducts.id,
+      { onDelete: "set null" },
+    ),
+    /** Resuelta contra el catálogo. Nulo hasta que el comprador la identifica. */
+    partId: uuid("part_id").references(() => spareParts.id, {
+      onDelete: "restrict",
+    }),
+    /** Lo que se pidió, con las palabras de quien lo pidió. */
+    description: varchar("description", { length: 300 }).notNull(),
+    quantity: integer("quantity").notNull(),
+    /**
+     * CACHÉ MATERIALIZADO, no fuente de verdad: cuántas piezas de esta línea ya
+     * viajaron a una orden. Se actualiza al crear la orden, en la misma
+     * transacción. Mismo trato que `purchase_order_lines.received_quantity`.
+     */
+    orderedQuantity: integer("ordered_quantity").notNull().default(0),
+    /**
+     * Proveedor sugerido. Es una PROPUESTA, no una decisión: sale del historial
+     * de compra de la pieza y el comprador la cambia si quiere. Se guarda para
+     * que la sugerencia no se recalcule y cambie sola entre que se mira y se
+     * convierte.
+     */
+    supplierId: uuid("supplier_id").references(() => suppliers.id, {
+      onDelete: "set null",
+    }),
+    /** Por qué se sugirió ese proveedor. Sin esto la sugerencia es un oráculo. */
+    supplierReason: varchar("supplier_reason", { length: 200 }),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("requisition_lines_requisition_idx").on(t.requisitionId),
+    index("requisition_lines_part_idx").on(t.partId),
+    // Lo pendiente de convertir, agrupado por proveedor: es la consulta del
+    // comprador cuando decide qué órdenes va a sacar hoy.
+    index("requisition_lines_supplier_idx").on(t.supplierId),
+  ],
+);
+
+/* ------------------------- Cuentas por pagar ------------------------- */
+
+/**
+ * La factura del proveedor: el documento que crea la deuda.
+ *
+ * No es la orden de compra. La orden dice qué se pidió; la factura dice cuánto
+ * se debe, desde cuándo y hasta cuándo. Se separan porque en la práctica no
+ * coinciden: un proveedor factura dos órdenes juntas, o una orden llega en tres
+ * remisiones con su factura cada una, o factura un flete que nadie pidió. Con
+ * la deuda colgada de la orden, cualquiera de esos casos obliga a falsear algo.
+ *
+ * Es además el documento fiscal, y por eso guarda el folio del proveedor y el
+ * UUID del CFDI: son los datos con los que se concilia contra el SAT y contra
+ * el estado de cuenta del proveedor, y no existen en ninguna orden.
+ */
+export const supplierInvoices = pgTable(
+  "supplier_invoices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Folio interno: EVO-P-000123. La P la distingue de la orden (C). */
+    reference: varchar("reference", { length: 30 }).notNull().unique(),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id, { onDelete: "restrict" }),
+    /** Folio impreso en la factura del proveedor. Suyo, no nuestro. */
+    supplierFolio: varchar("supplier_folio", { length: 60 }),
+    /**
+     * UUID del CFDI (folio fiscal). Único: capturar dos veces la misma factura
+     * es el error más caro de cuentas por pagar, porque termina en pagarla dos
+     * veces. Nullable porque un proveedor extranjero no emite CFDI.
+     */
+    cfdiUuid: varchar("cfdi_uuid", { length: 36 }),
+    currency: varchar("currency", { length: 3 }).notNull().default("MXN"),
+    // Tipo de cambio de ESTA factura y su fecha. Igual que en la orden: sin
+    // fechar, la deuda en dólares se revaluaría sola con la cotización de hoy.
+    fxRate: numeric("fx_rate", { precision: 18, scale: 8 }),
+    fxDate: date("fx_date"),
+    subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull(),
+    /** IVA y demás traslados, junto. El desglose por tasa llega con el CFDI. */
+    taxTotal: numeric("tax_total", { precision: 14, scale: 2 })
+      .notNull()
+      .default("0"),
+    total: numeric("total", { precision: 14, scale: 2 }).notNull(),
+    /** Fecha de emisión, la que imprime el proveedor. */
+    issuedAt: date("issued_at").notNull(),
+    /**
+     * Cuándo vence. Se calcula al capturar, sumando los días de crédito del
+     * proveedor a la emisión, y se GUARDA en vez de derivarse en cada consulta:
+     * si mañana cambian las condiciones del proveedor, las facturas ya emitidas
+     * no deben cambiar de vencimiento por eso.
+     */
+    dueAt: date("due_at").notNull(),
+    status: supplierInvoiceStatus("status").notNull().default("pending"),
+    notes: text("notes"),
+    createdById: uuid("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelReason: text("cancel_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Estado de cuenta de un proveedor.
+    index("supplier_invoices_supplier_idx").on(t.supplierId, t.issuedAt),
+    // "¿qué vence esta semana?" — la consulta que sostiene la pantalla.
+    index("supplier_invoices_due_idx").on(t.dueAt, t.status),
+    index("supplier_invoices_status_idx").on(t.status),
+    // Parcial: solo aplica a las que traen UUID. Sin `where`, dos facturas de
+    // proveedor extranjero (ambas sin CFDI) chocarían entre sí.
+    uniqueIndex("supplier_invoices_cfdi_uq")
+      .on(t.cfdiUuid)
+      .where(sql`${t.cfdiUuid} is not null`),
+  ],
+);
+
+/**
+ * Qué órdenes ampara una factura.
+ *
+ * Muchos a muchos, y no una columna `orderId` en la factura, porque las dos
+ * direcciones ocurren: una factura que cubre varias órdenes y una orden que se
+ * factura en partes. Es también el enganche que permite contestar "de lo que
+ * recibí de esta orden, ¿cuánto me facturaron ya?".
+ */
+export const supplierInvoiceOrders = pgTable(
+  "supplier_invoice_orders",
+  {
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => supplierInvoices.id, { onDelete: "cascade" }),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => purchaseOrders.id, { onDelete: "restrict" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.invoiceId, t.orderId] }),
+    index("supplier_invoice_orders_order_idx").on(t.orderId),
+  ],
+);
+
+/**
+ * Los pagos, como ledger.
+ *
+ * Mismo patrón que `inventoryMovements` y por la misma razón: el saldo de una
+ * factura no se guarda mutando un campo, se construye con los pagos. Cada fila
+ * lleva el saldo que quedó DESPUÉS de aplicarla, redundante a propósito —
+ * permite auditar sin recorrer todo el historial y delata si alguien movió el
+ * estado de la factura por fuera.
+ *
+ * El pago va en la moneda de la factura. Pagar una factura en dólares con
+ * pesos es otra conversación (implica pérdida o ganancia cambiaria, que es un
+ * asiento contable propio) y no se resuelve escondiéndola aquí.
+ */
+export const supplierPayments = pgTable(
+  "supplier_payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // restrict: el pago es la prueba de que el dinero salió. Borrar la factura
+    // no puede llevarse el registro del pago por delante.
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => supplierInvoices.id, { onDelete: "restrict" }),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    /** Saldo pendiente tras aplicar este pago. Cero = factura saldada. */
+    balanceAfter: numeric("balance_after", { precision: 14, scale: 2 }).notNull(),
+    method: paymentMethod("method").notNull().default("transfer"),
+    /** Folio de la transferencia, número de cheque… con qué se rastrea. */
+    reference: varchar("reference", { length: 120 }),
+    /** Cuándo salió el dinero, que no es cuándo se capturó. */
+    paidAt: date("paid_at").notNull(),
+    note: text("note"),
+    actorId: uuid("actor_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("supplier_payments_invoice_idx").on(t.invoiceId, t.occurredAt)],
+);
+
+/**
+ * Parcialidades de una factura.
+ *
+ * Una factura puede pactarse a pagar en varios vencimientos. Sin esto, la
+ * antigüedad marca la factura ENTERA como vencida el día que pasa su única
+ * fecha: 78 880 aparecen con 15 días de mora cuando en realidad solo venció el
+ * primer tercio y los otros dos ni siquiera han llegado.
+ *
+ * Ausencia = una sola exhibición. La factura sin filas aquí se comporta
+ * exactamente como antes, y por eso añadir esto no obligó a partir en
+ * parcialidades las que ya existían.
+ *
+ * NO lleva estado ni saldo. Cuánto se ha cubierto de cada parcialidad se
+ * deriva repartiendo lo aplicado a la factura en cascada, de la más antigua a
+ * la más nueva — que es como se imputa un pago cuando nadie dice a qué
+ * vencimiento va. Guardarlo sería el mismo error que guardar el saldo.
+ */
+export const supplierInvoiceInstallments = pgTable(
+  "supplier_invoice_installments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => supplierInvoices.id, { onDelete: "cascade" }),
+    /** 1, 2, 3… Define el orden de la cascada. */
+    seq: integer("seq").notNull(),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    dueAt: date("due_at").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("sii_invoice_seq_uq").on(t.invoiceId, t.seq),
+    // "¿qué vence esta semana?" ahora se contesta aquí, no en la factura.
+    index("sii_due_idx").on(t.dueAt),
+  ],
+);
+
+/**
+ * Anticipo a un proveedor.
+ *
+ * Dinero que sale ANTES de que exista la factura. Es el reverso de la nota de
+ * crédito: aquella baja la deuda sin mover dinero, este mueve dinero sin que
+ * haya deuda todavía.
+ *
+ * Va en su propia tabla y no como un pago porque un pago necesita una factura a
+ * la que apuntar. Meterlo como pago obligaría a inventar una factura ficticia,
+ * y esa factura acabaría en el estado de cuenta del proveedor como deuda que
+ * nunca existió.
+ *
+ * Ojo al contar la salida de caja: el dinero salió el día del anticipo, no el
+ * día en que se aplica a una factura. Sumar las aplicaciones junto con los
+ * pagos lo contaría dos veces.
+ */
+export const supplierAdvances = pgTable(
+  "supplier_advances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Folio interno: EVO-ANT-000123. */
+    reference: varchar("reference", { length: 30 }).notNull().unique(),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id, { onDelete: "restrict" }),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    currency: varchar("currency", { length: 3 }).notNull().default("MXN"),
+    method: paymentMethod("method").notNull().default("transfer"),
+    /** Con qué se rastrea la salida: folio de transferencia, cheque… */
+    reference_: varchar("payment_reference", { length: 120 }),
+    /** Cuándo salió el dinero. */
+    paidAt: date("paid_at").notNull(),
+    /** CFDI de anticipo, cuando el proveedor lo emite. */
+    cfdiUuid: varchar("cfdi_uuid", { length: 36 }),
+    status: supplierAdvanceStatus("status").notNull().default("open"),
+    notes: text("notes"),
+    createdById: uuid("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelReason: text("cancel_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("supplier_advances_supplier_idx").on(t.supplierId, t.paidAt),
+    index("supplier_advances_status_idx").on(t.status),
+    uniqueIndex("supplier_advances_cfdi_uq")
+      .on(t.cfdiUuid)
+      .where(sql`${t.cfdiUuid} is not null`),
+  ],
+);
+
+/** Cómo se consumió un anticipo. Ledger, igual que pagos y notas de crédito. */
+export const supplierAdvanceApplications = pgTable(
+  "supplier_advance_applications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    advanceId: uuid("advance_id")
+      .notNull()
+      .references(() => supplierAdvances.id, { onDelete: "restrict" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => supplierInvoices.id, { onDelete: "restrict" }),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    /** Saldo pendiente de la factura tras aplicar este importe. */
+    balanceAfter: numeric("balance_after", { precision: 14, scale: 2 }).notNull(),
+    appliedAt: date("applied_at").notNull(),
+    note: text("note"),
+    actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("saa_invoice_idx").on(t.invoiceId, t.occurredAt),
+    index("saa_advance_idx").on(t.advanceId, t.occurredAt),
+  ],
+);
+
+/**
+ * Nota de crédito del proveedor.
+ *
+ * El documento que faltaba. Una devolución, una bonificación o un descuento
+ * posterior bajan la deuda sin que salga dinero, y hasta ahora la única forma de
+ * cuadrar el saldo era capturar un pago falso — con lo que el reporte de salidas
+ * de caja quedaba inflado y el rastro del dinero real se perdía.
+ *
+ * No apunta a una factura: se aplica a las que haga falta (ver
+ * `supplierCreditNoteApplications`). Una nota de $1,500 puede repartirse entre
+ * tres facturas, o quedarse sin aplicar como saldo a favor hasta la próxima
+ * compra. Amarrarla a una sola factura obligaría a partirla en pedazos ficticios.
+ */
+export const supplierCreditNotes = pgTable(
+  "supplier_credit_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Folio interno: EVO-NC-000123. NC la distingue de la orden (C) y la factura (P). */
+    reference: varchar("reference", { length: 30 }).notNull().unique(),
+    supplierId: uuid("supplier_id")
+      .notNull()
+      .references(() => suppliers.id, { onDelete: "restrict" }),
+    /** Folio impreso en la nota del proveedor. */
+    supplierFolio: varchar("supplier_folio", { length: 60 }),
+    /** Mismo control antiduplicado que la factura, y por la misma razón: aplicar
+     *  dos veces la misma nota deja de deberle al proveedor dinero que sí se le
+     *  debe, y eso sale a la luz tarde y con reclamo de por medio. */
+    cfdiUuid: varchar("cfdi_uuid", { length: 36 }),
+    currency: varchar("currency", { length: 3 }).notNull().default("MXN"),
+    subtotal: numeric("subtotal", { precision: 14, scale: 2 }).notNull(),
+    taxTotal: numeric("tax_total", { precision: 14, scale: 2 })
+      .notNull()
+      .default("0"),
+    total: numeric("total", { precision: 14, scale: 2 }).notNull(),
+    issuedAt: date("issued_at").notNull(),
+    status: supplierCreditNoteStatus("status").notNull().default("open"),
+    notes: text("notes"),
+    createdById: uuid("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelReason: text("cancel_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("supplier_credit_notes_supplier_idx").on(t.supplierId, t.issuedAt),
+    index("supplier_credit_notes_status_idx").on(t.status),
+    // Parcial, como en las facturas: el proveedor extranjero no emite CFDI y sin
+    // el `where` dos notas sin UUID chocarían entre sí.
+    uniqueIndex("supplier_credit_notes_cfdi_uq")
+      .on(t.cfdiUuid)
+      .where(sql`${t.cfdiUuid} is not null`),
+  ],
+);
+
+/**
+ * Cómo se consumió una nota de crédito.
+ *
+ * Ledger, mismo patrón que `supplierPayments`: el saldo a favor no se guarda
+ * mutando un campo, se construye con las aplicaciones. `balanceAfter` es el
+ * saldo que le quedó A LA FACTURA tras aplicar este importe — igual que en los
+ * pagos, para poder auditar sin recorrer todo el historial.
+ */
+export const supplierCreditNoteApplications = pgTable(
+  "supplier_credit_note_applications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    creditNoteId: uuid("credit_note_id")
+      .notNull()
+      .references(() => supplierCreditNotes.id, { onDelete: "restrict" }),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => supplierInvoices.id, { onDelete: "restrict" }),
+    amount: numeric("amount", { precision: 14, scale: 2 }).notNull(),
+    /** Saldo pendiente de la factura tras aplicar este importe. */
+    balanceAfter: numeric("balance_after", { precision: 14, scale: 2 }).notNull(),
+    appliedAt: date("applied_at").notNull(),
+    note: text("note"),
+    actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("scna_invoice_idx").on(t.invoiceId, t.occurredAt),
+    index("scna_note_idx").on(t.creditNoteId, t.occurredAt),
+  ],
+);
+
+/**
+ * Un lote de importación.
+ *
+ * Existe para poder contestar «¿de dónde salieron estas cuarenta facturas?» seis
+ * meses después. Guarda el archivo de origen y el recuento, no las filas: cada
+ * documento creado deja su propio evento con la fila cruda en el payload, que es
+ * el precedente que ya sigue la migración del sistema anterior.
+ */
+export const payableImports = pgTable(
+  "payable_imports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Folio interno: EVO-IMP-000123. */
+    reference: varchar("reference", { length: 30 }).notNull().unique(),
+    kind: payableImportKind("kind").notNull(),
+    fileName: varchar("file_name", { length: 255 }).notNull(),
+    rowCount: integer("row_count").notNull(),
+    okCount: integer("ok_count").notNull(),
+    errorCount: integer("error_count").notNull(),
+    createdById: uuid("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("payable_imports_created_idx").on(t.createdAt)],
+);
+
+export const suppliersRelations = relations(suppliers, ({ many }) => ({
+  orders: many(purchaseOrders),
+}));
+
+export const requisitionsRelations = relations(requisitions, ({ one, many }) => ({
+  deal: one(crmDeals, {
+    fields: [requisitions.dealId],
+    references: [crmDeals.id],
+  }),
+  requestedBy: one(users, {
+    fields: [requisitions.requestedById],
+    references: [users.id],
+  }),
+  approvedBy: one(users, {
+    fields: [requisitions.approvedById],
+    references: [users.id],
+  }),
+  lines: many(requisitionLines),
+}));
+
+export const requisitionLinesRelations = relations(
+  requisitionLines,
+  ({ one, many }) => ({
+    requisition: one(requisitions, {
+      fields: [requisitionLines.requisitionId],
+      references: [requisitions.id],
+    }),
+    part: one(spareParts, {
+      fields: [requisitionLines.partId],
+      references: [spareParts.id],
+    }),
+    supplier: one(suppliers, {
+      fields: [requisitionLines.supplierId],
+      references: [suppliers.id],
+    }),
+    dealProduct: one(crmDealProducts, {
+      fields: [requisitionLines.dealProductId],
+      references: [crmDealProducts.id],
+    }),
+    orderLines: many(purchaseOrderLines),
+  }),
+);
+
+export const purchaseOrdersRelations = relations(
+  purchaseOrders,
+  ({ one, many }) => ({
+    supplier: one(suppliers, {
+      fields: [purchaseOrders.supplierId],
+      references: [suppliers.id],
+    }),
+    createdBy: one(users, {
+      fields: [purchaseOrders.createdById],
+      references: [users.id],
+    }),
+    lines: many(purchaseOrderLines),
+  }),
+);
+
+export const purchaseOrderLinesRelations = relations(
+  purchaseOrderLines,
+  ({ one, many }) => ({
+    order: one(purchaseOrders, {
+      fields: [purchaseOrderLines.orderId],
+      references: [purchaseOrders.id],
+    }),
+    part: one(spareParts, {
+      fields: [purchaseOrderLines.partId],
+      references: [spareParts.id],
+    }),
+    // De dónde salió: el hilo hasta la requisición y, por ella, hasta el pedido.
+    requisitionLine: one(requisitionLines, {
+      fields: [purchaseOrderLines.requisitionLineId],
+      references: [requisitionLines.id],
+    }),
+    // Las recepciones de esta línea. El ledger es el documento de recepción.
+    receipts: many(inventoryMovements),
+  }),
+);
+
 
 // Tipo de cambio fechado. Sin esto, todo importe convertido se recalcula con
 // la cotización de hoy y los reportes históricos cambian solos.
@@ -1152,6 +2029,238 @@ export const fxRates = pgTable(
       t.baseCurrency,
       t.quoteCurrency,
     ),
+  ],
+);
+
+/* ============================================================
+   Laboratorio de ML
+   ============================================================
+
+   Las tres tablas viven en el esquema DEL INQUILINO, no en `public`, y esa es
+   la decisión que sostiene toda la tesis del producto: el modelo de una empresa
+   se entrena con su propio esquema y no puede alcanzar el de otra aunque
+   alguien escriba mal una consulta. El aislamiento no es una promesa del
+   código, es el `search_path`.
+
+   El modelo entrenado se guarda en `params` como JSON, no como un artefacto
+   en disco ni en un bucket. Suena modesto y es a propósito: significa que
+   `pg_dump` de un inquilino se lleva sus modelos, que restaurar un respaldo
+   restaura las predicciones, y que no hay un segundo sistema que sincronizar.
+   Es lo que "el modelo viaja con el sistema" quiere decir literalmente.
+   Cuando un algoritmo no quepa en JSON, ese será el momento de sacarlo — no
+   antes. */
+
+/**
+ * Las PREGUNTAS que esta empresa quiere responder.
+ *
+ * Una plantilla no es un modelo: es una pregunta con su objetivo, sus rasgos y
+ * la tolerancia con la que el negocio considera útil la respuesta. Vive en la
+ * base y no en el código porque la operación de cada empresa pregunta cosas
+ * distintas, y obligarlas a compartir un catálogo fijo convertía al laboratorio
+ * en una demo de dos casos.
+ *
+ * Lo que NO vive aquí es el SQL. Las columnas `subject`, `target` y `features`
+ * guardan identificadores de bloques definidos en `lib/ml/blocks.ts`, y la
+ * consulta se compila desde ellos. Esa indirección es lo que permite que un
+ * usuario arme su propia pregunta sin que pueda anclarla en el futuro ni
+ * entrenar con una columna que todavía no existía cuando había que predecir.
+ */
+export const mlTemplates = pgTable(
+  "ml_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /**
+     * Identificador estable. Es lo que guarda `ml_models.template`, así que
+     * renombrar la plantilla no desconecta su historial de modelos.
+     */
+    slug: varchar("slug", { length: 60 }).notNull(),
+    label: varchar("label", { length: 120 }).notNull(),
+    question: text("question").notNull(),
+    /** Bloques de `lib/ml/blocks.ts`. */
+    subject: varchar("subject", { length: 40 }).notNull(),
+    target: varchar("target", { length: 40 }).notNull(),
+    features: jsonb("features").$type<string[]>().notNull(),
+    /** Error que el negocio considera aceptable. Define el "% de aciertos". */
+    tolerance: numeric("tolerance", { precision: 12, scale: 2 }).notNull(),
+    /**
+     * Las dos que trae el sistema de fábrica. Se marcan para no poder
+     * borrarlas: son las que tienen historial de modelos y de predicciones
+     * detrás, y perderlas dejaría huérfano todo lo medido hasta hoy.
+     */
+    builtin: boolean("builtin").notNull().default(false),
+    createdById: uuid("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("ml_templates_slug_uq").on(t.slug)],
+);
+
+export const mlModelStatus = pgEnum("ml_model_status", [
+  // Entrenado y evaluado, sin decisión todavía.
+  "backtested",
+  // Sirviendo predicciones. Solo uno por plantilla a la vez.
+  "production",
+  // Reemplazado por una versión nueva, o retirado por degradarse.
+  "retired",
+  // Evaluado y RECHAZADO por no superar a la línea base. Se conserva: saber
+  // qué no funciona con los datos de esta empresa vale tanto como lo que sí,
+  // y evita que alguien lo vuelva a intentar dentro de seis meses.
+  "rejected",
+]);
+
+export const mlModels = pgTable(
+  "ml_models",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Plantilla de la que sale: `service_hours`, `maintenance_interval`… */
+    template: varchar("template", { length: 60 }).notNull(),
+    /** Consecutivo por plantilla. Reentrenar crea una versión, no pisa la anterior. */
+    version: integer("version").notNull().default(1),
+    status: mlModelStatus("status").notNull().default("backtested"),
+    /** Familia del algoritmo, para leerla en la UI sin interpretar `params`. */
+    algorithm: varchar("algorithm", { length: 60 }).notNull(),
+
+    /** El modelo entrenado. Ver la nota de arriba sobre por qué vive aquí. */
+    params: jsonb("params").$type<Record<string, unknown>>().notNull(),
+
+    /**
+     * Métricas del backtest: error del modelo, error de la LÍNEA BASE, tamaños
+     * de entrenamiento y prueba, y la fecha de corte.
+     *
+     * La línea base se guarda junto al resultado y no aparte porque un MAE
+     * suelto no dice nada: 3,1 horas de error es bueno o malo según lo que
+     * logre predecir "siempre el promedio". Sin ese número al lado, cualquier
+     * modelo parece que funciona.
+     */
+    metrics: jsonb("metrics").$type<Record<string, unknown>>().notNull(),
+
+    /**
+     * ¿Le gana a la línea base? Es la compuerta de promoción.
+     *
+     * Se guarda como columna y no se recalcula al vuelo porque es la decisión
+     * que autoriza a mostrar un número a un usuario. Un criterio que se
+     * reinterpreta en cada lectura acaba cambiando sin que nadie lo note.
+     */
+    beatsBaseline: boolean("beats_baseline").notNull(),
+
+    /** Corte temporal del backtest: se entrenó con lo anterior a esta fecha. */
+    trainedUpTo: timestamp("trained_up_to", { withTimezone: true }),
+    trainedAt: timestamp("trained_at", { withTimezone: true }).notNull().defaultNow(),
+    trainedById: uuid("trained_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    promotedAt: timestamp("promoted_at", { withTimezone: true }),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
+    /** Por qué se rechazó o retiró. Queda escrito para no repetir el intento. */
+    note: text("note"),
+
+    /**
+     * El conjunto EXACTO con el que se entrenó, congelado en parquet.
+     *
+     * Hasta ahora un modelo guardaba sus métricas y la fecha del último caso
+     * que vio, pero no los casos. La consecuencia era que «reentrenar
+     * exactamente con el snapshot del 1 de marzo» —el disparador que
+     * `docs/ARQUITECTURA.md` llama *la killer feature para ML*— era imposible:
+     * volver a correr la consulta hoy devuelve otros datos, porque el histórico
+     * siguió creciendo. Sin esto, ninguna métrica del laboratorio es
+     * reproducible; solo repetible por casualidad.
+     *
+     * Ruta relativa al lago, nunca absoluta: el lago se mueve entre el portátil
+     * y el volumen de producción. Nulo en los modelos entrenados antes de que
+     * existiera el plano analítico — son irreproducibles y conviene que se note.
+     */
+    datasetPath: varchar("dataset_path", { length: 300 }),
+  },
+  (t) => [
+    index("ml_models_template_idx").on(t.template, t.status),
+    uniqueIndex("ml_models_template_version_uq").on(t.template, t.version),
+  ],
+);
+
+/**
+ * Predicciones PERSISTIDAS.
+ *
+ * Nunca se calcula un modelo dentro de un render: una pantalla que depende de
+ * un cálculo para pintarse hereda su latencia y su fallo. Se escribe aquí y la
+ * UI lee una fila.
+ *
+ * Además, persistirlas es lo único que permite medirlas después. Una predicción
+ * que solo existió en memoria durante un render no se puede comparar con lo que
+ * pasó de verdad, y sin esa comparación no hay forma de saber si el modelo se
+ * está degradando.
+ */
+export const mlPredictions = pgTable(
+  "ml_predictions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    modelId: uuid("model_id")
+      .notNull()
+      .references(() => mlModels.id, { onDelete: "cascade" }),
+    /** Sobre qué se predice: `ticket`, `equipment`… */
+    subjectType: varchar("subject_type", { length: 40 }).notNull(),
+    /**
+     * A QUIÉN se le hizo la predicción, en la identidad que use ese sujeto.
+     *
+     * Era `uuid` y dejó de serlo cuando la ontología llegó a compras. La
+     * identidad de una refacción en este negocio es su NÚMERO DE PARTE, no una
+     * llave interna: de 662 consumos registrados solo 6 coinciden con una fila
+     * del catálogo, porque el resto son números que el técnico anotó en su
+     * reporte y que el catálogo nunca tuvo. Exigir un uuid habría dejado fuera
+     * al 99 % de la historia por respetar una llave que aquí no identifica nada.
+     *
+     * Los uuid siguen cabiendo: un texto de 120 los admite sin conversión.
+     */
+    subjectId: varchar("subject_id", { length: 120 }).notNull(),
+
+    value: numeric("value", { precision: 12, scale: 2 }).notNull(),
+    /** Banda de incertidumbre. Un número sin banda invita a creerle de más. */
+    lower: numeric("lower", { precision: 12, scale: 2 }),
+    upper: numeric("upper", { precision: 12, scale: 2 }),
+    /** Cuántos casos históricos sostienen esta predicción en concreto. */
+    support: integer("support"),
+    /** Los rasgos con los que se predijo, para poder explicar el número. */
+    features: jsonb("features").$type<Record<string, unknown>>(),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("ml_predictions_subject_idx").on(t.subjectType, t.subjectId),
+    index("ml_predictions_model_idx").on(t.modelId, t.createdAt),
+  ],
+);
+
+/**
+ * Lo que pasó DE VERDAD.
+ *
+ * Es la tabla que casi todo producto con ML omite, y sin ella no se puede
+ * responder la única pregunta que importa después del primer mes: ¿el modelo
+ * sigue sirviendo? Un modelo entrenado con la operación de hace un año se
+ * degrada sin avisar cuando cambia el mix de equipos o entra un cliente grande.
+ * Sin resultado real registrado, esa degradación es invisible.
+ *
+ * Va aparte de `ml_predictions` porque el desenlace llega mucho después —a
+ * veces semanas—, y mezclarlos obligaría a actualizar una fila que ya se
+ * escribió. Una predicción es un hecho de su momento: no se corrige.
+ */
+export const mlOutcomes = pgTable(
+  "ml_outcomes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    predictionId: uuid("prediction_id")
+      .notNull()
+      .references(() => mlPredictions.id, { onDelete: "cascade" }),
+    /** Valor observado. */
+    actual: numeric("actual", { precision: 12, scale: 2 }).notNull(),
+    /** Error firmado: positivo = el modelo se quedó corto. */
+    error: numeric("error", { precision: 12, scale: 2 }).notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // Un desenlace por predicción: si llegan dos, alguien está reescribiendo
+    // la historia y eso arruina cualquier medición de deriva.
+    uniqueIndex("ml_outcomes_prediction_uq").on(t.predictionId),
+    index("ml_outcomes_recorded_idx").on(t.recordedAt),
   ],
 );
 
@@ -1181,4 +2290,91 @@ export type CrmAutomation = typeof crmAutomations.$inferSelect;
 export type DomainEvent = typeof domainEvents.$inferSelect;
 export type NewDomainEvent = typeof domainEvents.$inferInsert;
 export type InventoryMovement = typeof inventoryMovements.$inferSelect;
+export type Supplier = typeof suppliers.$inferSelect;
+export type NewSupplier = typeof suppliers.$inferInsert;
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+export type NewPurchaseOrder = typeof purchaseOrders.$inferInsert;
+export type PurchaseOrderLine = typeof purchaseOrderLines.$inferSelect;
+export type PurchaseOrderStatus = (typeof purchaseOrderStatus.enumValues)[number];
+export type Requisition = typeof requisitions.$inferSelect;
+export type NewRequisition = typeof requisitions.$inferInsert;
+export type RequisitionLine = typeof requisitionLines.$inferSelect;
+export type RequisitionStatus = (typeof requisitionStatus.enumValues)[number];
+export type SupplierInvoice = typeof supplierInvoices.$inferSelect;
+export type NewSupplierInvoice = typeof supplierInvoices.$inferInsert;
+export type SupplierPayment = typeof supplierPayments.$inferSelect;
+export type SupplierInvoiceStatus =
+  (typeof supplierInvoiceStatus.enumValues)[number];
+export type SupplierCreditNote = typeof supplierCreditNotes.$inferSelect;
+export type NewSupplierCreditNote = typeof supplierCreditNotes.$inferInsert;
+export type SupplierCreditNoteApplication =
+  typeof supplierCreditNoteApplications.$inferSelect;
+export type SupplierCreditNoteStatus =
+  (typeof supplierCreditNoteStatus.enumValues)[number];
+export type SupplierInvoiceInstallment =
+  typeof supplierInvoiceInstallments.$inferSelect;
+export type SupplierAdvance = typeof supplierAdvances.$inferSelect;
+export type SupplierAdvanceApplication =
+  typeof supplierAdvanceApplications.$inferSelect;
+export type SupplierAdvanceStatus =
+  (typeof supplierAdvanceStatus.enumValues)[number];
+export type PayableImport = typeof payableImports.$inferSelect;
+export type PayableImportKind = (typeof payableImportKind.enumValues)[number];
+export type PaymentMethod = (typeof paymentMethod.enumValues)[number];
 export type FxRate = typeof fxRates.$inferSelect;
+export type MlTemplate = typeof mlTemplates.$inferSelect;
+export type NewMlTemplate = typeof mlTemplates.$inferInsert;
+export type MlModel = typeof mlModels.$inferSelect;
+export type NewMlModel = typeof mlModels.$inferInsert;
+export type MlPrediction = typeof mlPredictions.$inferSelect;
+export type MlOutcome = typeof mlOutcomes.$inferSelect;
+export type MlModelStatus = (typeof mlModelStatus.enumValues)[number];
+
+/**
+ * DÓNDE SALE CADA ANÁLISIS.
+ *
+ * La asimetría que esta tabla existe para romper: las PREGUNTAS de ML siempre
+ * fueron configurables —viven en `ml_templates`, hay constructor, se crean sin
+ * tocar código—, mientras que los ANÁLISIS estaban clavados en una lista dentro
+ * de `assistant.ts`. El usuario no podía añadir uno, ni apagar el que le
+ * estorbaba, ni moverlo de pantalla, y el sistema no podía proponerle ninguno.
+ * Dos mitades de la misma capa con dos reglas opuestas.
+ *
+ * Lo que se configura es la COLOCACIÓN, no el análisis: el catálogo de
+ * `lib/ml/catalog.ts` sigue en código y curado, igual que los bloques de la
+ * ontología. Nadie escribe consultas desde la interfaz.
+ *
+ * Sin filas no hay problema: `placements.ts` cae en la colocación de fábrica
+ * del catálogo. Por eso esto no necesita semilla y el día que se despliega no
+ * cambia nada — solo cuando alguien configura algo empiezan a existir filas.
+ */
+export const analysisPlacements = pgTable(
+  "analysis_placements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Identificador del catálogo (`payables.calendar`). */
+    analysis: varchar("analysis", { length: 60 }).notNull(),
+    /** Prefijo de la pantalla (`/admin/compras`). */
+    screen: varchar("screen", { length: 120 }).notNull(),
+    /** Su sitio dentro de la pantalla. Menor primero. */
+    position: integer("position").notNull().default(0),
+    /**
+     * Apagado explícito. Se guarda la fila en vez de borrarla para poder
+     * distinguir «lo apagué» de «nunca lo configuré»: sin esa diferencia,
+     * apagar un análisis de fábrica lo devolvería a la vida en la siguiente
+     * carga, porque la ausencia de fila significa «usa el valor de fábrica».
+     */
+    active: boolean("active").notNull().default(true),
+    /**
+     * Quién lo colocó. `system` cuando lo aceptó una recomendación, para poder
+     * responder «¿esto lo puse yo o me lo propuso el sistema?».
+     */
+    source: varchar("source", { length: 20 }).notNull().default("user"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("analysis_placements_unique").on(t.analysis, t.screen),
+    index("analysis_placements_screen_idx").on(t.screen, t.position),
+  ],
+);

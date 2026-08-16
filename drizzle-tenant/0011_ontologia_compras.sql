@@ -1,0 +1,1 @@
+ALTER TABLE "ml_predictions" ALTER COLUMN "subject_id" SET DATA TYPE varchar(120);

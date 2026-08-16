@@ -1,0 +1,1 @@
+ALTER TABLE "ml_models" ADD COLUMN "dataset_path" varchar(300);

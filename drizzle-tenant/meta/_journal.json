@@ -15,6 +15,83 @@
       "when": 1785628308161,
       "tag": "0001_append_only_events",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785903542981,
+      "tag": "0002_freezing_mantis",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785976576270,
+      "tag": "0003_elite_darwin",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786381696459,
+      "tag": "0004_spotty_bloodstrike",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786480172392,
+      "tag": "0005_cuentas_por_pagar",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786543900450,
+      "tag": "0006_colossal_wilson_fisk",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786548657694,
+      "tag": "0007_violet_cerise",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786574533600,
+      "tag": "0008_requisiciones",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786679432045,
+      "tag": "0009_moneda_tipo_cambio",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786847323660,
+      "tag": "0010_conjunto_congelado",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786848382546,
+      "tag": "0011_ontologia_compras",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786852307333,
+      "tag": "0012_analisis_configurables",
+      "breakpoints": true
     }
   ]
 }

@@ -127,6 +127,41 @@
       "when": 1785633251630,
       "tag": "0017_lowly_mister_sinister",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785782813536,
+      "tag": "0018_high_trauma",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785815287705,
+      "tag": "0019_careful_gladiator",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785862565708,
+      "tag": "0020_organic_siren",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786418066688,
+      "tag": "0021_drop_users_role",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786846838960,
+      "tag": "0022_plano_analitico",
+      "breakpoints": true
     }
   ]
 }

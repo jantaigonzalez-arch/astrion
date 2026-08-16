@@ -1,0 +1,1 @@
+ALTER TABLE "settings" ADD COLUMN "usd_rate" numeric(12, 4);

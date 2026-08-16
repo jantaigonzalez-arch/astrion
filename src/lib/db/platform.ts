@@ -8,6 +8,8 @@ import {
   boolean,
   jsonb,
   bigserial,
+  bigint,
+  integer,
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
@@ -71,14 +73,14 @@ export const membershipRole = pgEnum("membership_role", [
  */
 export const platformRole = pgEnum("platform_role", ["superadmin", "support"]);
 
-/* ------------------------- Identidad ------------------------- */
+/** Ciclo de vida de una solicitud de alta. Ver `tenantSignups`. */
+export const signupStatus = pgEnum("signup_status", [
+  "pending",
+  "approved",
+  "rejected",
+]);
 
-/**
- * Rol heredado, global. Se conserva mientras la Fase 1 migra las 45 páginas y
- * las acciones a leer el rol desde `memberships`. Al terminar 1.6 se elimina la
- * columna `users.role`; hasta entonces las dos conviven y `memberships` manda.
- */
-export const userRole = pgEnum("user_role", ["admin", "agent", "client", "sales"]);
+/* ------------------------- Identidad ------------------------- */
 
 /**
  * La persona, única en TODA la plataforma. El correo es único global a
@@ -93,7 +95,6 @@ export const users = pgTable("users", {
   // Null = la cuenta existe pero no puede iniciar sesión (auth.ts lo exige).
   // Así se importan padrones de clientes sin abrirles acceso por accidente.
   passwordHash: text("password_hash"),
-  role: userRole("role").notNull().default("client"), // heredado, ver nota arriba
   /** Null = usuario de un cliente. Ver la nota de `platformRole`. */
   platformRole: platformRole("platform_role"),
   company: varchar("company", { length: 200 }),
@@ -114,6 +115,32 @@ export const tenants = pgTable(
     name: varchar("name", { length: 160 }).notNull(),
     status: tenantStatus("status").notNull().default("trial"),
     plan: varchar("plan", { length: 40 }).notNull().default("poc"),
+
+    /* --- Marca de la empresa ---
+     * Vive en el plano de control, y no en los `settings` de su esquema, por
+     * una razón concreta: la pantalla de acceso tiene que pintarla ANTES de
+     * que haya sesión, y sin sesión no hay conexión al esquema del inquilino.
+     *
+     * Nulo = todavía no subió logo. Se cae a un monograma con su inicial,
+     * NUNCA a la marca de otra empresa: ver el logo de Evoelution en el portal
+     * de ACME es exactamente el error que esto viene a corregir. */
+    logoUrl: text("logo_url"),
+    /** Nombre corto para la barra lateral, si el legal es muy largo. */
+    brandName: varchar("brand_name", { length: 60 }),
+
+    /**
+     * Prefijo de los folios de esta empresa: `EVO-000123`, `ACM-000045`.
+     *
+     * Estaba clavado como "EVO-" en el código, y era el mismo error que el
+     * logo en otra capa: el primer ticket de ACME habría nacido `EVO-000001`.
+     *
+     * Se guarda aquí, junto a la marca, porque es marca: el folio es lo que el
+     * cliente escribe en un correo y lo que aparece en el reporte de servicio
+     * firmado. Cambiarlo NO reescribe los folios ya emitidos —un documento
+     * emitido no se altera—, así que la empresa termina con dos series si lo
+     * cambia a medio camino. Por eso la UI lo advierte.
+     */
+    folioPrefix: varchar("folio_prefix", { length: 8 }),
 
     /* --- Consentimiento de datos para modelos globales ---
      * Apagado por defecto, y esa es la postura correcta: el dato de un
@@ -186,6 +213,63 @@ export const memberships = pgTable(
   ],
 );
 
+/* ------------------------- Solicitudes de alta ------------------------- */
+
+/**
+ * Empresa que pidió entrar, ANTES de ser inquilino.
+ *
+ * Tabla aparte de `tenants` a propósito: un inquilino cuesta un esquema de
+ * Postgres con decenas de tablas, y crear uno por cada formulario que alguien
+ * llena en la web dejaría la base sembrada de esquemas vacíos —caros de listar,
+ * de migrar y de borrar—. Aquí la solicitud es solo una fila; el esquema nace
+ * al aprobarla.
+ *
+ * También separa dos cosas que no son la misma: quién PIDIÓ (dato declarado por
+ * un desconocido, sin verificar) y quién ES cliente. El correo de esta tabla no
+ * es una identidad: no crea usuario ni permite iniciar sesión. Eso ocurre en la
+ * aprobación, y por eso `email` no es único aquí — la misma persona puede pedir
+ * dos veces, y el historial de sus intentos es justamente lo que hay que ver.
+ */
+export const tenantSignups = pgTable(
+  "tenant_signups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    companyName: varchar("company_name", { length: 160 }).notNull(),
+    /** Identificador propuesto. Sugerencia: al aprobar se puede corregir. */
+    desiredSlug: varchar("desired_slug", { length: 40 }),
+    contactName: varchar("contact_name", { length: 160 }).notNull(),
+    email: varchar("email", { length: 255 }).notNull(),
+    phone: varchar("phone", { length: 40 }),
+    /** Rango de personas: es lo que decide si el producto le queda. */
+    size: varchar("size", { length: 40 }),
+    industry: varchar("industry", { length: 120 }),
+    note: text("note"),
+    /** Idioma en que llegó: define en cuál se le responde. */
+    locale: varchar("locale", { length: 5 }).notNull().default("es"),
+
+    status: signupStatus("status").notNull().default("pending"),
+    /** El inquilino que nació de esta solicitud, si se aprobó. */
+    tenantId: uuid("tenant_id").references(() => tenants.id, {
+      onDelete: "set null",
+    }),
+    reviewedBy: uuid("reviewed_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    /** Motivo del rechazo. Se guarda para poder sostener la decisión después. */
+    rejectionReason: text("rejection_reason"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // La bandeja: "qué está pendiente, lo más viejo primero".
+    index("tenant_signups_status_idx").on(t.status, t.createdAt),
+    // "¿este correo ya había pedido antes?" — se consulta en cada envío.
+    index("tenant_signups_email_idx").on(t.email),
+  ],
+);
+
 /* ------------------------- Empresas (entidades legales) ------------------------- */
 
 /**
@@ -254,6 +338,63 @@ export const platformEvents = pgTable(
   ],
 );
 
+/* ------------------------- Plano analítico ------------------------- */
+
+/**
+ * Qué se extrajo de cada inquilino hacia el lago, y hasta dónde.
+ *
+ * Es la contabilidad del extractor incremental, y vive en `public` por la misma
+ * razón que `platform_events`: describe a la plataforma operando sobre los
+ * inquilinos, no el negocio de ninguno. Además tiene que sobrevivir a que un
+ * esquema de inquilino se elimine — si no, quedarían archivos parquet en el
+ * lago sin nadie que sepa de dónde salieron.
+ *
+ * El marcador de agua de un inquilino es `max(to_event_id)`. Se guarda por lote
+ * y no como un solo número mutable a propósito: un contador que se sobrescribe
+ * no deja saber qué archivo cubre qué rango, y en el momento en que alguien
+ * pregunte "¿con qué datos se entrenó este modelo?" —que es el disparador que
+ * tu arquitectura fija para adoptar Iceberg— la respuesta tiene que ser una
+ * lista de archivos, no una fecha.
+ */
+export const analyticsSnapshots = pgTable(
+  "analytics_snapshots",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenants.id, { onDelete: "cascade" }),
+
+    /** Último `domain_events.id` YA extraído antes de este lote (exclusivo). */
+    fromEventId: bigint("from_event_id", { mode: "number" }).notNull(),
+    /** Último `domain_events.id` incluido en este lote (inclusivo). */
+    toEventId: bigint("to_event_id", { mode: "number" }).notNull(),
+
+    rows: integer("rows").notNull(),
+    /** Ruta relativa dentro del lago. Nunca absoluta: el lago se puede mover. */
+    path: varchar("path", { length: 300 }).notNull(),
+    bytes: integer("bytes").notNull(),
+
+    /**
+     * Si el inquilino tenía consentimiento de ML **en el momento de extraer**.
+     *
+     * Se congela para poder auditar. NO es lo que decide si el dato entra a un
+     * entrenamiento global: eso se evalúa contra el consentimiento VIGENTE al
+     * leer. La diferencia importa — un consentimiento que solo se pudiera
+     * revocar borrando archivos no sería revocable de verdad.
+     */
+    consentedAtExtraction: boolean("consented_at_extraction").notNull(),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // "¿por dónde iba este inquilino?" — la pregunta de cada corrida.
+    index("analytics_snapshots_tenant_idx").on(t.tenantId, t.toEventId),
+    // Un lote no se extrae dos veces: si la corrida se repite, choca aquí en
+    // vez de duplicar filas en el lago.
+    uniqueIndex("analytics_snapshots_range_idx").on(t.tenantId, t.toEventId),
+  ],
+);
+
 /* ------------------------- Tipos ------------------------- */
 
 export type User = typeof users.$inferSelect;
@@ -264,6 +405,8 @@ export type Membership = typeof memberships.$inferSelect;
 export type MembershipRole = (typeof membershipRole.enumValues)[number];
 export type Company = typeof companies.$inferSelect;
 export type PlatformEvent = typeof platformEvents.$inferSelect;
+export type TenantSignup = typeof tenantSignups.$inferSelect;
+export type SignupStatus = (typeof signupStatus.enumValues)[number];
 
 /* ------------------------- Utilidades ------------------------- */
 
@@ -286,15 +429,56 @@ export function schemaNameFor(slug: string): string {
   return name;
 }
 
-/** Esquemas reservados: ningún inquilino puede llamarse así. */
+/**
+ * Prefijo de folio sugerido a partir del nombre: "ACME Laboratorios" → "ACM".
+ *
+ * Es solo una propuesta para el alta; la empresa puede cambiarlo después. Se
+ * quitan los acentos antes de recortar para que "Álvarez" dé "ALV" y no algo
+ * roto, y se cae a "ORG" cuando el nombre no deja ninguna letra utilizable
+ * (por ejemplo, un nombre escrito solo con dígitos o símbolos).
+ */
+export function suggestFolioPrefix(name: string): string {
+  const letters = name
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+  return letters.slice(0, 3) || "ORG";
+}
+
+/** Formato exigido al prefijo: 2–8 caracteres, mayúsculas y dígitos. */
+export const FOLIO_PREFIX_RE = /^[A-Z][A-Z0-9]{1,7}$/;
+
+/**
+ * Identificadores reservados: ningún inquilino puede llamarse así.
+ *
+ * Dos motivos distintos conviven en la lista. Los primeros son de Postgres:
+ * un esquema no puede chocar con los del catálogo. Los segundos son de
+ * ruteo, y son los peligrosos: con el inquilino en la URL
+ * (`/evoelution/tickets`), un inquilino llamado "productos" secuestraría
+ * `/productos` del sitio público. Debe mantenerse en línea con
+ * `NOT_A_TENANT` de proxy.ts.
+ */
 export const RESERVED_SLUGS = new Set([
+  // Postgres
   "public",
   "information_schema",
   "pg_catalog",
   "pg_toast",
   "drizzle",
+  // Rutas de la plataforma
   "admin",
   "api",
   "www",
   "app",
+  "platform",
+  "login",
+  "entrar",
+  // Rutas del sitio público
+  "contacto",
+  "nosotros",
+  "productos",
+  "servicios",
+  "marcas",
+  "evo_ai",
 ]);
