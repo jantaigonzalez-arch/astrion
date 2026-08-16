@@ -47,8 +47,34 @@ export function TenantMark({
     .join("")
     .toUpperCase();
 
+  /*
+    El nombre largo tiene que CABER, y caber es un problema de dos partes.
+
+    La primera es que `truncate` no funciona solo: recorta al ancho del
+    contenedor, y aquí el contenedor era un `inline-flex` sin `min-w-0`, que
+    por definición crece hasta el contenido. «Instrumentos Analíticos del
+    Bajío» se salía del riel de 288 px y pasaba por debajo del botón de plegar
+    — con la clase `truncate` puesta desde el principio y sin efecto ninguno.
+    Es el fallo de CSS más fácil de mirar sin ver.
+
+    La segunda es que RECORTAR ES LO ÚLTIMO que hay que hacer, no lo primero.
+    Un nombre recortado —«Instrumentos Analític…»— obliga a adivinar de qué
+    empresa es el portal en el que estás, que es justo lo que este componente
+    existe para evitar. Así que antes de perder letras se hacen dos cosas: se
+    baja un punto la tipografía y se permiten DOS renglones. «Instrumentos
+    Analíticos del Bajío» pasa de no caber a leerse entero en dos líneas.
+
+    El recorte sigue ahí para el caso patológico —una razón social de ocho
+    palabras— y entonces el nombre completo queda en el `title`, que es lo que
+    el ratón puede recuperar.
+
+    Veinte caracteres es dónde deja de caber en un renglón del riel de 288 px
+    con el monograma al lado. No es una cifra redonda: es la que mide.
+  */
+  const largo = label.length > 20;
+
   return (
-    <span className={cn("inline-flex items-center gap-2.5", className)}>
+    <span className={cn("inline-flex min-w-0 items-center gap-2.5", className)}>
       {brand.logoUrl ? (
         // <img> y no <Image>: el logo es un archivo subido por el cliente, de
         // dimensiones desconocidas y servido por nginx desde un volumen. El
@@ -72,7 +98,17 @@ export function TenantMark({
       )}
 
       {showWord && !brand.logoUrl && (
-        <span className="truncate text-lg font-semibold tracking-tight">{label}</span>
+        <span
+          title={label}
+          className={cn(
+            "min-w-0 font-semibold tracking-tight",
+            largo
+              ? "line-clamp-2 text-sm leading-tight"
+              : "truncate text-lg",
+          )}
+        >
+          {label}
+        </span>
       )}
     </span>
   );

@@ -358,11 +358,19 @@ export function Sidebar({
         </button>
         <div
           className={cn(
-            "flex h-16 items-center border-b border-border",
-            wide ? "px-6" : "justify-center px-2",
+            "flex h-16 min-w-0 items-center border-b border-border",
+            // Plegada el riel mide 64 px y el logo ya viene en caja de 32.
+            // Desplegada se deja algo más de aire a la derecha que a la
+            // izquierda: ahí asoma el botón de plegar, y un nombre que llega
+            // hasta el borde lo toca.
+            wide ? "pl-6 pr-5" : "justify-center px-2",
           )}
         >
-          <Link href="/dashboard" className="min-w-0">
+          {/* `flex` y no solo `min-w-0`: el enlace es un <a>, o sea inline, y
+              sobre un elemento inline `min-w-0` no significa nada. Sin esto la
+              cadena de contención se rompe aquí y el nombre de la empresa se
+              sale del riel por más `truncate` que lleve dentro. */}
+          <Link href="/dashboard" className="flex min-w-0 flex-1 items-center">
             <TenantMark brand={brand} showWord={wide} compact={!wide} />
           </Link>
         </div>
