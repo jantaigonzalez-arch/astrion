@@ -107,7 +107,10 @@ async function medir(slug: string) {
 
   for (const v of variantes) {
     const usa = v.feats.some((id) => ids.includes(id)) ? enriquecido : crudo;
-    const r = chooseModel(usa, v.feats, { tolerance: t.tolerance });
+    const r = chooseModel(usa, v.feats, {
+      tolerance: t.tolerance,
+      toleranceKind: t.toleranceKind,
+    });
 
     if (!r) {
       console.log(`  ${v.nombre.padEnd(24)}${String(v.feats.length).padEnd(3)}— no se pudo evaluar`);

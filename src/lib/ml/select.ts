@@ -1,4 +1,4 @@
-import type { BacktestResult, Fitter, Sample } from "./core";
+import type { BacktestResult, Fitter, Sample, ToleranceKind } from "./core";
 import { backtestWith } from "./core";
 import { ALGORITHMS, type Algorithm } from "./algorithms";
 
@@ -57,6 +57,8 @@ export function chooseModel(
   featureIds: string[],
   opts: {
     tolerance: number;
+    /** Ver `ToleranceKind`. Viaja hasta el conteo de aciertos, sin reinterpretarse. */
+    toleranceKind?: ToleranceKind;
     minSupport?: number;
     minImprovement?: number;
     minVal?: number;
@@ -65,6 +67,7 @@ export function chooseModel(
 ): Selection | null {
   const {
     tolerance,
+    toleranceKind,
     minSupport = 5,
     minImprovement = 5,
     minVal = 15,
@@ -122,6 +125,7 @@ export function chooseModel(
 
   const medido = backtestWith(ordered, fit, {
     tolerance,
+    toleranceKind,
     trainCount: cutVal,
     minImprovement,
     minTest,

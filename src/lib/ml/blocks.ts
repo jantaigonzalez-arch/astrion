@@ -1,5 +1,6 @@
 import "server-only";
 import { sql, type SQL } from "drizzle-orm";
+import type { ToleranceKind } from "./core";
 import {
   CATEGORY_LABELS,
   PRIORITY_LABELS,
@@ -288,6 +289,15 @@ export type Target = {
   /** Tolerancia que se propone; el usuario puede ajustarla. */
   defaultTolerance: number;
   /**
+   * Cómo se lee esa tolerancia. Ver `ToleranceKind` en `core.ts`.
+   *
+   * Ausente significa absoluta, que es lo que era todo antes. Se declara aquí
+   * y no en la plantilla porque depende de la NATURALEZA de lo que se predice,
+   * no de lo que el usuario prefiera: un objetivo cuyos casos van de 75 a 400
+   * no admite un margen fijo, lo pida quien lo pida.
+   */
+  toleranceKind?: ToleranceKind;
+  /**
    * Expresión escalar correlacionada con la fila del sujeto.
    *
    * Aquí SÍ se mira el futuro —es lo que se quiere predecir— y por eso está
@@ -311,11 +321,19 @@ export const TARGETS: Target[] = [
     subject: "payables_month",
     label: "Lo que se va a facturar en el mes",
     unit: "MXN",
-    // 60 000 sobre meses que van de 85 000 a 665 000: acertar «el mes que viene
-    // se factura medio millón, más menos sesenta mil» sirve para decidir si hay
-    // que mover una línea de crédito. Más fino que eso no cambiaría ninguna
-    // decisión, y prometerlo solo haría fracasar al modelo por su propio listón.
-    defaultTolerance: 60000,
+    /*
+      Relativa, al 12 %.
+
+      El razonamiento de antes seguía en pie —«medio millón más menos sesenta
+      mil» es lo que sirve para decidir si se mueve una línea de crédito— pero
+      estaba escrito para una empresa de un tamaño concreto. Sesenta mil son el
+      70 % de un mes de 85.000 y el 4 % de uno de 1.400.000, así que el mismo
+      listón era casi gratis para la empresa chica e inalcanzable para la
+      grande. En porcentaje, la promesa es la misma para las dos y no envejece
+      cuando el negocio crece — que es justo lo que hace un ERP multiempresa.
+    */
+    defaultTolerance: 12,
+    toleranceKind: "relative",
     // Se convierte a pesos en la suma y no después: hay facturas en dólares, y
     // sumar montos de dos monedas produce un número que no es dinero.
     expr: sql`(select coalesce(sum(si.total * coalesce(si.fx_rate, 1)), 0)
@@ -342,7 +360,18 @@ export const TARGETS: Target[] = [
     subject: "part_consumption",
     label: "Días hasta el próximo consumo",
     unit: "días",
-    defaultTolerance: 15,
+    /*
+      RELATIVA, y este es el caso que lo obligó.
+
+      El consumo de una refacción va de 75 días para un sello a 400 para una
+      lámpara. Con ±15 días fijos, el modelo tenía que clavar la lámpara con un
+      3,75 % de margen y el sello con un 20 %: el mismo número exigiendo cosas
+      distintas según la pieza. Medido sobre 5.861 consumos sintéticos, mejoraba
+      un 24,8 % sobre la mediana —claramente útil— y quedaba rechazado por
+      acertar el 24 % dentro de una ventana que ningún modelo podía cumplir.
+    */
+    defaultTolerance: 25,
+    toleranceKind: "relative",
     expr: sql`(select extract(epoch from (min(c2.created_at) - c.created_at)) / 86400
                  from ticket_comment_parts p2
                  join ticket_comments c2 on c2.id = p2.comment_id
@@ -399,7 +428,11 @@ export const TARGETS: Target[] = [
     subject: "equipment_service",
     label: "Días hasta el próximo servicio",
     unit: "días",
-    defaultTolerance: 15,
+    // Mismo motivo que `days_to_next_use`: un HPLC vuelve cada trimestre y un
+    // baño de agua dos veces al año. Un margen fijo no significa lo mismo para
+    // los dos y el porcentaje de aciertos deja de poder interpretarse.
+    defaultTolerance: 25,
+    toleranceKind: "relative",
     expr: sql`(select extract(epoch from (min(n.created_at) - t.created_at)) / 86400
                  from tickets n
                 where n.equipment_id = t.equipment_id

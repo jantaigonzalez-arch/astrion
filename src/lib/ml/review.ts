@@ -207,6 +207,7 @@ export async function reviewTemplate(templateId: string): Promise<Review> {
 
   // El aspirante se elige y se ajusta con lo ANTERIOR al corte.
   const seleccion = chooseModel(previos, Object.keys(template.featureLabels), {
+    toleranceKind: template.toleranceKind,
     tolerance: template.tolerance,
   });
   if (!seleccion) {

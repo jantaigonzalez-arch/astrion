@@ -107,6 +107,7 @@ export async function trainTemplate(
   // comportamiento buscado: la capacidad está inscrita esperando datos, no
   // compitiendo antes de tiempo con un número que solo memoriza.
   const result = chooseModel(samples, Object.keys(template.featureLabels), {
+    toleranceKind: template.toleranceKind,
     tolerance: template.tolerance,
   });
 
@@ -606,6 +607,7 @@ export async function verifyReproducible(modelId: string): Promise<ReproCheck> {
   // el peritaje corriera otro procedimiento, coincidir no probaría nada y
   // diferir no significaría nada.
   const result = chooseModel(samples, Object.keys(template.featureLabels), {
+    toleranceKind: template.toleranceKind,
     tolerance: template.tolerance,
   });
   if (!result) {

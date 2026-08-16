@@ -158,6 +158,54 @@ export function predict(
 
 /* ------------------------- Backtest ------------------------- */
 
+/**
+ * Cómo se lee la tolerancia de un objetivo.
+ *
+ * `absolute` — en las unidades del objetivo: «±2 horas».
+ * `relative` — como fracción del valor real: «±25 %».
+ *
+ * No es una preferencia del usuario sino una propiedad de LO QUE SE PREDICE, y
+ * por eso se declara en el bloque del objetivo y no en la plantilla. Una
+ * tolerancia absoluta solo tiene sentido cuando todos los casos son de la misma
+ * magnitud. «Días hasta volver a usar una refacción» va de 75 a 400: ±15 días
+ * es imposible para una lámpara anual y holgado para un sello trimestral, así
+ * que el mismo número exige tres cosas distintas según la pieza y el porcentaje
+ * de aciertos deja de significar nada.
+ *
+ * Se encontró con el inquilino sintético: «días hasta el próximo servicio»
+ * mejora un 7,7 % sobre la mediana —útil— y quedaba rechazado por acertar solo
+ * el 28 % dentro de ±15 días, un umbral que ningún modelo podía cumplir porque
+ * la dispersión propia del fenómeno es mayor que la ventana.
+ */
+export type ToleranceKind = "absolute" | "relative";
+
+/**
+ * ¿Cayó la predicción dentro de lo tolerable?
+ *
+ * Único sitio donde se decide, porque hay tres backtests y una divergencia
+ * entre ellos saldría como una diferencia de veredicto sin causa visible.
+ */
+export function withinToleranceOf(
+  error: number,
+  real: number,
+  tolerance: number,
+  kind: ToleranceKind,
+): boolean {
+  if (kind === "absolute") return error <= tolerance;
+  // Sobre el valor REAL, no sobre el estimado: si se midiera contra el
+  // estimado, un modelo que dispara alto se auto-ensancharía la ventana.
+  return error <= (Math.abs(real) * tolerance) / 100;
+}
+
+/** Cómo se escribe un margen: «±2 h» o «±25 %». Un solo sitio. */
+export function toleranceLabel(
+  tolerance: number,
+  kind: ToleranceKind | undefined,
+  unit: string,
+): string {
+  return kind === "relative" ? `±${tolerance} %` : `±${tolerance} ${unit}`;
+}
+
 export type Backtest = {
   /** Error absoluto medio del modelo. */
   mae: number;
@@ -182,7 +230,27 @@ export type Backtest = {
   improvement: number;
   /** Porcentaje de aciertos dentro de una tolerancia útil para el negocio. */
   withinTolerance: number;
+  /**
+   * Los aciertos que consigue la LÍNEA BASE con esa misma tolerancia.
+   *
+   * Existe porque el listón de aciertos no se puede leer solo. Un fenómeno con
+   * mucha dispersión propia tiene un techo: si los casos se reparten alrededor
+   * de su mediana con un CV de 0,5, ni el modelo perfecto —el que acierta la
+   * mediana condicional siempre— pasa del ~41 % dentro de ±25 %, porque el
+   * resto de la variación no está en ningún rasgo, está en el mundo. Exigir un
+   * 50 % ahí es exigir lo imposible y culpar al modelo.
+   *
+   * Con esta cifra al lado, la pregunta deja de ser «¿llega al 50 %?» y pasa a
+   * ser «¿acierta más veces que no tener modelo?», que es la misma forma en que
+   * ya se juzga el error. Ver `verdictFor`.
+   */
+  baselineWithinTolerance?: number;
   tolerance: number;
+  /**
+   * Cómo leer `tolerance`. Opcional para no romper las métricas ya guardadas:
+   * las que no lo traen son de cuando toda tolerancia era absoluta.
+   */
+  toleranceKind?: ToleranceKind;
   nTrain: number;
   nTest: number;
   /** Fecha de corte: se entrenó con lo anterior, se evaluó con lo posterior. */
@@ -254,6 +322,7 @@ export function verdictFor(
   opts: { minImprovement?: number; minHitRate?: number } = {},
 ): Verdict {
   const { minImprovement = 5, minHitRate = 50 } = opts;
+  const margen = b.toleranceKind === "relative" ? `${b.tolerance} %` : `${b.tolerance}`;
 
   if (b.improvement < minImprovement) {
     return {
@@ -266,13 +335,40 @@ export function verdictFor(
   }
 
   if (b.withinTolerance < minHitRate) {
+    /*
+      El motivo dice de QUIÉN es la culpa, y no siempre es del modelo.
+
+      Antes decía solo «se equivoca más veces de las que acierta», que da a
+      entender que con otro algoritmo saldría. A veces no: si la línea base ya
+      acierta el 33 % y el modelo el 39 %, el modelo está haciendo su trabajo y
+      lo que no da más es el fenómeno — la variación que falta no está en
+      ningún rasgo, está en el mundo. Medido en el inquilino sintético, donde
+      la dispersión está puesta a propósito con un CV de 0,5: el techo teórico
+      dentro de ±25 % es del orden del 41 %, así que exigir un 50 % es exigir
+      lo imposible.
+
+      La decisión de rechazar NO cambia —un número que falla más veces de las
+      que acierta sigue sin servir para decidir, y prometerlo sería peor que
+      callar— pero el motivo ahora permite distinguir «prueba otro algoritmo»
+      de «esta pregunta no se puede responder con esta precisión».
+    */
+    const contexto =
+      b.baselineWithinTolerance === undefined
+        ? ""
+        : b.withinTolerance - b.baselineWithinTolerance >= 5
+          ? ` Aporta —sin modelo se acertaría el ${b.baselineWithinTolerance.toFixed(0)}%—, ` +
+            `pero el margen pedido es más fino de lo que este fenómeno permite: ` +
+            `conviene revisar la tolerancia antes que el algoritmo.`
+          : ` Sin modelo se acertaría el ${b.baselineWithinTolerance.toFixed(0)}%, ` +
+            `así que tampoco está aportando.`;
+
     return {
       approved: false,
       reason:
         `Supera a la línea base (${b.improvement.toFixed(1)}%), pero solo acierta ` +
-        `el ${b.withinTolerance.toFixed(0)}% de las veces dentro de ±${b.tolerance}. ` +
+        `el ${b.withinTolerance.toFixed(0)}% de las veces dentro de ±${margen}. ` +
         `Se equivoca más veces de las que acierta: mejorar el error promedio no ` +
-        `alcanza si el número no sirve para decidir.`,
+        `alcanza si el número no sirve para decidir.${contexto}`,
     };
   }
 
@@ -280,7 +376,7 @@ export function verdictFor(
     approved: true,
     reason:
       `Mejora ${b.improvement.toFixed(1)}% sobre la mediana global y acierta el ` +
-      `${b.withinTolerance.toFixed(0)}% dentro de ±${b.tolerance}.`,
+      `${b.withinTolerance.toFixed(0)}% dentro de ±${margen}.`,
   };
 }
 
@@ -319,6 +415,7 @@ export function backtestWith(
   fit: Fitter,
   opts: {
     tolerance: number;
+    toleranceKind?: ToleranceKind;
     trainRatio?: number;
     trainCount?: number;
     minImprovement?: number;
@@ -328,6 +425,7 @@ export function backtestWith(
 ): { backtest: Backtest; beatsBaseline: boolean; trainedUpTo: Date } | null {
   const {
     tolerance,
+    toleranceKind = "absolute",
     trainRatio = 0.7,
     trainCount,
     minImprovement = 5,
@@ -353,6 +451,7 @@ export function backtestWith(
   let meanErr = 0;
   let hits = 0;
   let fellBack = 0;
+  let baseHits = 0;
 
   const stride = Math.max(1, Math.ceil(te.length / MAX_POINTS));
   const points: Array<[number, number]> = [];
@@ -365,7 +464,17 @@ export function backtestWith(
     err += e;
     baseErr += Math.abs(medianBaseline - s.target);
     meanErr += Math.abs(meanBaseline - s.target);
-    if (e <= tolerance) hits++;
+    if (withinToleranceOf(e, s.target, tolerance, toleranceKind)) hits++;
+    if (
+      withinToleranceOf(
+        Math.abs(medianBaseline - s.target),
+        s.target,
+        tolerance,
+        toleranceKind,
+      )
+    ) {
+      baseHits++;
+    }
     if (i % stride === 0) {
       points.push([Number(s.target.toFixed(2)), Number(p.value.toFixed(2))]);
     }
@@ -383,7 +492,9 @@ export function backtestWith(
       meanBaselineMae: meanErr / te.length,
       improvement,
       withinTolerance: (hits / te.length) * 100,
+      baselineWithinTolerance: (baseHits / te.length) * 100,
       tolerance,
+      toleranceKind,
       nTrain: tr.length,
       nTest: te.length,
       cutoff: (te[0]?.at ?? ordered[cut - 1].at).toISOString(),
@@ -414,10 +525,12 @@ export function backtest(
     minSupport?: number;
     minImprovement?: number;
     minTest?: number;
+    toleranceKind?: ToleranceKind;
   },
 ): BacktestResult | null {
   const {
     tolerance,
+    toleranceKind = "absolute",
     trainRatio = 0.7,
     trainCount,
     minSupport = 5,
@@ -446,6 +559,7 @@ export function backtest(
   let meanErr = 0;
   let hits = 0;
   let fellBack = 0;
+  let baseHits = 0;
 
   // Muestreo a paso fijo: con 124 casos entran todos; con 4.000 entra uno de
   // cada diez. La nube conserva su forma y el jsonb no crece con el histórico.
@@ -460,7 +574,17 @@ export function backtest(
     err += e;
     baseErr += Math.abs(medianBaseline - s.target);
     meanErr += Math.abs(meanBaseline - s.target);
-    if (e <= tolerance) hits++;
+    if (withinToleranceOf(e, s.target, tolerance, toleranceKind)) hits++;
+    if (
+      withinToleranceOf(
+        Math.abs(medianBaseline - s.target),
+        s.target,
+        tolerance,
+        toleranceKind,
+      )
+    ) {
+      baseHits++;
+    }
     if (i % stride === 0) {
       points.push([
         Number(s.target.toFixed(2)),
@@ -489,7 +613,9 @@ export function backtest(
       meanBaselineMae: meanErr / te.length,
       improvement,
       withinTolerance: (hits / te.length) * 100,
+      baselineWithinTolerance: (baseHits / te.length) * 100,
       tolerance,
+      toleranceKind,
       nTrain: tr.length,
       nTest: te.length,
       cutoff: (te[0]?.at ?? ordered[cut - 1].at).toISOString(),
@@ -532,6 +658,7 @@ export function chooseLadder(
   candidates: Ladder[],
   opts: {
     tolerance: number;
+    toleranceKind?: ToleranceKind;
     minSupport?: number;
     minImprovement?: number;
     minVal?: number;
@@ -540,6 +667,7 @@ export function chooseLadder(
 ): BacktestResult | null {
   const {
     tolerance,
+    toleranceKind = "absolute",
     minSupport = 5,
     minImprovement = 5,
     minVal = 15,
@@ -580,6 +708,7 @@ export function chooseLadder(
   // modelo, retacear datos para ajustarlo no protege de nada.
   const result = backtest(ordered, best.ladder, {
     tolerance,
+    toleranceKind,
     trainCount: cutVal,
     minSupport,
     minImprovement,

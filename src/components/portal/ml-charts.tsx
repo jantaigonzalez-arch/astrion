@@ -1,5 +1,6 @@
 import { Target, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toleranceLabel, withinToleranceOf, type ToleranceKind } from "@/lib/ml/core";
 
 /**
  * Las dos preguntas que un administrador se hace de verdad, dibujadas.
@@ -35,6 +36,8 @@ export type ForecastRow = {
 export type MlChartsProps = {
   unit: string;
   tolerance: number;
+  /** Ver `ToleranceKind`. Cambia la forma de la banda, no solo el texto. */
+  toleranceKind?: ToleranceKind;
   forecast: ForecastRow[];
   /** Pares [real, estimado] de la evaluación. Ver `Backtest.points`. */
   points: Array<[number, number]>;
@@ -44,6 +47,7 @@ export type MlChartsProps = {
 export function MlCharts({
   unit,
   tolerance,
+  toleranceKind,
   forecast,
   points,
   nTest,
@@ -56,6 +60,7 @@ export function MlCharts({
       <AccuracyChart
         points={points}
         tolerance={tolerance}
+        toleranceKind={toleranceKind}
         unit={unit}
         nTest={nTest}
       />
@@ -166,11 +171,13 @@ function ForecastChart({ rows, unit }: { rows: ForecastRow[]; unit: string }) {
 function AccuracyChart({
   points,
   tolerance,
+  toleranceKind,
   unit,
   nTest,
 }: {
   points: Array<[number, number]>;
   tolerance: number;
+  toleranceKind?: ToleranceKind;
   unit: string;
   nTest: number;
 }) {
@@ -196,22 +203,46 @@ function AccuracyChart({
   const sx = (v: number) => PAD + (v / max) * span;
   const sy = (v: number) => 100 - PAD - (v / max) * span;
 
-  // La banda de tolerancia, recortada al cuadro. Con una tolerancia mayor que
-  // el rango de los datos cubre todo, y el polígono degenera con `t >= max`:
-  // se acota para que no salgan vértices fuera del área.
-  const t = Math.min(tolerance, max);
-  const band = [
-    [0, 0],
-    [0, t],
-    [max - t, max],
-    [max, max],
-    [max, max - t],
-    [t, 0],
-  ]
-    .map(([x, y]) => `${sx(x)},${sy(y)}`)
-    .join(" ");
+  /*
+    La banda de tolerancia.
 
-  const hits = points.filter(([a, p]) => Math.abs(p - a) <= tolerance).length;
+    Con margen ABSOLUTO son dos rectas paralelas a la diagonal y la banda es una
+    franja de ancho constante. Con margen RELATIVO el ancho crece con el valor
+    real, así que la banda es una CUÑA que se abre desde el origen — y dibujarla
+    como franja mentiría: enseñaría verdes fuera de la banda y rojos dentro.
+
+    En ambos casos se recorta al cuadro: con una tolerancia mayor que el rango
+    de los datos, el polígono degeneraría con vértices fuera del área.
+  */
+  const rel = toleranceKind === "relative";
+  const band = rel
+    ? [
+        [0, 0],
+        [max, Math.min(max, max * (1 + tolerance / 100))],
+        [max, max * (1 - tolerance / 100)],
+      ]
+        .map(([x, y]) => `${sx(x)},${sy(y)}`)
+        .join(" ")
+    : (() => {
+        const t = Math.min(tolerance, max);
+        return [
+          [0, 0],
+          [0, t],
+          [max - t, max],
+          [max, max],
+          [max, max - t],
+          [t, 0],
+        ]
+          .map(([x, y]) => `${sx(x)},${sy(y)}`)
+          .join(" ");
+      })();
+
+  // La MISMA regla que contó los aciertos en el backtest. Si la pantalla
+  // usara la suya, la gráfica y la cifra de arriba dirían cosas distintas
+  // sobre los mismos datos y nadie sabría cuál creer.
+  const dentro = ([a, p]: [number, number]) =>
+    withinToleranceOf(Math.abs(p - a), a, tolerance, toleranceKind ?? "absolute");
+  const hits = points.filter(dentro).length;
 
   return (
     <section className="rounded-lg border border-border p-4">
@@ -236,7 +267,7 @@ function AccuracyChart({
           viewBox="0 0 100 100"
           className="aspect-square w-full overflow-visible"
           role="img"
-          aria-label={`Estimado contra real: ${hits} de ${points.length} casos dentro de ±${tolerance} ${unit}`}
+          aria-label={`Estimado contra real: ${hits} de ${points.length} casos dentro de ${toleranceLabel(tolerance, toleranceKind, unit)}`}
         >
           {/* La franja útil primero, para que los puntos queden encima. */}
           <polygon points={band} className="fill-success/12" />
@@ -270,7 +301,7 @@ function AccuracyChart({
           />
 
           {points.map(([real, est], i) => {
-            const ok = Math.abs(est - real) <= tolerance;
+            const ok = dentro([real, est]);
             return (
               <circle
                 key={i}
@@ -292,7 +323,7 @@ function AccuracyChart({
       <p className="mt-2 text-xs text-muted-foreground">
         <span className="font-medium text-success">{hits}</span> de{" "}
         <span className="font-medium text-foreground">{points.length}</span>{" "}
-        dentro de ±{tolerance} {unit}
+        dentro de {toleranceLabel(tolerance, toleranceKind, unit)}
         {points.length < nTest && (
           <> · muestra de los {nTest} casos evaluados</>
         )}

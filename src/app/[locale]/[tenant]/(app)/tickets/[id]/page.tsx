@@ -96,8 +96,11 @@ export default async function TicketDetailPage({
   // La tolerancia sale de la plantilla, no de una constante: el administrador
   // puede haberla ajustado, y la tarjeta tiene que juzgar el acierto con el
   // mismo margen con el que se juzgó el modelo.
-  const hoursTolerance =
-    (prediction && (await templateById("service_hours"))?.tolerance) || 2;
+  // Y el TIPO de margen viaja con el número: leer uno sin el otro haría que la
+  // tarjeta dijera «dentro» donde el modelo contó «fuera».
+  const plantillaHoras = prediction ? await templateById("service_hours") : undefined;
+  const hoursTolerance = plantillaHoras?.tolerance || 2;
+  const hoursToleranceKind = plantillaHoras?.toleranceKind;
 
   const tree = await getEquipmentTree(ticket.createdById);
   const commentEquipment = tree.map((eq) => ({
@@ -350,7 +353,13 @@ export default async function TicketDetailPage({
           {/* Estimación del modelo, antes que la utilidad: sirve para decidir
               (cotizar, agendar), mientras que la utilidad describe lo ya hecho. */}
           {prediction && (
-            <PredictionCard p={{ ...prediction, tolerance: hoursTolerance }} />
+            <PredictionCard
+              p={{
+                ...prediction,
+                tolerance: hoursTolerance,
+                toleranceKind: hoursToleranceKind,
+              }}
+            />
           )}
 
           {/* Rentabilidad del servicio (solo staff) */}

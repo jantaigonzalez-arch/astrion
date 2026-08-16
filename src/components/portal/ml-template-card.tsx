@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { toleranceLabel, withinToleranceOf, type ToleranceKind } from "@/lib/ml/core";
 import {
   Beaker,
   Loader2,
@@ -53,6 +54,7 @@ export type ModelRow = {
   improvement: number;
   withinTolerance: number;
   tolerance: number;
+  toleranceKind?: ToleranceKind;
   nTrain: number;
   nTest: number;
   /** Lo que el modelo va a estimar, por grupo. */
@@ -69,6 +71,8 @@ export type TemplateCard = {
   question: string;
   unit: string;
   tolerance: number;
+  /** Ver `ToleranceKind`: decide si el margen se lee en unidades o en %. */
+  toleranceKind?: ToleranceKind;
   /** De fábrica: no se puede borrar. */
   builtin: boolean;
   samples: number;
@@ -196,6 +200,7 @@ export function MlTemplateCard({ t }: { t: TemplateCard }) {
         <MlCharts
           unit={t.unit}
           tolerance={(production ?? latest).tolerance || t.tolerance}
+          toleranceKind={(production ?? latest).toleranceKind ?? t.toleranceKind}
           forecast={(production ?? latest).forecast}
           points={(production ?? latest).points}
           nTest={(production ?? latest).nTest}
@@ -312,7 +317,7 @@ function Metrics({ m, unit }: { m: ModelRow; unit: string }) {
 
       <p className="mt-3 text-xs text-muted-foreground">
         Acierta el <span className="font-medium text-foreground">{m.withinTolerance.toFixed(0)}%</span>{" "}
-        dentro de ±{m.tolerance} {unit}. Entrenado con {m.nTrain} casos del pasado y
+        dentro de {toleranceLabel(m.tolerance, m.toleranceKind, unit)}. Entrenado con {m.nTrain} casos del pasado y
         evaluado contra {m.nTest} posteriores, nunca con los mismos.
       </p>
     </div>
@@ -389,7 +394,7 @@ function DriftPanel({ m, unit }: { m: ModelRow; unit: string }) {
         <Cifra
           label="Acierta"
           value={`${d.withinTolerance.toFixed(0)}%`}
-          hint={`dentro de ±${m.tolerance} ${unit}`}
+          hint={`dentro de ${toleranceLabel(m.tolerance, m.toleranceKind, unit)}`}
         />
       </div>
 

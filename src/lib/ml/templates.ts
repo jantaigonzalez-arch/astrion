@@ -2,7 +2,7 @@ import "server-only";
 import { asc, eq, sql, type SQL } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
 import { mlTemplates } from "@/lib/db/schema";
-import type { Ladder, Sample } from "./core";
+import type { Ladder, Sample, ToleranceKind } from "./core";
 import {
   deriveFeatures,
   deriveForLive,
@@ -56,6 +56,8 @@ export type Template = {
    */
   subjectId: string;
   tolerance: number;
+  /** Cómo leer esa tolerancia. Sale del objetivo, no de la plantilla. */
+  toleranceKind: ToleranceKind;
   /** Etiquetas legibles de los rasgos elegidos. Manda sobre qué se lee. */
   featureLabels: Record<string, string>;
   /** Las escaleras que van a competir. Ver `chooseLadder`. */
@@ -125,6 +127,7 @@ function build(r: Row): Template | null {
     subjectId: subject.id,
     derived,
     tolerance: Number(r.tolerance),
+    toleranceKind: target.toleranceKind ?? "absolute",
     featureLabels: Object.fromEntries(features.map((f) => [f.id, f.label])),
     ladders: laddersFor(features.map((f) => f.id)),
     query: compileQuery(def),
@@ -210,7 +213,8 @@ const BUILTIN: Array<Omit<Row, "builtin">> = [
       habría escondido la conexión que el ERP todavía le debe al laboratorio.
     */
     features: ["part_family", "part_supplier", "brand"],
-    tolerance: "15",
+    // En PORCENTAJE desde que `days_to_next_use` es de tolerancia relativa.
+    tolerance: "25",
   },
   {
     slug: "maintenance_interval",
@@ -218,8 +222,22 @@ const BUILTIN: Array<Omit<Row, "builtin">> = [
     question: "¿Cuándo vuelve a necesitar atención este equipo?",
     subject: "equipment_service",
     target: "days_to_next",
-    features: ["brand", "category"],
-    tolerance: "15",
+    /*
+      `equipment_name` —el TIPO de equipo— entró tarde y era el rasgo que
+      mandaba desde el principio.
+
+      Se descubrió con el inquilino sintético, donde el ritmo de servicio está
+      plantado por tipo de equipo a propósito: un HPLC se atiende cada trimestre
+      y un baño de agua dos veces al año. La plantilla preguntaba con `brand` y
+      `category`, y `category` es la del TICKET —mantenimiento, calibración—, no
+      la del equipo. Sobre 12.359 casos: 1,7 % de mejora con los rasgos de
+      antes, 7,7 % añadiendo este. Aprobado contra rechazado.
+
+      Con los 466 casos de Evoelution el fallo era invisible: ahí ninguna
+      combinación llega al umbral, así que la que faltaba tampoco destacaba.
+    */
+    features: ["equipment_name", "brand", "category"],
+    tolerance: "25",
   },
   {
     /*
@@ -245,7 +263,7 @@ const BUILTIN: Array<Omit<Row, "builtin">> = [
     subject: "payables_month",
     target: "payables_amount",
     features: ["month_of_year", "prev_month_level", "open_orders_level"],
-    tolerance: "60000",
+    tolerance: "12",
   },
 ];
 
@@ -254,14 +272,44 @@ export async function ensureBuiltins(): Promise<void> {
   return ensureBuiltinsIn(await tenantDb());
 }
 
-/** Igual que la anterior con el cliente explícito. Ver `countForIn`. */
+/**
+ * Igual que la anterior con el cliente explícito. Ver `countForIn`.
+ *
+ * RECONCILIA, no solo siembra. Una plantilla de fábrica que ya existe se
+ * actualiza a la definición de este archivo.
+ *
+ * Antes solo insertaba las que faltaban, y eso convertía cualquier corrección
+ * en algo que solo veían los inquilinos nuevos: `maintenance_interval` se
+ * quedaría preguntando con los rasgos equivocados en todas las empresas que ya
+ * la tuvieran sembrada, que son justamente las que llevan historia. Se puede
+ * hacer sin miedo porque las de fábrica no son editables desde ninguna pantalla
+ * —`deleteTemplate` las protege y el constructor solo crea `builtin: false`—,
+ * así que no hay trabajo de usuario que pisar.
+ *
+ * Los modelos ya entrenados NO se rompen: cada uno guarda su propia lista de
+ * rasgos en `params.config.features` y sigue prediciendo con la suya. Añadir un
+ * rasgo a la plantilla solo cambia con qué se entrenará el siguiente.
+ */
 export async function ensureBuiltinsIn(
   db: Awaited<ReturnType<typeof tenantDb>>,
 ): Promise<void> {
   await db
     .insert(mlTemplates)
     .values(BUILTIN.map((b) => ({ ...b, builtin: true })))
-    .onConflictDoNothing({ target: mlTemplates.slug });
+    .onConflictDoUpdate({
+      target: mlTemplates.slug,
+      set: {
+        label: sql`excluded.label`,
+        question: sql`excluded.question`,
+        subject: sql`excluded.subject`,
+        target: sql`excluded.target`,
+        features: sql`excluded.features`,
+        tolerance: sql`excluded.tolerance`,
+      },
+      // Solo las de fábrica. Sin esto, un usuario que llamara `test` a su
+      // pregunta vería cómo el sistema se la reescribe.
+      setWhere: eq(mlTemplates.builtin, true),
+    });
 }
 
 /* ------------------------- Lectura ------------------------- */

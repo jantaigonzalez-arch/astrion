@@ -207,6 +207,7 @@ async function Catalog({
     question: template.question,
     unit: template.unit,
     tolerance: template.tolerance,
+    toleranceKind: template.toleranceKind,
     builtin: template.builtin,
     samples: readiness.samples,
     enough: readiness.enough,
@@ -230,6 +231,11 @@ async function Catalog({
         improvement: Number(k.improvement ?? 0),
         withinTolerance: Number(k.withinTolerance ?? 0),
         tolerance: Number(k.tolerance ?? 0),
+        // Guardado con las métricas del modelo, no leído de la plantilla: si
+        // el margen del objetivo cambia después, un modelo viejo tiene que
+        // seguir contando sus aciertos como los contó el día que se midió.
+        toleranceKind: (m.metrics as { toleranceKind?: "absolute" | "relative" })
+          .toleranceKind,
         nTrain: Number(k.nTrain ?? 0),
         nTest: Number(k.nTest ?? 0),
         forecast: forecastRows(m.params, template.featureLabels, locale),

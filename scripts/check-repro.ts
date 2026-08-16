@@ -45,7 +45,10 @@ async function main() {
 
     console.log(`\n${id} — ${samples.length} casos`);
 
-    const antes = chooseModel(samples, Object.keys(t.featureLabels), { tolerance: t.tolerance });
+    const antes = chooseModel(samples, Object.keys(t.featureLabels), {
+      tolerance: t.tolerance,
+      toleranceKind: t.toleranceKind,
+    });
     if (!antes) {
       console.log("  no alcanzan para un backtest; nada que peritar.");
       continue;
@@ -56,7 +59,10 @@ async function main() {
     const rel = datasetPathFor(SLUG, id, 9999);
     const frozen = await freezeDataset(samples, rel);
     const releidos = await readDataset(rel);
-    const despues = chooseModel(releidos, Object.keys(t.featureLabels), { tolerance: t.tolerance });
+    const despues = chooseModel(releidos, Object.keys(t.featureLabels), {
+      tolerance: t.tolerance,
+      toleranceKind: t.toleranceKind,
+    });
 
     console.log(`  congelado: ${frozen.rows} filas · ${(frozen.bytes / 1024).toFixed(1)} kB`);
     console.log(`  algoritmo: original ${antes.algorithmId} · desde parquet ${despues?.algorithmId ?? "—"}`);

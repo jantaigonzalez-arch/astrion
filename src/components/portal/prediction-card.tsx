@@ -1,6 +1,7 @@
 import { Sparkles, Target } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { toleranceLabel, withinToleranceOf, type ToleranceKind } from "@/lib/ml/core";
 
 /**
  * La estimación del modelo sobre este servicio.
@@ -30,12 +31,21 @@ export type PredictionCardProps = {
   explain: Array<{ label: string; value: string }>;
   actual: number | null;
   tolerance: number;
+  /** Ver `ToleranceKind`. Sin él, la tarjeta diría «dentro» donde el modelo dice «fuera». */
+  toleranceKind?: ToleranceKind;
 };
 
 export function PredictionCard({ p }: { p: PredictionCardProps }) {
   const global = p.matched === "global" || !p.matched;
+  // La misma regla que usó el backtest para contar aciertos. Ver `core.ts`.
   const acerto =
-    p.actual !== null && Math.abs(p.actual - p.value) <= p.tolerance;
+    p.actual !== null &&
+    withinToleranceOf(
+      Math.abs(p.actual - p.value),
+      p.actual,
+      p.tolerance,
+      p.toleranceKind ?? "absolute",
+    );
 
   return (
     <Card className="p-5">
@@ -94,7 +104,8 @@ export function PredictionCard({ p }: { p: PredictionCardProps }) {
             <span className="font-mono font-semibold tabular-nums">
               {p.actual.toFixed(1)} {p.unit}
             </span>{" "}
-            · {acerto ? "dentro" : "fuera"} de ±{p.tolerance} {p.unit}
+            · {acerto ? "dentro" : "fuera"} de{" "}
+            {toleranceLabel(p.tolerance, p.toleranceKind, p.unit)}
           </span>
         </div>
       )}

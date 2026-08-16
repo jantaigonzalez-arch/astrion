@@ -18,7 +18,7 @@ import { sql } from "drizzle-orm";
 import { tenantDbFor } from "@/lib/tenancy/context";
 import { listTemplatesIn, countForIn, datasetForIn } from "@/lib/ml/templates";
 import { chooseModel } from "@/lib/ml/select";
-import { verdictFor } from "@/lib/ml/core";
+import { toleranceLabel, verdictFor } from "@/lib/ml/core";
 import { ALGORITHMS } from "@/lib/ml/algorithms";
 
 const SCHEMA = process.argv[2]?.startsWith("tenant_") ? process.argv[2] : "tenant_evoelution";
@@ -42,7 +42,8 @@ async function main() {
     console.log(`${t.label}`);
     console.log(`  ${t.question}`);
     console.log(
-      `  ${n} casos · ${distinct} valores distintos · ${fechas} · tolerancia ±${t.tolerance} ${t.unit}`,
+      `  ${n} casos · ${distinct} valores distintos · ${fechas} · tolerancia ` +
+        toleranceLabel(t.tolerance, t.toleranceKind, t.unit),
     );
     console.log(`  rasgos: ${Object.values(t.featureLabels).join(" · ")}`);
 
@@ -69,7 +70,10 @@ async function main() {
     }
 
     const samples = await datasetForIn(db, t);
-    const r = chooseModel(samples, Object.keys(t.featureLabels), { tolerance: t.tolerance });
+    const r = chooseModel(samples, Object.keys(t.featureLabels), {
+      tolerance: t.tolerance,
+      toleranceKind: t.toleranceKind,
+    });
     if (!r) {
       console.log(`  ⚠ no alcanza para emitir un veredicto honesto.\n`);
       continue;
@@ -88,7 +92,13 @@ async function main() {
     console.log(`    error            ${b.mae.toFixed(2)} ${t.unit}`);
     console.log(`    línea base       ${b.baselineMae.toFixed(2)} ${t.unit}  (predecir siempre la mediana)`);
     console.log(`    mejora           ${b.improvement.toFixed(1)} %`);
-    console.log(`    dentro de ±${t.tolerance}    ${b.withinTolerance.toFixed(0)} %`);
+    const margen = toleranceLabel(t.tolerance, t.toleranceKind, t.unit);
+    console.log(
+      `    dentro de ${margen}   ${b.withinTolerance.toFixed(0)} %` +
+        (b.baselineWithinTolerance === undefined
+          ? ""
+          : `   (la línea base acierta ${b.baselineWithinTolerance.toFixed(0)} %)`),
+    );
     console.log(`    casos de prueba  ${b.nTest}`);
     console.log(`\n    ${v.approved ? "✓ APROBADO" : "✗ RECHAZADO"} — ${v.reason}\n`);
   }
