@@ -30,5 +30,11 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    // Los probes se corren a mano con tsx y usan imports con extensión `.ts`,
+    // que tsx exige y `next build` rechaza. Vivían dentro del build y lo
+    // rompían: se revisan aparte, con `npm run typecheck:probes`.
+    "probe-*.mts"
+  ]
 }

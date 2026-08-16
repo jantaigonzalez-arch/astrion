@@ -310,6 +310,15 @@
       "submit": "Sign in",
       "noAccount": "Does your lab need access?",
       "register": "Request it"
+    },
+    "loginAstraion": {
+      "title": "Sign in to Astraion",
+      "subtitle": "Your company's system, with its decision layer built in.",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Sign in",
+      "noAccount": "Is your company not on Astraion yet?",
+      "register": "Request access"
     }
   }
 }

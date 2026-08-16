@@ -37,8 +37,27 @@ if [[ "${1:-}" == "--staging" ]]; then
   echo "▸ Modo STAGING: los certificados NO serán válidos en el navegador."
 fi
 
-echo "▸ Dominios: $APP_DOMAIN, www.$APP_DOMAIN, $ML_DOMAIN"
-echo "▸ Verificá que los tres apunten por DNS (registro A) a la IP de este servidor."
+# El modo decide qué certificados hacen falta. nginx NO arranca si referencia
+# uno que no existe, así que emitir de menos tumba el sitio entero — que es
+# exactamente lo que pasaba antes: la plantilla de multiempresa pedía el
+# certificado de ROOT_DOMAIN y este script nunca lo emitía.
+NGINX_TEMPLATES="${NGINX_TEMPLATES:-una-empresa}"
+
+if [[ "$NGINX_TEMPLATES" == "multiempresa" ]]; then
+  : "${ROOT_DOMAIN:?en modo multiempresa hay que definir ROOT_DOMAIN en deploy/.env}"
+  echo "▸ Modo MULTIEMPRESA."
+  echo "  Certificado 1 (este script):  $APP_DOMAIN, www.$APP_DOMAIN, $ML_DOMAIN"
+  echo "  Certificado 2 (comodín):      $ROOT_DOMAIN y *.$ROOT_DOMAIN"
+  echo
+  echo "  El comodín NO se puede emitir por HTTP: Let's Encrypt solo valida"
+  echo "  *.dominio por DNS. Este script emite el primero; el segundo lo tenés"
+  echo "  que pedir con el complemento DNS de tu proveedor. Al final te digo cómo."
+else
+  echo "▸ Modo UNA EMPRESA (sin comodín)."
+  echo "  Certificado: $APP_DOMAIN, www.$APP_DOMAIN, $ML_DOMAIN"
+fi
+echo
+echo "▸ Verificá que esos nombres apunten por DNS (registro A) a la IP de este servidor."
 read -rp "  ¿Continuar? [s/N] " ok
 [[ "$ok" =~ ^[sSyY]$ ]] || { echo "Cancelado."; exit 0; }
 
@@ -73,3 +92,35 @@ $COMPOSE exec nginx nginx -s reload
 echo
 echo "✅ Listo. https://$APP_DOMAIN"
 echo "   La renovación queda a cargo del servicio 'certbot' (revisa cada 12 h)."
+
+if [[ "$NGINX_TEMPLATES" == "multiempresa" ]]; then
+  cat <<FIN
+
+⚠️  FALTA EL COMODÍN. nginx no va a arrancar con la plantilla de multiempresa
+   hasta que exista /etc/letsencrypt/live/$ROOT_DOMAIN/.
+
+   Necesitás el complemento DNS de tu proveedor y un token de su API. Con
+   Cloudflare, por ejemplo:
+
+     1. Guardá el token en el volumen de certbot:
+        docker compose -f docker-compose.prod.yml --env-file deploy/.env \
+          run --rm --entrypoint "sh -c 'echo dns_cloudflare_api_token=TU_TOKEN \
+          > /etc/letsencrypt/cloudflare.ini && chmod 600 /etc/letsencrypt/cloudflare.ini'" certbot
+
+     2. Emitilo:
+        docker compose -f docker-compose.prod.yml --env-file deploy/.env \
+          run --rm --entrypoint "certbot certonly --dns-cloudflare \
+            --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini \
+            -d $ROOT_DOMAIN -d '*.$ROOT_DOMAIN' \
+            --email $LETSENCRYPT_EMAIL --agree-tos --no-eff-email --non-interactive" certbot
+
+     3. Recargá nginx:
+        docker compose -f docker-compose.prod.yml --env-file deploy/.env exec nginx nginx -s reload
+
+   La imagen certbot/certbot ya trae el complemento de Cloudflare. Para otro
+   proveedor, cambiá --dns-cloudflare por el suyo.
+
+   El bucle de renovación recoge este certificado igual que los demás:
+   'certbot renew' recuerda con qué complemento se emitió cada uno.
+FIN
+fi

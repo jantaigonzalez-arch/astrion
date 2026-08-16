@@ -21,7 +21,7 @@ export function CTA() {
               <p className="mt-4 text-pretty text-white/85">{t("subtitle")}</p>
               <div className="mt-8 flex flex-wrap justify-center gap-3">
                 <Button asChild size="lg" className="bg-white text-primary hover:bg-white/90">
-                  <Link href="/login">
+                  <Link href="/evoelution/acceso">
                     {t("button")} <ArrowRight className="size-4" />
                   </Link>
                 </Button>

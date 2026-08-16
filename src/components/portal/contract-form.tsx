@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { CheckCircle2, FileSignature, Loader2 } from "lucide-react";
 import { createContract, type ContractState } from "@/lib/actions/contracts";
-import { Link } from "@/i18n/navigation";
+import { Link } from "@/lib/nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -44,10 +44,13 @@ export function ContractForm({
   clients,
   salesReps,
   defaults,
+  folioPrefix,
 }: {
   clients: ClientWithEquipment[];
   salesReps: SalesRepOption[];
   defaults?: ContractDefaults;
+  /** Prefijo de la empresa, para que el ejemplo del campo sea el suyo. */
+  folioPrefix: string;
 }) {
   const [state, action, pending] = useActionState(createContract, initial);
   const [clientId, setClientId] = useState(defaults?.clientId ?? "");
@@ -95,7 +98,7 @@ export function ContractForm({
             name="number"
             required
             defaultValue={defaults?.number}
-            placeholder="Ej. EVO-C-2026-014"
+            placeholder={`Ej. ${folioPrefix}-C-${new Date().getFullYear()}-014`}
           />
         </div>
         <div>

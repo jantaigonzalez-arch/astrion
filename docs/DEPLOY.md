@@ -32,12 +32,36 @@ red interna. Para conectarte desde tu máquina, túnel SSH (ver más abajo).
 
 ## Requisitos
 
-- Un VPS con Docker y Docker Compose. Hetzner CPX22 (3 vCPU / 8 GB, ~€8/mes)
-  sobra para el volumen actual.
-- Tres registros DNS de tipo **A** apuntando a la IP del servidor:
-  `evoelution.com`, `www.evoelution.com` y `cromatografia.evoelution.com`.
-  Deben resolver **antes** de emitir certificados.
-- Puertos 80 y 443 abiertos.
+- **Un VPS con Docker y Docker Compose.** Hetzner **CPX31** (4 vCPU / 8 GB,
+  ~€13/mes) es el punto dulce. No bajes de 8 GB de RAM: el compose **construye
+  la imagen en el servidor**, y `next build` es lo único de todo el stack que
+  pide memoria de verdad. En operación sobra con mucho menos.
+- **Registros DNS de tipo A** apuntando a la IP del servidor, resolviendo
+  **antes** de emitir certificados. Cuáles, según el modo (ver abajo).
+- **Puertos 80 y 443 abiertos.**
+
+### Los dos modos
+
+Se elige con `NGINX_TEMPLATES` en `deploy/.env` y se cambia después sin tocar
+código: la aplicación soporta los dos y decide según `ROOT_DOMAIN` esté
+definida o no.
+
+| | `una-empresa` (por defecto) | `multiempresa` |
+|---|---|---|
+| Dominios | `evoelution.com` | `astraion.com` + `*.astraion.com` |
+| La empresa se resuelve por | primer segmento del path | subdominio |
+| DNS | registros A | registro A **comodín** |
+| Certificado | desafío HTTP, lo emite el script | **comodín**, exige desafío DNS |
+| Registros A necesarios | `APP_DOMAIN`, `www.APP_DOMAIN`, `ML_DOMAIN` | los anteriores + `ROOT_DOMAIN` y `*.ROOT_DOMAIN` |
+
+Empezá en `una-empresa`. Es el modo con menos piezas y el certificado sale con
+un registro A; el comodín obliga a darle a certbot un token de la API de tu
+proveedor de DNS, y eso conviene resolverlo cuando haya un segundo cliente que
+lo justifique.
+
+> **nginx no arranca si referencia un certificado que no existe.** Poner
+> `multiempresa` sin haber emitido el comodín no degrada el servicio: tumba el
+> sitio entero. Por eso el modo es explícito y no se deduce solo.
 
 ---
 
@@ -80,17 +104,56 @@ curl https://evoelution.com/api/health     # {"status":"ok","db":"up"}
 docker compose -f docker-compose.prod.yml ps
 ```
 
-### Cargar los datos iniciales
+### Dar de alta la primera empresa
 
-Solo la primera vez, para crear el usuario admin y los catálogos:
+El servicio `migrate` crea el **plano de control** —`tenants`, `users`,
+`memberships`— y nada más. Las tablas de negocio viven en el esquema de cada
+empresa, así que hasta que exista una empresa no hay dónde guardar un ticket.
+
+Este paso es obligatorio en un servidor nuevo, y va **antes** del seed:
 
 ```bash
-docker compose -f docker-compose.prod.yml run --rm --entrypoint \
-  "npx tsx scripts/seed.ts" migrate
+C="docker compose -f docker-compose.prod.yml --env-file deploy/.env"
+
+# 1. Crea el esquema tenant_evoelution, le aplica las migraciones de negocio
+#    y lo registra. El prefijo es el de los folios: EVO-000001.
+$C run --rm --entrypoint "npx tsx scripts/tenant.ts provision \
+  --slug evoelution --name 'Evoelution' --prefix EVO" migrate
+
+# 2. Comprobar
+$C run --rm --entrypoint "npx tsx scripts/tenant.ts list" migrate
+```
+
+### Cargar los datos iniciales
+
+Crea el usuario administrador y unos datos de ejemplo **dentro** de esa empresa:
+
+```bash
+$C run --rm --entrypoint "npx tsx scripts/seed.ts" migrate
 ```
 
 **Cambiá la contraseña del admin apenas entres.** El seed usa una conocida y
 está en el repo.
+
+Para operar la plataforma —ver todas las empresas, entrar a cualquiera— hace
+falta además el rol de plataforma, que no lo da el seed:
+
+```bash
+$C run --rm --entrypoint "npx tsx scripts/tenant.ts grant \
+  --email admin@evoelution.com --role superadmin" migrate
+```
+
+### Al agregar la empresa número dos
+
+```bash
+$C run --rm --entrypoint "npx tsx scripts/tenant.ts provision \
+  --slug acme --name 'ACME Labs' --prefix ACM" migrate
+```
+
+Y si querés darle subdominio propio, ahí sí se pasa a `multiempresa`: cambiás
+`NGINX_TEMPLATES` y `ROOT_DOMAIN` en `deploy/.env`, emitís el comodín como
+indica `init-letsencrypt.sh` al terminar, y recargás nginx. Sin desplegar
+código nuevo.
 
 ---
 
@@ -114,21 +177,62 @@ nunca queda una versión de la app corriendo contra un schema viejo.
 
 ## Respaldos
 
-El servicio `backup` hace un `pg_dump` diario al volumen `backups` y borra los
-de más de `BACKUP_RETENTION_DAYS` (14 por defecto).
+Son dos servicios, y hacen falta los dos:
+
+- **`backup`** — `pg_dump` diario al volumen `backups`, borrando los de más de
+  `BACKUP_RETENTION_DAYS` (14 por defecto). Siempre activo.
+- **`backup-offsite`** — copia esos dumps FUERA del servidor con rclone. Va en
+  el perfil `respaldo-remoto` porque necesita credenciales que hay que sacar
+  aparte.
+
+> **No cargues datos reales sin el segundo.** Un respaldo en el mismo disco que
+> la base no protege del caso que más importa —perder ese disco— y desde que
+> existen cuentas por pagar, en esa base hay dinero.
+
+Configuralo en `deploy/.env` (hay ejemplos ahí para Storage Box de Hetzner y
+para S3/Backblaze) y levantalo:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file deploy/.env \
+  --profile respaldo-remoto up -d
+```
+
+Copia 20 minutos después del dump, para no llevarse un archivo a medio
+escribir. Usa `copy` y no `sync` a propósito: `sync` borraría en el destino lo
+que ya no está en el origen, o sea que la retención local de 14 días se
+propagaría al remoto y perderías la copia vieja justo cuando la necesitás.
+
+**Comprobá que corre.** Un respaldo que falla en silencio es peor que no tener
+ninguno, porque te deja tranquilo:
+
+```bash
+docker compose -f docker-compose.prod.yml logs backup-offsite | tail -5
+# [offsite] ok           ← bien
+# [offsite] FALLÓ …      ← el respaldo NO salió del servidor
+```
+
+### Restaurar
 
 ```bash
 # Ver los que hay
 docker compose -f docker-compose.prod.yml exec backup ls -lh /backups
 
-# Bajarlos a tu máquina — HACELO: un respaldo que vive en el mismo disco que
-# la base no protege del caso que más importa, que es perder ese disco.
-docker compose -f docker-compose.prod.yml cp backup:/backups ./backups-local
-
-# Restaurar
+# Restaurar entero
 docker compose -f docker-compose.prod.yml exec -T postgres \
   pg_restore -U evoelution -d evoelution --clean --if-exists < backup.dump
 ```
+
+**Restaurar una sola empresa** sin tocar a las demás — que es el caso real,
+alguien borró algo por error:
+
+```bash
+# Del dump completo, solo su esquema
+pg_restore -n tenant_evoelution -d evoelution --clean --if-exists backup.dump
+```
+
+Funciona porque el aislamiento es por esquema: `-n` recorta el dump a una
+empresa. Con un `tenant_id` compartido habría que reconstruir a mano fila por
+fila.
 
 Las **fotos de equipos** viven en el volumen `uploads` y no entran en el dump
 de Postgres. Respaldalas aparte:

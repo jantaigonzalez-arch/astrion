@@ -73,8 +73,20 @@ Tres consecuencias que conviene tener presentes:
   `search_path` hace el trabajo. Con esquema compartido habría que auditar cada
   una y un solo olvido sería una fuga silenciosa.
 - **Las 8 unicidades globales y las 2 secuencias se arreglan solas.** Cada
-  esquema tiene su copia: dos inquilinos pueden tener ambos `EVO-000001` sin
-  colisión. Solo `users.email` sigue siendo global, que es lo correcto.
+  esquema tiene su copia, así que el contador de cada empresa arranca en uno y
+  nadie deduce el volumen de operación de nadie. Solo `users.email` sigue
+  siendo global, que es lo correcto.
+
+  El **contador** quedó aislado desde el principio; el **prefijo** no. Estaba
+  escrito `EVO-` en el código, así que el primer ticket de cualquier otra
+  empresa habría nacido con la marca de Evoelution. Ahora vive en
+  `tenants.folio_prefix`, junto al logo, porque es lo mismo: el folio es lo que
+  el cliente escribe en un correo y lo que aparece en un reporte de servicio
+  firmado. Se fija al dar de alta la empresa —derivado del nombre, `ACME
+  Laboratorios` → `ACM`— y no al emitir el primer folio, porque un inquilino
+  sin prefijo emitiría `null-000001` y ese folio ya no se corrige. Cambiarlo
+  después **no reescribe los ya emitidos**: un documento emitido no se altera,
+  así que la empresa queda con dos series y la UI lo advierte.
 - **Falla cerrado.** Las tablas de negocio **no existen en `public`**. Si alguien
   consulta sin activar inquilino, Postgres responde *relation does not exist*:
   un error ruidoso, nunca los datos de otro cliente.
@@ -177,7 +189,7 @@ selector arriba permite cambiar de inquilino.
 
 Cada fase deja el sistema funcionando. No hay un "big bang" donde nada corre.
 
-### Fase 1 — Plano de control y multi-inquilino  ← EN EJECUCIÓN
+### Fase 1 — Plano de control y multi-inquilino  ✅ COMPLETA
 
 Es el cimiento: sin esto, ninguna de las demás fases tiene dónde apoyarse.
 
@@ -188,16 +200,55 @@ Es el cimiento: sin esto, ninguna de las demás fases tiene dónde apoyarse.
 | 1.3 | Aprovisionamiento: crear inquilino = crear esquema + migrar + sembrar | ✅ |
 | 1.4 | Contexto de inquilino (`tenantDb()`) y sesión con rol de plataforma | ✅ |
 | 1.5 | Migrar los datos actuales a `tenant_evoelution` | ✅ |
-| 1.6 | Rol desde membresías en las 45 páginas y las acciones | ← siguiente |
+| 1.6 | Rol desde membresías en las 45 páginas y las acciones | ✅ |
 | 1.7 | Consola de plataforma: ver todas, entrar, dar de alta | ✅ |
 
-**Criterio de terminado:** dos inquilinos con datos propios, ambos con un ticket
-`EVO-000001` sin colisión, y una consulta sin inquilino activo que **falla**.
+**Criterio de terminado — verificado.** `probe-folios.mts` lo comprueba contra
+la base real:
+
+- Dos inquilinos con datos propios: `evoelution` (602 tickets) y `acme`.
+- Folios sin colisión. La forma fuerte: el **mismo folio idéntico** puede existir
+  en las dos empresas, porque el índice único de `tickets.reference` es de cada
+  esquema. No es que los prefijos hagan que las cadenas difieran — con un
+  `tenant_id` compartido habría que acordarse de meterlo en el índice; aquí no
+  hay nada que recordar. Cada empresa cuenta desde su propia secuencia y emitir
+  en una no mueve el contador de la otra.
+- Una consulta de negocio sin inquilino activo **falla**: `select 1 from tickets`
+  contra el plano de control da error porque la tabla no existe en `public`.
+
+El folio lleva además el prefijo de la empresa (`EVO-000024`, `ACM-000001`), que
+no estaba previsto cuando se escribió este criterio: el primer ticket de
+cualquier otra empresa habría nacido marcado como de Evoelution.
 
 ### Consola de plataforma
 
 La capa que está **por debajo** de los inquilinos: donde el equipo que opera el
 SaaS ve todas las empresas y entra a cualquiera.
+
+```
+Astraion  (plataforma)            → consola: TODAS las empresas   /platform
+└─ Evoelution  (un inquilino)     → su operación                  /dashboard
+   ├─ sus tickets                                                 /tickets
+   └─ sus clientes, equipos, contratos…                           /admin/*
+```
+
+Son **dos cáscaras distintas**, no dos secciones del mismo menú: `(console)`
+tiene su propio layout con la marca de Astraion, y `(app)` es la aplicación de
+una empresa con su barra lateral. Se veían iguales al principio —la consola
+salía con el menú de Evoelution al lado— y eso hacía leer "administro la
+plataforma" como una pestaña más de "administro mi empresa". Una persona puede
+tener los dos sombreros a la vez (el superadministrador es además dueño de
+Evoelution), así que la separación tiene que estar en la pantalla, no solo en
+los permisos.
+
+El recorrido es un ciclo cerrado: se inicia sesión y el personal de plataforma
+aterriza en la **consola**, no dentro de una empresa. Desde ahí *Entrar* fija la
+cookie y lleva al `/dashboard` de esa empresa; una franja permanente arriba
+—`TenantBar`, en todas las páginas del portal, no solo en la consola— dice en
+cuál estás y ofrece *Volver a Astraion*. Esa franja distingue "estás dentro de"
+(sin membresía, en amarillo, con el acceso registrado) de "trabajando en" (tu
+propia empresa). El momento peligroso no es mirar la lista de empresas: es
+llevar veinte minutos leyendo tickets y haber olvidado de quién son.
 
 `platform_role` en `users` es una dimensión **distinta** de `membershipRole`, no
 un valor más de esa lista. El dueño de una cuenta manda en la suya y no debe ver
@@ -221,11 +272,59 @@ de un cliente".
 La cookie de empresa activa es **de sesión, no persistente**: entrar debe ser un
 acto deliberado cada vez, no un estado que sobrevive semanas en el navegador.
 
+### Cómo entra una empresa nueva
+
+Un inquilino cuesta un esquema de Postgres con decenas de tablas. Crear uno por
+cada formulario que alguien llena en la web dejaría la base sembrada de esquemas
+vacíos, caros de listar, de migrar y de borrar. Por eso el alta tiene dos
+tiempos:
+
+1. **Solicitud** (`tenant_signups`, tabla del plano de control). La web pública
+   la crea sin sesión. No hay usuario, ni esquema, ni acceso: es una fila con
+   datos *declarados por un desconocido*. El correo de esa tabla no es una
+   identidad — deliberadamente no es único, porque el historial de intentos de
+   una misma persona es justo lo que hay que ver al revisarla.
+2. **Aprobación** (superadministrador, en `/platform`). Ahí sí: se crea o
+   reutiliza la cuenta del dueño, se aprovisiona el esquema, se aplican las
+   migraciones y se registra la membresía `owner`.
+
+El identificador que propone la web es una **sugerencia** derivada del nombre;
+al aprobar se puede corregir, porque en ese momento se vuelve el nombre de un
+esquema y cambiarlo después implica mover tablas con conexiones vivas. Todo el
+formato se valida **antes** de crear la cuenta del dueño: el correo es único en
+toda la plataforma, así que un dueño creado para un alta que después falla
+quedaría ocupando ese correo sin membresía y sin poder entrar a ningún lado.
+
+Al visitante se le responde **lo mismo** haya pasado lo que haya pasado —
+solicitud nueva, correo repetido o trampa de robots. Decirle "ya existe una
+solicitud con ese correo" convertiría el formulario público en un detector de
+quién usa la plataforma.
+
+Falta el envío de correo: hoy las credenciales del dueño se muestran **una vez**
+en pantalla y el operador las entrega a mano.
+
 ### Fase 2 — Núcleo de ERP
 
-Lo que hace que un ERP sea un ERP y hoy no existe:
+Lo que hace que un ERP sea un ERP. Lo primero ya está:
 
-- `settings` **por empresa** (hoy es una fila global; es un bug latente en cuanto haya dos)
+**Cuentas por pagar ✅.** La deuda con un proveedor nace de su FACTURA
+(`supplier_invoices`), no de la orden ni de la recepción: en la práctica no
+coinciden —un proveedor factura dos órdenes juntas, o una orden llega en tres
+remisiones— y es además el documento fiscal, con su folio y su UUID de CFDI.
+Los pagos son un ledger append-only con el saldo en cada fila, mismo patrón que
+`inventory_movements`: el saldo se construye, no se guarda en un campo que se
+pueda desincronizar. Los controles que sostienen esto están en
+`domain/payables.ts` y verificados en `probe-payables.mts`: el total tiene que
+cuadrar con subtotal más impuestos, el mismo CFDI no entra dos veces (índice
+único parcial), no se paga de más, y una factura con pagos no se cancela —eso
+es una nota de crédito, no una desaparición—.
+
+`settings` **por empresa** dejó de ser un pendiente: al mover las tablas de
+negocio a un esquema por inquilino (paso 1.5), cada empresa tiene su propia
+fila. El bug latente se cerró solo.
+
+Lo que sigue faltando:
+
 - Documentos con máquina de estados: cotización → pedido → factura → pago,
   inmutables una vez emitidos
 - Ledger contable de doble entrada (el inventario ya sigue este patrón, sirve de modelo)
@@ -310,17 +409,69 @@ activo: son justamente lo que se consulta para saber cuál es.
 ### El rol es del inquilino, no de la persona
 
 ```ts
-// ✗ ya no existe
+// ✗ ya no existe: la columna `users.role` se eliminó en 1.6
 session.user.role
 // ✓
-const { role } = await requireTenant();   // rol en el inquilino ACTIVO
+const role = await currentRole();         // rol en el inquilino ACTIVO, o null
+if (!isAdminRole(role)) notFound();
 ```
+
+`currentRole()` devuelve `null` cuando no hay empresa activa, y los helpers de
+`roles.ts` lo tratan como "no puede": el camino de menos resistencia es el
+seguro. `owner` cuenta como administrador en todos ellos salvo en `isOwner()`,
+que reserva facturación y consentimiento de datos para quien firma.
+
+La sesión sigue diciendo **quién** es la persona (`id`, `email`, `platformRole`).
+Qué puede hacer depende de dónde está parada.
+
+### `users` es la única tabla compartida, y por eso se consulta filtrada
+
+`users` vive en `public` a propósito: una identidad, muchas membresías. El
+precio es que es el único sitio donde el aislamiento **no** lo da el esquema —
+un `select * from users` desde el esquema de un inquilino devuelve el padrón de
+toda la plataforma sin fallar ni avisar.
+
+Por eso ninguna consulta de negocio toca `users` directamente:
+
+```ts
+// ✗ devuelve gente de otras empresas
+db.select().from(users).where(eq(users.role, "client"))
+// ✓ arranca de memberships: no hay forma de olvidarse del filtro
+listTenantMembers({ roles: ["client"] })
+```
+
+`data/people.ts` es el único módulo que hace ese join, y expone además las
+variantes `*For(tenantId, …)` para lo que corre fuera de una petición — mismo
+par que `tenantDb()` / `tenantDbFor()`.
+
+Ojo con las dos banderas de "activo", que significan cosas distintas:
+`users.active` es la cuenta en toda la plataforma (la apaga la plataforma, no un
+cliente) y `memberships.active` es la pertenencia a **una** empresa. Confundirlas
+deja fuera a un consultor de sus otros tres clientes.
 
 ### Nada de tablas de negocio en `public`
 
 Si una tabla de negocio existiera en `public`, una consulta sin inquilino la
 encontraría y devolvería datos equivocados en silencio. La ausencia es lo que
 convierte el olvido en un error visible.
+
+Esto **también gobierna las migraciones**, y ahí se coló una vez:
+
+| Configuración | Genera en | Qué gobierna |
+|---|---|---|
+| `drizzle.config.ts` | `drizzle/` | Plano de control: `platform.ts` y nada más |
+| `drizzle.tenant.config.ts` | `drizzle-tenant/` | Tablas de negocio, replicadas en cada esquema |
+
+Hasta el paso 1.5 la primera incluía también `schema.ts`, porque las tablas de
+negocio vivían en `public`. Cuando se movieron, la configuración quedó
+desfasada: el generador seguía creyendo que estaban ahí y propuso **recrearlas
+en `public`** — 40 sentencias que habrían desarmado el aislamiento sin que nadie
+lo notara al revisar el diff, porque el archivo se llamaba "eliminar users.role".
+
+Los enums de negocio sí viven en `public`, y es deliberado: las migraciones de
+inquilino los crean calificados (`CREATE TYPE "public"."ticket_status"`) para
+compartir un solo tipo entre todos los esquemas. Los gobierna `drizzle-tenant/`.
+`drizzle/` no debe verlos ni intentar borrarlos.
 
 ---
 
@@ -329,10 +480,12 @@ convierte el olvido en un error visible.
 | Riesgo | Control |
 |---|---|
 | Consulta sin inquilino activo | Falla cerrado: la tabla no existe en `public` |
+| Padrón de personas cruzando empresas | `users` solo se consulta por `data/people.ts`, que arranca del join con `memberships` |
 | Migración aplicada a medias entre esquemas | Runner transaccional por esquema + registro de versión por esquema |
 | Fuga entre inquilinos | Sin `tenant_id` que filtrar mal: el aislamiento es físico |
 | Dato de un inquilino sin consentimiento en un modelo global | Compuerta verificada en el pipeline, con prueba automatizada |
 | Muchos esquemas degradando el planner | Techo conocido; se cruza moviendo inquilinos grandes a otra base |
+| Una migración recreando tablas de negocio en `public` | `drizzle/` solo mira `platform.ts`; el diff de negocio sale por `drizzle-tenant/` |
 | Conexiones agotadas | `search_path` por transacción, no por conexión: el pool se comparte |
 
 ---
@@ -346,5 +499,10 @@ Dicho explícitamente para que no parezca cubierto:
 - **Respaldos por inquilino**: `pg_dump -n tenant_x`, retención, restauración selectiva
 - **Región de datos**: si un cliente exige que sus datos no salgan de México
 - **Migración de un inquilino a base dedicada** cuando crezca
-- **Pruebas**: el repo sigue sin una sola. Antes de tocar dinero e inventario
-  multi-inquilino, eso importa más que cualquier funcionalidad de esta lista
+- **Pruebas**: el repo sigue sin una suite. Lo que hay son *probes* que se
+  corren a mano contra la base de desarrollo y limpian lo que crean:
+  `probe-e2e.mts` (recepción de compras), `probe-roles.mts` (rol por membresía y
+  aislamiento del padrón) y `probe-folios.mts` (criterio de la Fase 1). Sirven
+  para verificar un cambio concreto, no para que nadie los rompa sin enterarse:
+  no corren solos ni en CI. Antes de tocar dinero e inventario multi-inquilino,
+  eso importa más que cualquier funcionalidad de esta lista

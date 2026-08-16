@@ -1,9 +1,9 @@
 "use server";
 
 import { z } from "zod";
-import { revalidatePath } from "next/cache";
+import { revalidateTenant } from "@/lib/revalidate";
 import { eq } from "drizzle-orm";
-import { tenantDb } from "@/lib/tenancy/context";
+import { tenantDb, currentRole } from "@/lib/tenancy/context";
 import { spareParts } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
 import { isSupport } from "@/lib/roles";
@@ -42,7 +42,9 @@ export async function createPart(
   formData: FormData,
 ): Promise<PartState> {
   const session = await auth();
-  if (!isSupport(session?.user?.role)) return { ok: false, error: "auth" };
+  if (!session?.user || !isSupport(await currentRole())) {
+    return { ok: false, error: "auth" };
+  }
 
   const parsed = PartSchema.safeParse({
     partNumber: formData.get("partNumber"),
@@ -98,7 +100,7 @@ export async function createPart(
       }
     });
 
-    revalidatePath("/admin/refacciones");
+    revalidateTenant();
     return { ok: true, partNumber };
   } catch (e) {
     console.error("[part] create error:", e);
@@ -112,7 +114,9 @@ export async function updatePart(
   formData: FormData,
 ): Promise<PartState> {
   const session = await auth();
-  if (!isSupport(session?.user?.role)) return { ok: false, error: "auth" };
+  if (!session?.user || !isSupport(await currentRole())) {
+    return { ok: false, error: "auth" };
+  }
 
   const id = String(formData.get("id") ?? "");
   const parsed = PartSchema.safeParse({
@@ -177,7 +181,7 @@ export async function updatePart(
       }
     });
 
-    revalidatePath("/admin/refacciones");
+    revalidateTenant();
     return { ok: true, partNumber };
   } catch (e) {
     console.error("[part] update error:", e);

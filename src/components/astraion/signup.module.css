@@ -1,0 +1,183 @@
+/* ============================================================
+   Formulario de solicitud de acceso.
+
+   Módulo propio, pero SIN tokens propios: hereda --panel, --line,
+   --accent y las demás variables de `.page` en astraion.module.css.
+   Se renderiza siempre dentro de esa página, así que duplicar la
+   paleta aquí solo crearía dos fuentes de verdad para el mismo color.
+   ============================================================ */
+
+.form {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  align-items: start;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 28px;
+}
+
+.field {
+  display: grid;
+  gap: 7px;
+}
+
+/* Ocupa la fila completa: son los campos largos. */
+.wide {
+  grid-column: 1 / -1;
+}
+
+.label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.input,
+.textarea,
+.select {
+  width: 100%;
+  background: var(--void);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 11px 13px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--muted);
+}
+
+.input:focus,
+.textarea:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* Campo con error: el borde lo dice antes que el texto. */
+.bad {
+  border-color: var(--accent);
+}
+
+.err {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent-lit);
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 84px;
+}
+
+.select {
+  appearance: none;
+  cursor: pointer;
+}
+
+/* La trampa de robots. Fuera de pantalla y fuera del orden de foco:
+   invisible para una persona, irresistible para un autocompletador. */
+.trap {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.foot {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 20px;
+}
+
+.privacy {
+  max-width: 52ch;
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  padding: 12px 24px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: filter 0.16s ease;
+}
+.submit:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+.submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.spin {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation-duration: 2.4s;
+  }
+}
+
+/* Estado final: sustituye al formulario, no se apila debajo. */
+.done {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--oiii);
+  border-radius: 3px;
+  padding: 34px 30px;
+  display: grid;
+  gap: 10px;
+}
+.done h3 {
+  font-size: 1.35rem;
+}
+.done p {
+  margin: 0;
+  color: var(--text-2);
+  max-width: 56ch;
+}
+
+.formErr {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--accent-lit);
+}

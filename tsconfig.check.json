@@ -1,0 +1,20 @@
+{
+  // Revisión de los probes de la raíz, que el build excluye.
+  //
+  //   npm run typecheck:probes    los tipa
+  //   npx tsx --tsconfig tsconfig.check.json probe-roles.mts    los corre
+  //
+  // Dos diferencias con la configuración normal, ambas necesarias para que
+  // corran fuera de Next: los imports llevan extensión `.ts` (tsx la exige) y
+  // `server-only` no existe fuera de una petición, así que apunta a un módulo
+  // vacío en vez de reventar al cargar.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@/*": ["./src/*"],
+      "server-only": ["./.probe/noop.ts"]
+    }
+  },
+  "include": ["probe-*.mts", ".probe/*.ts"]
+}

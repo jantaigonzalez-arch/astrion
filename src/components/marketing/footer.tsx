@@ -34,7 +34,7 @@ export function Footer() {
           <ul className="mt-4 space-y-2.5 text-sm text-muted-foreground">
             <li><Link className="hover:text-foreground" href="/evo-ai">{nav("evoAi")}</Link></li>
             <li><Link className="hover:text-foreground" href="/productos">{nav("products")}</Link></li>
-            <li><Link className="hover:text-foreground" href="/login">{nav("portal")}</Link></li>
+            <li><Link className="hover:text-foreground" href="/evoelution/acceso">{nav("portal")}</Link></li>
             <li><Link className="hover:text-foreground" href="/contacto">{nav("contact")}</Link></li>
           </ul>
         </div>

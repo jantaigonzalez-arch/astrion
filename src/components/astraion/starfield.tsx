@@ -7,9 +7,16 @@ import { useEffect, useRef } from "react";
  *
  * Tres capas de profundidad: las lejanas apenas se mueven, las cercanas derivan
  * más rápido. Es el paralaje de un cielo en rotación, y da la sensación de estar
- * mirando hacia afuera en vez de a un fondo pintado. Cada tanto cruza un meteoro
- * con estela H-alfa — el acento de la página apareciendo en el cielo, no un
- * color decorativo.
+ * mirando hacia afuera en vez de a un fondo pintado. Cruza algún meteoro de
+ * estela blanca, de tarde en tarde.
+ *
+ * La frecuencia está deliberadamente baja. Caían cada 0.65-2.4 s y en ráfagas
+ * de hasta tres, y eso convertía el encabezado de un producto de gestión en un
+ * salvapantallas. Uno cada 5-13 s se nota cuando ocurre y no reclama atención
+ * el resto del tiempo, que es lo que tiene que hacer un fondo.
+ *
+ * El lienzo cubre todo el encabezado, pero una máscara en `.stars` desvanece la
+ * franja de abajo: ahí está la fogata y su resplandor borraría las estrellas.
  *
  * Se detiene con la pestaña oculta (no tiene sentido gastar cuadros que nadie
  * ve) y se dibuja quieto si el sistema pide movimiento reducido.
@@ -38,9 +45,23 @@ export function Starfield({ className }: { className?: string }) {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let stars: Star[] = [];
     let meteors: Meteor[] = [];
-    let w = 0, h = 0, raf = 0, last = 0, nextMeteor = 2600, resizeTimer = 0;
+    let w = 0, h = 0, raf = 0, last = 0, nextMeteor = 700, resizeTimer = 0;
 
     const rnd = (a: number, b: number) => a + Math.random() * (b - a);
+
+    // Un meteoro nuevo. `delay` lo retrasa dentro de una misma ráfaga para que
+    // los de un grupo no salgan calcados uno encima de otro.
+    function spawnMeteor(delay = 0) {
+      if (meteors.length >= 3) return;
+      meteors.push({
+        x: rnd(w * 0.1, w * 1.1),
+        y: rnd(-40, h * 0.62),
+        len: rnd(70, 180),
+        sp: rnd(0.16, 0.34),
+        life: -delay,
+        max: rnd(1400, 2200),
+      });
+    }
 
     function build() {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -50,7 +71,7 @@ export function Starfield({ className }: { className?: string }) {
       c!.height = h * dpr;
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      const total = Math.min(260, Math.round((w * h) / 4200));
+      const total = Math.min(210, Math.round((w * h) / 5200));
       stars = [];
       for (const L of LAYERS) {
         for (let i = 0; i < Math.round(total * L.n); i++) {
@@ -67,14 +88,17 @@ export function Starfield({ className }: { className?: string }) {
         }
       }
       meteors = [];
+      nextMeteor = 2600;
     }
 
     function paintStar(s: Star, alpha: number) {
       ctx!.beginPath();
       ctx!.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      // Blanco casi puro: sobre el azul de Prusia una estrella gris se pierde,
+      // y son lo único que se ve en la franja alta del cielo.
       ctx!.fillStyle = s.red
-        ? `rgba(232,128,112,${alpha.toFixed(3)})`
-        : `rgba(214,226,245,${alpha.toFixed(3)})`;
+        ? `rgba(255,214,170,${alpha.toFixed(3)})`
+        : `rgba(240,245,252,${alpha.toFixed(3)})`;
       ctx!.fill();
     }
 
@@ -91,29 +115,25 @@ export function Starfield({ className }: { className?: string }) {
 
       nextMeteor -= dt;
       if (nextMeteor <= 0) {
-        meteors.push({
-          x: rnd(w * 0.15, w * 1.05),
-          y: rnd(-20, h * 0.45),
-          len: rnd(70, 190),
-          sp: rnd(0.34, 0.62),
-          life: 0,
-          max: rnd(680, 1100),
-        });
-        nextMeteor = rnd(4200, 11000);
+        // Casi siempre uno solo; muy de vez en cuando un segundo detrás.
+        const burst = Math.random() < 0.12 ? 2 : 1;
+        for (let b = 0; b < burst; b++) spawnMeteor(b * rnd(240, 620));
+        nextMeteor = rnd(5000, 13000);
       }
 
       for (let i = meteors.length - 1; i >= 0; i--) {
         const m = meteors[i];
         m.life += dt;
+        if (m.life < 0) continue; // todavía no entra: espera su turno en la ráfaga
         m.x -= m.sp * dt;
         m.y += m.sp * dt * 0.42;
         const k = m.life / m.max;
         if (k >= 1) { meteors.splice(i, 1); continue; }
         const fade = Math.sin(Math.PI * k);
         const g = ctx!.createLinearGradient(m.x, m.y, m.x + m.len, m.y - m.len * 0.42);
-        g.addColorStop(0, `rgba(240,116,95,${(0.85 * fade).toFixed(3)})`);
-        g.addColorStop(0.4, `rgba(225,89,75,${(0.28 * fade).toFixed(3)})`);
-        g.addColorStop(1, "rgba(225,89,75,0)");
+        g.addColorStop(0, `rgba(255,250,240,${(0.85 * fade).toFixed(3)})`);
+        g.addColorStop(0.4, `rgba(172,190,216,${(0.28 * fade).toFixed(3)})`);
+        g.addColorStop(1, "rgba(172,190,216,0)");
         ctx!.strokeStyle = g;
         ctx!.lineWidth = 1.25;
         ctx!.beginPath();

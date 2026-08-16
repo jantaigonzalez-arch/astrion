@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
 import {
   contracts,
@@ -7,7 +7,7 @@ import {
   tickets,
   ticketComments,
 } from "@/lib/db/schema";
-import { users } from "@/lib/db/platform";
+import { listTenantMembers } from "@/lib/data/people";
 
 export async function getContracts(salesRepId?: string) {
   const db = await tenantDb();
@@ -121,19 +121,9 @@ export async function getContractsForClient(clientId: string) {
   });
 }
 
-/** Vendedores activos (y admins, que también pueden figurar como responsables). */
+/** Vendedores activos (y admins/dueño, que también pueden figurar como responsables). */
 export async function getSalesReps() {
-  const db = await tenantDb();
-  return db
-    .select({
-      id: users.id,
-      name: users.name,
-      email: users.email,
-      role: users.role,
-    })
-    .from(users)
-    .where(and(eq(users.active, true), inArray(users.role, ["sales", "admin"])))
-    .orderBy(users.name);
+  return listTenantMembers({ roles: ["sales", "admin", "owner"] });
 }
 
 export { contractEquipment };

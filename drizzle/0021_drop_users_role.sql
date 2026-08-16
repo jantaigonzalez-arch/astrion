@@ -1,0 +1,31 @@
+-- Paso 1.6: el rol es del inquilino, no de la persona.
+--
+-- `users.role` era global: la misma cuenta era "admin" en todas las empresas o
+-- en ninguna. El papel que juega alguien vive ahora en `memberships.role`, que
+-- es por (persona, empresa). Ninguna consulta de la aplicación lee esta columna
+-- desde este cambio.
+--
+-- ---------------------------------------------------------------------------
+-- OJO si regenerás esta migración con `drizzle-kit generate`.
+--
+-- `drizzle.config.ts` todavía incluye `src/lib/db/schema.ts` (las tablas de
+-- NEGOCIO) además del plano de control, y eso quedó desfasado en el paso 1.5,
+-- cuando esas tablas se movieron de `public` a `tenant_<slug>`. Por eso el
+-- generador propuso además CREAR en `public` las tablas de ML y compras: cree
+-- que siguen ahí. Esas 40 sentencias se quitaron a mano, por dos razones:
+--
+--   1. Contradicen la regla que sostiene el aislamiento — ninguna tabla de
+--      negocio en `public`, para que una consulta sin inquilino falle en vez de
+--      devolver datos equivocados en silencio.
+--   2. No correrían: los enums (`ml_model_status`, `purchase_order_status`…)
+--      ya existen en `public` y las tablas de cada inquilino dependen de ellos,
+--      porque `ALTER TABLE ... SET SCHEMA` mueve tablas pero no tipos.
+--
+-- El arreglo de fondo es dejar `drizzle/` apuntando solo a `platform.ts` y
+-- reconciliar su snapshot con la realidad de post-1.5, sin tocar los enums en
+-- uso. Es trabajo aparte, y hasta entonces conviene revisar a mano lo que
+-- genere esta configuración.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE "users" DROP COLUMN "role";--> statement-breakpoint
+DROP TYPE "public"."user_role";

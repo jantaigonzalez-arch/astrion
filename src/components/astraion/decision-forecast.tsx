@@ -3,16 +3,17 @@
 import { useEffect, useRef } from "react";
 
 /**
- * El argumento del encabezado, dibujado.
+ * El pronóstico, dibujado.
  *
- * La página sostiene que una empresa grande responde «¿cuántas compro?» con un
- * pronóstico y una chica con una corazonada. Esto ES ese pronóstico: consumo
- * mensual real de una refacción —el dato que el ERP ya escribe cada vez que un
- * técnico descuenta una pieza— y el modelo extendiéndolo con su banda de
- * incertidumbre hasta un punto de reorden.
+ * Es la prueba de la capa 3: consumo mensual real de una refacción —el dato que
+ * el ERP ya escribe cada vez que un técnico descuenta una pieza— y el modelo
+ * extendiéndolo con su banda de incertidumbre hasta un punto de reorden.
  *
- * Tres cosas en un objeto: el dato del ERP, el modelo, y la decisión. Por eso
- * está aquí y no un gráfico decorativo.
+ * Tres cosas en un objeto: el dato del ERP, el modelo, y la decisión.
+ *
+ * Se dibuja con ejes rotulados a propósito. Un gráfico sin escala ni unidades
+ * es una ilustración; con ellas es una lectura, que es lo que la página afirma
+ * que el sistema entrega.
  *
  * La serie es fija y no aleatoria: un gráfico que cambia en cada carga se ve
  * como lo que sería, un adorno.
@@ -28,16 +29,16 @@ const FORECAST = [
   { mean: 9.6, band: 4.3 },
 ];
 
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+
 export function DecisionForecast({
   className,
+  locale,
   labels,
 }: {
   className?: string;
-  labels: {
-    history: string;
-    model: string;
-    today: string;
-  };
+  locale: string;
+  labels: { today: string; unit: string };
 }) {
   const ref = useRef<HTMLCanvasElement | null>(null);
 
@@ -51,14 +52,23 @@ export function DecisionForecast({
     let raf = 0, t0 = 0, resizeTimer = 0;
     let W = 0, H = 0;
 
-    const PAD = { l: 8, r: 10, t: 16, b: 26 };
+    // La izquierda tiene que alojar las etiquetas del eje: sin ese espacio el
+    // gráfico se lee como un adorno pegado al borde.
+    const PAD = { l: 40, r: 16, t: 24, b: 34 };
     const total = HISTORY.length + FORECAST.length;
-    const maxY = 17;
+    const lastIdx = HISTORY.length - 1;
+    const maxY = 18;
+    const TICKS = [0, 6, 12, 18];
 
-    const xAt = (i: number) =>
-      PAD.l + (i / (total - 1)) * (W - PAD.l - PAD.r);
-    const yAt = (v: number) =>
-      H - PAD.b - (v / maxY) * (H - PAD.t - PAD.b);
+    // Meses reales en el idioma de la página: el eje deja de ser abstracto.
+    const fmt = new Intl.DateTimeFormat(locale === "en" ? "en-US" : "es-MX", {
+      month: "short",
+    });
+    const monthAt = (i: number) =>
+      fmt.format(new Date(2024, i % 12, 1)).replace(".", "").toUpperCase();
+
+    const xAt = (i: number) => PAD.l + (i / (total - 1)) * (W - PAD.l - PAD.r);
+    const yAt = (v: number) => H - PAD.b - (v / maxY) * (H - PAD.t - PAD.b);
 
     function resize() {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -69,24 +79,46 @@ export function DecisionForecast({
       ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
-    /** p: 0→1 dibuja el histórico; 1→2 abre la banda y el pronóstico. */
-    function draw(p: number) {
-      ctx!.clearRect(0, 0, W, H);
+    /** Retícula, escala y meses. Se dibujan siempre: son el marco, no la señal. */
+    function drawAxes() {
+      ctx!.font = `9.5px ${MONO}`;
+      ctx!.textBaseline = "middle";
 
-      // Retícula tenue: referencia sin competir con la señal.
-      ctx!.strokeStyle = "rgba(120,134,160,0.10)";
-      ctx!.lineWidth = 1;
-      for (let g = 0; g <= 3; g++) {
-        const y = PAD.t + (g / 3) * (H - PAD.t - PAD.b);
+      for (const v of TICKS) {
+        const y = yAt(v);
+        ctx!.strokeStyle =
+          v === 0 ? "rgba(128,142,168,0.32)" : "rgba(128,142,168,0.15)";
+        ctx!.lineWidth = 1;
         ctx!.beginPath();
         ctx!.moveTo(PAD.l, y);
         ctx!.lineTo(W - PAD.r, y);
         ctx!.stroke();
+
+        ctx!.textAlign = "right";
+        ctx!.fillStyle = "rgba(140,154,180,0.85)";
+        ctx!.fillText(String(v), PAD.l - 9, y);
       }
+
+      // Unidad: una escala sin unidad no dice nada.
+      ctx!.textAlign = "right";
+      ctx!.fillStyle = "rgba(140,154,180,0.62)";
+      ctx!.fillText(labels.unit, PAD.l - 9, PAD.t - 12);
+
+      ctx!.textAlign = "center";
+      ctx!.textBaseline = "alphabetic";
+      ctx!.fillStyle = "rgba(140,154,180,0.76)";
+      for (let i = 0; i < total; i += 3) {
+        ctx!.fillText(monthAt(i), xAt(i), H - PAD.b + 16);
+      }
+    }
+
+    /** p: 0→1 dibuja el histórico; 1→2 abre la banda y el pronóstico. */
+    function draw(p: number) {
+      ctx!.clearRect(0, 0, W, H);
+      drawAxes();
 
       const hp = Math.min(1, p);
       const fp = Math.max(0, Math.min(1, p - 1));
-      const lastIdx = HISTORY.length - 1;
 
       /* ---- Banda de incertidumbre ---- */
       if (fp > 0) {
@@ -102,11 +134,13 @@ export function DecisionForecast({
         if (upper.length > 1) {
           ctx!.beginPath();
           upper.forEach(([x, y], i) => (i ? ctx!.lineTo(x, y) : ctx!.moveTo(x, y)));
-          for (let i = lower.length - 1; i >= 0; i--) ctx!.lineTo(lower[i][0], lower[i][1]);
+          for (let i = lower.length - 1; i >= 0; i--) {
+            ctx!.lineTo(lower[i][0], lower[i][1]);
+          }
           ctx!.closePath();
           const g = ctx!.createLinearGradient(xAt(lastIdx), 0, W - PAD.r, 0);
-          g.addColorStop(0, "rgba(225,89,75,0.24)");
-          g.addColorStop(1, "rgba(225,89,75,0.05)");
+          g.addColorStop(0, "rgba(235,167,90,0.32)");
+          g.addColorStop(1, "rgba(235,167,90,0.08)");
           ctx!.fillStyle = g;
           ctx!.fill();
         }
@@ -116,8 +150,9 @@ export function DecisionForecast({
       if (fp > 0) {
         ctx!.save();
         ctx!.setLineDash([4, 4]);
-        ctx!.strokeStyle = "rgba(240,116,95,0.9)";
-        ctx!.lineWidth = 1.6;
+        ctx!.strokeStyle = "rgba(249,196,131,0.95)";
+        ctx!.lineWidth = 1.7;
+        ctx!.lineJoin = "round";
         ctx!.beginPath();
         ctx!.moveTo(xAt(lastIdx), yAt(HISTORY[lastIdx]));
         FORECAST.forEach((f, k) => {
@@ -130,8 +165,21 @@ export function DecisionForecast({
       }
 
       /* ---- Histórico: sólido, es lo que de verdad pasó ---- */
-      const shown = Math.max(1, Math.round(hp * HISTORY.length));
-      ctx!.strokeStyle = "rgba(216,226,242,0.92)";
+      const shown = Math.max(2, Math.round(hp * HISTORY.length));
+
+      // Relleno tenue bajo la serie: le da peso frente a la banda del modelo.
+      const area = ctx!.createLinearGradient(0, PAD.t, 0, H - PAD.b);
+      area.addColorStop(0, "rgba(130,169,210,0.22)");
+      area.addColorStop(1, "rgba(130,169,210,0)");
+      ctx!.beginPath();
+      ctx!.moveTo(xAt(0), H - PAD.b);
+      for (let i = 0; i < shown; i++) ctx!.lineTo(xAt(i), yAt(HISTORY[i]));
+      ctx!.lineTo(xAt(shown - 1), H - PAD.b);
+      ctx!.closePath();
+      ctx!.fillStyle = area;
+      ctx!.fill();
+
+      ctx!.strokeStyle = "rgba(169,196,222,0.95)";
       ctx!.lineWidth = 1.7;
       ctx!.lineJoin = "round";
       ctx!.beginPath();
@@ -142,11 +190,11 @@ export function DecisionForecast({
       }
       ctx!.stroke();
 
-      // Punto vivo en el extremo del histórico
-      if (hp >= 1) {
+      // Cada punto es una medición, no un trazo: se marcan.
+      ctx!.fillStyle = "rgba(169,196,222,0.66)";
+      for (let i = 0; i < shown; i++) {
         ctx!.beginPath();
-        ctx!.arc(xAt(lastIdx), yAt(HISTORY[lastIdx]), 3.2, 0, Math.PI * 2);
-        ctx!.fillStyle = "#f0745f";
+        ctx!.arc(xAt(i), yAt(HISTORY[i]), 1.9, 0, Math.PI * 2);
         ctx!.fill();
       }
 
@@ -155,34 +203,30 @@ export function DecisionForecast({
         const x = xAt(lastIdx);
         ctx!.save();
         ctx!.setLineDash([3, 4]);
-        ctx!.strokeStyle = "rgba(160,172,196,0.45)";
+        ctx!.strokeStyle = "rgba(152,166,192,0.58)";
         ctx!.lineWidth = 1;
         ctx!.beginPath();
-        ctx!.moveTo(x, PAD.t - 6);
-        ctx!.lineTo(x, H - PAD.b + 4);
+        ctx!.moveTo(x, PAD.t - 10);
+        ctx!.lineTo(x, H - PAD.b);
         ctx!.stroke();
         ctx!.restore();
 
-        ctx!.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
-        ctx!.fillStyle = "rgba(160,172,196,0.75)";
+        ctx!.font = `9.5px ${MONO}`;
         ctx!.textAlign = "center";
-        ctx!.fillText(labels.today, x, H - PAD.b + 17);
+        ctx!.textBaseline = "alphabetic";
+        ctx!.fillStyle = "rgba(178,190,212,0.9)";
+        ctx!.fillText(labels.today, x, PAD.t - 15);
 
-        ctx!.textAlign = "left";
-        ctx!.fillStyle = "rgba(200,212,232,0.6)";
-        ctx!.fillText(labels.history, PAD.l, H - PAD.b + 17);
-
-        if (fp > 0.35) {
-          ctx!.textAlign = "right";
-          ctx!.fillStyle = "rgba(240,116,95,0.85)";
-          ctx!.fillText(labels.model, W - PAD.r, H - PAD.b + 17);
-        }
+        ctx!.beginPath();
+        ctx!.arc(x, yAt(HISTORY[lastIdx]), 3.4, 0, Math.PI * 2);
+        ctx!.fillStyle = "#f9c483";
+        ctx!.fill();
       }
     }
 
     function frame(t: number) {
       if (!t0) t0 = t;
-      // 1.1 s el histórico, 1.5 s la banda. Se detiene: no es un bucle.
+      // 1.1 s el histórico, 1.1 s la banda. Se detiene: no es un bucle.
       const p = Math.min(2, (t - t0) / 1100);
       draw(p);
       if (p < 2) raf = requestAnimationFrame(frame);
@@ -232,7 +276,7 @@ export function DecisionForecast({
       io?.disconnect();
       window.removeEventListener("resize", onResize);
     };
-  }, [labels.history, labels.model, labels.today]);
+  }, [locale, labels.today, labels.unit]);
 
   return <canvas ref={ref} className={className} aria-hidden="true" />;
 }

@@ -7,18 +7,50 @@
 import { config } from "dotenv";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import * as schema from "../src/lib/db/schema";
 import * as platform from "../src/lib/db/platform";
-import { DEFAULT_PIPELINE_NAME, DEFAULT_STAGES, dealReference } from "../src/lib/crm";
+import { DEFAULT_PIPELINE_NAME, DEFAULT_STAGES } from "../src/lib/crm";
+
+/** Folio de los negocios de demostración. Ver la nota en scripts/seed.ts. */
+const demoDealReference = (n: number) => `EVO-D-${String(n).padStart(6, "0")}`;
 
 config({ path: ".env.local" });
+
+/** Empresa a la que pertenece la siembra. Ver la nota en scripts/seed.ts. */
+const TENANT_SLUG = process.env.SEED_TENANT ?? "evoelution";
 
 async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("Falta DATABASE_URL en .env.local");
 
-  const client = postgres(url, { prepare: false });
+  const controlClient = postgres(url, { prepare: false });
+  const control = drizzle(controlClient, { schema: platform });
+
+  const [tenant] = await control
+    .select({
+      id: platform.tenants.id,
+      schemaName: platform.tenantSchemas.schemaName,
+    })
+    .from(platform.tenants)
+    .leftJoin(
+      platform.tenantSchemas,
+      eq(platform.tenantSchemas.tenantId, platform.tenants.id),
+    )
+    .where(eq(platform.tenants.slug, TENANT_SLUG))
+    .limit(1);
+
+  if (!tenant?.schemaName) {
+    throw new Error(
+      `No existe el inquilino "${TENANT_SLUG}" o no tiene esquema. ` +
+        `Créalo antes:  npx tsx scripts/tenant.ts create --slug ${TENANT_SLUG}`,
+    );
+  }
+
+  const client = postgres(url, {
+    prepare: false,
+    connection: { search_path: `${tenant.schemaName}, public` },
+  });
   const db = drizzle(client, { schema });
 
   // 1) Embudo con etapas (igual que ensureDefaultPipeline en la app).
@@ -59,11 +91,20 @@ async function main() {
     return;
   }
 
-  // 2) Responsable: el primer admin/vendedor activo.
-  const [owner] = await db
-    .select()
-    .from(platform.users)
-    .where(inArray(platform.users.role, ["admin", "sales"]))
+  // 2) Responsable: el primer admin/dueño/vendedor DE ESTA empresa. El rol vive
+  // en la membresía, así que se pregunta por ahí y no por la cuenta: buscar en
+  // `users` devolvería a un vendedor de otro inquilino.
+  const [owner] = await control
+    .select({ id: platform.users.id })
+    .from(platform.memberships)
+    .innerJoin(platform.users, eq(platform.users.id, platform.memberships.userId))
+    .where(
+      and(
+        eq(platform.memberships.tenantId, tenant.id),
+        eq(platform.memberships.active, true),
+        inArray(platform.memberships.role, ["owner", "admin", "sales"]),
+      ),
+    )
     .limit(1);
 
   // 3) Organizaciones demo.
@@ -169,7 +210,7 @@ async function main() {
     const [deal] = await db
       .insert(schema.crmDeals)
       .values({
-        reference: dealReference(i + 1),
+        reference: demoDealReference(i + 1),
         title: d.title,
         pipelineId: pipeline.id,
         stageId: stage.id,
@@ -225,6 +266,7 @@ async function main() {
     `✓ CRM demo: ${orgs.length} organizaciones, ${contacts.length} contactos, ${demo.length} negocios, 2 actividades.`,
   );
   await client.end();
+  await controlClient.end();
 }
 
 main().catch((e) => {

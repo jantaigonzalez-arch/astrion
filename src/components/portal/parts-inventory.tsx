@@ -1,13 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, PackageX, Search, X } from "lucide-react";
+import { AlertTriangle, PackageX, Search, Truck, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EditPartRow, type EditablePart } from "@/components/portal/part-forms";
 import { cn } from "@/lib/utils";
 
-type Row = EditablePart & { brand: string | null };
+/** Lo pendiente de recibir de esta refacción, de `incomingByPart`. */
+export type Incoming = { quantity: number; expectedAt: string | null };
+
+type Row = EditablePart & { brand: string | null; incoming: Incoming | null };
 
 const mxn = (v: string | null) => {
   if (!v) return "—";
@@ -32,7 +35,17 @@ const usd = (v: string | null) => {
 
 // "over" = sobregiro: se consumió más de lo que había. Antes era imposible de
 // ver porque el descuento se topaba en 0 y el faltante se perdía.
-type StockFilter = "all" | "low" | "out" | "over";
+/** Fecha corta: la orden guarda `date`, sin hora ni zona que interpretar. */
+const fecha = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString("es-MX", {
+    day: "numeric",
+    month: "short",
+  });
+};
+
+type StockFilter = "all" | "low" | "out" | "over" | "incoming";
 
 export function PartsInventory({ parts }: { parts: Row[] }) {
   const [q, setQ] = useState("");
@@ -51,6 +64,7 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
       if (stock === "low" && !(p.stock > 0 && p.stock <= 3)) return false;
       if (stock === "out" && p.stock !== 0) return false;
       if (stock === "over" && p.stock >= 0) return false;
+      if (stock === "incoming" && !p.incoming) return false;
       if (!term) return true;
       return `${p.partNumber} ${p.description} ${p.brand ?? ""}`
         .toLowerCase()
@@ -61,6 +75,14 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
   const lowCount = parts.filter((p) => p.stock > 0 && p.stock <= 3).length;
   const outCount = parts.filter((p) => p.stock === 0).length;
   const overParts = parts.filter((p) => p.stock < 0);
+  const incomingParts = parts.filter((p) => p.incoming);
+
+  // Lo que de verdad hay que comprar: falta y NO viene en camino. Sin esta
+  // distinción, una refacción ya pedida sigue apareciendo como pendiente y se
+  // vuelve a comprar — que es exactamente el error que este cruce evita.
+  const descubiertas = parts.filter(
+    (p) => p.stock <= 0 && (!p.incoming || p.incoming.quantity < Math.abs(p.stock)),
+  );
   // Piezas que hay que reponer para volver a cero: es el faltante real.
   const shortfall = overParts.reduce((a, p) => a + Math.abs(p.stock), 0);
   const value = filtered.reduce(
@@ -94,11 +116,36 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
               </p>
               <p className="text-xs text-muted-foreground">
                 Se consumió más de lo registrado en inventario. Hay que reponer o
-                corregir el conteo físico: {}
-                {overParts
-                  .map((p) => `${p.partNumber} (${p.stock})`)
-                  .join(" · ")}
+                corregir el conteo físico:
               </p>
+              {/* Cuáles ya están pedidas y cuáles no. Antes la lista era una
+                  sola y mandaba a comprar de nuevo algo que ya venía en camino. */}
+              <ul className="space-y-0.5 text-xs">
+                {overParts.map((p) => {
+                  const cubre =
+                    p.incoming && p.incoming.quantity >= Math.abs(p.stock);
+                  return (
+                    <li key={p.id} className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-mono font-medium text-foreground">
+                        {p.partNumber}
+                      </span>
+                      <span className="text-destructive">({p.stock})</span>
+                      {p.incoming ? (
+                        <span className={cubre ? "text-success" : "text-warning"}>
+                          <Truck className="mr-1 inline size-3" />
+                          {cubre ? "cubierto" : "insuficiente"}: llegan{" "}
+                          {p.incoming.quantity}
+                          {p.incoming.expectedAt
+                            ? ` el ${fecha(p.incoming.expectedAt)}`
+                            : ", sin fecha"}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">sin orden de compra</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           </div>
         </Card>
@@ -148,6 +195,18 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
             <PackageX className="mr-1 inline size-3" />
             Agotado ({outCount})
           </button>
+          {incomingParts.length > 0 && (
+            <button
+              onClick={() => setStock("incoming")}
+              className={cn(
+                chip(stock === "incoming"),
+                stock !== "incoming" && "bg-primary/10 text-primary",
+              )}
+            >
+              <Truck className="mr-1 inline size-3" />
+              En camino ({incomingParts.length})
+            </button>
+          )}
           {overParts.length > 0 && (
             <button
               onClick={() => setStock("over")}
@@ -168,6 +227,16 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
           <span className="font-medium text-foreground">
             {mxn(String(value))}
           </span>
+          {descubiertas.length > 0 && (
+            <>
+              {" · "}
+              <span className="font-medium text-warning">
+                {descubiertas.length}{" "}
+                {descubiertas.length === 1 ? "sin cubrir" : "sin cubrir"}
+              </span>{" "}
+              (falta y no viene en camino)
+            </>
+          )}
         </p>
       </Card>
 
@@ -236,6 +305,27 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
                       >
                         {p.stock}
                       </span>
+                      {/* Lo que viene en camino va pegado a la existencia y no
+                          en su propia columna: es la misma pregunta —¿me
+                          alcanza?— y separarlas obligaba a mirar dos lugares
+                          para contestarla. */}
+                      {p.incoming && (
+                        <span
+                          className="ml-2 inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium text-primary"
+                          title={
+                            p.incoming.expectedAt
+                              ? `Llegan ${p.incoming.quantity} el ${p.incoming.expectedAt}`
+                              : `Llegan ${p.incoming.quantity}, sin fecha comprometida`
+                          }
+                        >
+                          <Truck className="size-3" />+{p.incoming.quantity}
+                          {p.incoming.expectedAt && (
+                            <span className="text-muted-foreground">
+                              {fecha(p.incoming.expectedAt)}
+                            </span>
+                          )}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <Badge

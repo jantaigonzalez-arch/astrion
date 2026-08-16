@@ -5,6 +5,8 @@ import { getCopy } from "@/components/astraion/copy";
 import { Starfield } from "@/components/astraion/starfield";
 import { GapMeter } from "@/components/astraion/gap-meter";
 import { DecisionForecast } from "@/components/astraion/decision-forecast";
+import { LayerDeck, LayerRows } from "@/components/astraion/layer-stack";
+import { SignupForm } from "@/components/astraion/signup-form";
 import s from "./astraion.module.css";
 
 export async function generateMetadata({
@@ -23,8 +25,8 @@ export async function generateMetadata({
         : "Astraion — ERP con Machine Learning para empresas pequeñas",
     },
     description: en
-      ? "Small companies don't decide worse. They decide with less. An ERP that keeps its history so the models can ride along."
-      : "La empresa chica no decide peor: decide con menos. Un ERP que guarda su historia para que los modelos viajen con él.",
+      ? "The first ERP with machine learning inside: three layers in one system — data, history and intelligence. Not an AI module bolted on."
+      : "El primer ERP con machine learning adentro: tres capas en un solo sistema —datos, historia e inteligencia—. No un módulo de IA colgado encima.",
   };
 }
 
@@ -62,9 +64,23 @@ export default async function PlataformaPage({
               <span className={s.brandName}>{t.brand}</span>
             </div>
             <div className={s.topLinks}>
+              {/* Anclas a las secciones que ya existen. Se ocultan en pantallas
+                  estrechas: con cinco elementos la barra se parte en dos filas
+                  y deja de leerse como una barra. */}
+              <a href="#capas" className={`${s.linkGhost} ${s.navAnchor}`}>
+                {t.nav.arquitectura}
+              </a>
+              <a href="#modulos" className={`${s.linkGhost} ${s.navAnchor}`}>
+                {t.nav.modulos}
+              </a>
               <Link href="/evoelution" className={s.linkGhost}>
                 {t.nav.caso}
               </Link>
+              {/* Ancla, no ruta: la solicitud vive en esta misma página y
+                  mandarla a otra perdería el contexto que la justifica. */}
+              <a href="#acceso" className={s.linkGhost}>
+                {t.nav.acceso}
+              </a>
               <Link href="/login" className={s.linkSolid}>
                 {t.nav.entrar}
               </Link>
@@ -78,17 +94,33 @@ export default async function PlataformaPage({
               <p className={s.eyebrow}>{t.hero.eyebrow}</p>
 
               <h1 className={s.heroTitle}>
-                {t.hero.title1}
-                <br />
-                <em>{t.hero.title2}</em>
+                {t.hero.h1a} <em>{t.hero.h1em}</em> {t.hero.h1b}
               </h1>
 
-              <p className={s.lede}>{t.hero.lede}</p>
+              <p className={s.claim}>{t.hero.claim}</p>
             </div>
 
-            {/* El titular dice que una empresa grande responde con un
-                pronóstico. Aquí está ese pronóstico: dato del ERP, modelo y
-                decisión en un solo objeto. */}
+            {/* El titular dice «tres capas en un solo sistema». Aquí están:
+                llegan separadas y se ensamblan. Es la arquitectura, y por eso
+                ocupa el encabezado y no un lugar más abajo. */}
+            <LayerDeck styles={s} layers={t.layers.stack} />
+          </div>
+
+        </div>
+      </header>
+
+      {/* ---------------- Las tres capas ---------------- */}
+      <section className={s.section} id="capas">
+        <div className={s.wrap}>
+          <div className={s.secHead}>
+            <p className={s.eyebrow}>{t.layers.eyebrow}</p>
+            <h2>{t.layers.title}</h2>
+            <p>{t.layers.lede}</p>
+          </div>
+
+          <div className={s.archSplit}>
+            {/* El pronóstico es la prueba de la capa 3: dato del ERP, modelo y
+                decisión en un solo objeto. Va junto a las capas, no suelto. */}
             <figure className={s.fcast}>
               <div className={s.fcastHead}>
                 <p className={s.fcastTitle}>
@@ -100,12 +132,24 @@ export default async function PlataformaPage({
 
               <DecisionForecast
                 className={s.fcastCanvas}
-                labels={{
-                  history: t.forecast.history,
-                  model: t.forecast.model,
-                  today: t.forecast.today,
-                }}
+                locale={locale}
+                labels={{ today: t.forecast.today, unit: t.forecast.unit }}
               />
+
+              <ul className={s.fcastKey}>
+                <li className={s.keyHist}>
+                  <i aria-hidden="true" />
+                  {t.forecast.history}
+                </li>
+                <li className={s.keyModel}>
+                  <i aria-hidden="true" />
+                  {t.forecast.model}
+                </li>
+                <li className={s.keyBand}>
+                  <i aria-hidden="true" />
+                  {t.forecast.band}
+                </li>
+              </ul>
 
               <div className={s.fcastReadout}>
                 <span className={s.label}>{t.forecast.readoutLabel}</span>
@@ -115,49 +159,43 @@ export default async function PlataformaPage({
 
               <figcaption className={s.fcastFoot}>{t.forecast.foot}</figcaption>
             </figure>
-          </div>
 
-          <div className={s.spectrum} role="img" aria-label={t.hero.spectrumNote} />
-          <div className={s.spectrumKey}>
-            <span>
-              <b>486 nm</b> Hβ
-            </span>
-            <span>
-              <b>500 nm</b> O III
-            </span>
-            <span>
-              <b>589 nm</b> Na
-            </span>
-            <span>
-              <b>656 nm</b> H-α
-            </span>
-          </div>
-
-          <p className={s.ledeSm}>
-            {t.hero.spectrumNote} <strong>{t.hero.spectrumStrong}</strong>
-          </p>
-
-          {/* La tesis como objeto: misma pregunta, dos respuestas */}
-          <div className={s.duel}>
-            <div className={s.duelQ}>
-              {t.duel.question}
-              <span>{t.duel.caption}</span>
-            </div>
-            <div className={s.duelRows}>
-              <div className={s.duelCell}>
-                <span className={s.who}>{t.duel.big.who}</span>
-                <span className={s.ansBig}>{t.duel.big.answer}</span>
-                <span className={s.how}>{t.duel.big.how}</span>
-              </div>
-              <div className={s.duelCell}>
-                <span className={s.who}>{t.duel.small.who}</span>
-                <span className={s.ansSmall}>{t.duel.small.answer}</span>
-                <span className={s.how}>{t.duel.small.how}</span>
-              </div>
-            </div>
+            <LayerRows
+              styles={s}
+              layers={t.layers.stack}
+              ceiling={t.layers.ceiling}
+            />
           </div>
         </div>
-      </header>
+      </section>
+
+      {/* ---------------- Módulos ---------------- */}
+      <section className={s.section} id="modulos">
+        <div className={s.wrap}>
+          <div className={s.secHead}>
+            <p className={s.eyebrow}>{t.modules.eyebrow}</p>
+            <h2>{t.modules.title}</h2>
+            <p>{t.modules.lede}</p>
+          </div>
+
+          <div className={s.mods}>
+            {t.modules.groups.map((g) => (
+              <article key={g.name} className={s.mod}>
+                <h3 className={s.modName}>{g.name}</h3>
+                <ul className={s.modList}>
+                  {g.items.map((i) => (
+                    <li key={i}>{i}</li>
+                  ))}
+                </ul>
+              </article>
+            ))}
+          </div>
+
+          <div className={s.note} style={{ marginTop: 24 }}>
+            <p>{t.modules.proof}</p>
+          </div>
+        </div>
+      </section>
 
       {/* ---------------- La brecha ---------------- */}
       <section className={s.section}>
@@ -257,43 +295,38 @@ export default async function PlataformaPage({
         </div>
       </section>
 
-      {/* ---------------- Estado ---------------- */}
-      <section className={s.section}>
+      {/* ---------------- Solicitud de acceso ---------------- */}
+      <section className={s.section} id="acceso">
         <div className={s.wrap}>
-          <p className={s.eyebrow}>{t.status.eyebrow}</p>
-          <h2 className={s.closingTitle} style={{ marginTop: 18 }}>
-            {t.status.title1}
-            <br />
-            <em>{t.status.title2}</em>
-          </h2>
-
-          {/* El caso: quién es Evoelution y por qué sus cifras son reales */}
-          <article className={s.caseCard}>
-            <p className={s.kicker}>{t.status.caseKicker}</p>
-            <h3>{t.status.caseTitle}</h3>
-            <p>{t.status.caseBody}</p>
-          </article>
-
-          <div className={s.figures}>
-            {t.status.figures.map((f) => (
-              <div key={f.l} className={s.fig}>
-                <span className={s.figN}>{f.n}</span>
-                <span className={s.figL}>{f.l}</span>
-              </div>
-            ))}
+          <div className={s.secHead}>
+            <p className={s.eyebrow}>{t.signup.eyebrow}</p>
+            <h2>{t.signup.title}</h2>
+            <p>{t.signup.lede}</p>
           </div>
-
-          <div className={s.note}>
-            <p>{t.status.closing}</p>
-          </div>
+          <SignupForm locale={locale} />
         </div>
       </section>
 
-      <footer className={s.wrap}>
-        <div className={s.footer}>
-          <span>{t.footer.a}</span>
-          <span>{t.footer.b}</span>
-          <Link href="/login">{t.nav.entrar}</Link>
+      <footer className={s.footerWrap}>
+        <div className={s.wrap}>
+          <div className={s.footer}>
+            <div className={s.brand}>
+              <span className={s.brandDot} aria-hidden="true" />
+              <span className={s.brandName}>{t.brand}</span>
+            </div>
+
+            <nav className={s.footerNav}>
+              <a href="#capas">{t.nav.arquitectura}</a>
+              <a href="#modulos">{t.nav.modulos}</a>
+              <Link href="/evoelution">{t.nav.caso}</Link>
+              <a href="#acceso">{t.nav.acceso}</a>
+              <Link href="/login">{t.nav.entrar}</Link>
+            </nav>
+          </div>
+
+          <p className={s.footerNote}>
+            {t.footer.a} · {t.footer.b}
+          </p>
         </div>
       </footer>
     </div>

@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { CheckCircle2, ClipboardPlus, Loader2 } from "lucide-react";
 import { createServiceTicket, type TicketFormState } from "@/lib/actions/tickets";
-import { Link } from "@/i18n/navigation";
+import { Link } from "@/lib/nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";

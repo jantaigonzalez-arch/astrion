@@ -30,6 +30,8 @@ export type MovementInput = {
   /** Firmado: negativo = salida, positivo = entrada. */
   quantity: number;
   ticketCommentId?: string | null;
+  /** Origen de la entrada, cuando el movimiento es la recepción de una compra. */
+  purchaseOrderLineId?: string | null;
   unitCostMxn?: string | null;
   unitCostUsd?: string | null;
   note?: string | null;
@@ -93,6 +95,7 @@ export async function applyInventoryMovement(
     quantity: input.quantity,
     balanceAfter,
     ticketCommentId: input.ticketCommentId ?? null,
+    purchaseOrderLineId: input.purchaseOrderLineId ?? null,
     unitCostMxn: input.unitCostMxn ?? null,
     unitCostUsd: input.unitCostUsd ?? null,
     note: input.note ?? null,

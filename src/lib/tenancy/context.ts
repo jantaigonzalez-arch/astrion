@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -30,7 +31,39 @@ export const ACTIVE_TENANT_COOKIE = "evo_tenant";
    ============================================================ */
 
 type TenantClient = ReturnType<typeof drizzle<typeof schema>>;
-const clients = new Map<string, TenantClient>();
+/** El pool crudo se guarda junto al cliente porque cerrarlo exige `end()`. */
+type TenantPool = { client: TenantClient; sql: ReturnType<typeof postgres> };
+
+/**
+ * Pools vivos, en orden de último uso: el primero es el más viejo.
+ *
+ * Es un LRU y no un Map que solo crece. Antes nunca se purgaba: las conexiones
+ * sí se devolvían a los 20 s de inactividad, pero el objeto pool quedaba vivo
+ * para siempre. En un proceso de larga vida que atendió mil empresas, son mil
+ * pools acumulados — no tumba nada el primer día, aparece a los meses.
+ */
+const clients = new Map<string, TenantPool>();
+
+/** Cuántos pools se conservan antes de cerrar el menos usado. */
+const POOL_CACHE_MAX = Number(process.env.DB_TENANT_POOL_CACHE ?? 64);
+
+/**
+ * Cierra el pool menos usado recientemente cuando el mapa se pasa del tope.
+ *
+ * `end()` espera a que terminen las consultas en vuelo, con un tope de 5 s.
+ * Cerrar de golpe rompería una petición a medio camino, y el LRU justamente
+ * elige el candidato con menos probabilidad de estar en uso. Si el cierre
+ * falla, se traga el error a propósito: la conexión la acabará soltando
+ * `idle_timeout`, y tumbar una petición en curso por limpiar un pool sería
+ * cambiar un problema lento por uno visible.
+ */
+function evictOldestPool(): void {
+  const oldest = clients.keys().next();
+  if (oldest.done) return;
+  const pool = clients.get(oldest.value);
+  clients.delete(oldest.value);
+  void pool?.sql.end({ timeout: 5 }).catch(() => {});
+}
 
 /**
  * Un pool pequeño por esquema, con el `search_path` fijado al conectar.
@@ -49,7 +82,13 @@ const clients = new Map<string, TenantClient>();
  */
 function clientFor(schemaName: string): TenantClient {
   const cached = clients.get(schemaName);
-  if (cached) return cached;
+  if (cached) {
+    // Reinsertar lo manda al final: en un Map el orden es de inserción, así
+    // que el primero pasa a ser siempre el menos usado recientemente.
+    clients.delete(schemaName);
+    clients.set(schemaName, cached);
+    return cached.client;
+  }
 
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL no está configurada.");
@@ -67,7 +106,10 @@ function clientFor(schemaName: string): TenantClient {
   });
 
   const client = drizzle(sql, { schema });
-  clients.set(schemaName, client);
+  clients.set(schemaName, { client, sql });
+  // Se purga DESPUÉS de insertar: así el pool recién creado nunca es el
+  // candidato a cerrarse, que sería absurdo estando a punto de usarse.
+  while (clients.size > POOL_CACHE_MAX) evictOldestPool();
   return client;
 }
 
@@ -80,11 +122,23 @@ export type TenantContext = {
   slug: string;
   name: string;
   schemaName: string;
+  /** Prefijo de los folios de esta empresa: `EVO-000123`. */
+  folioPrefix: string;
   /** Rol del usuario EN ESTA empresa. */
   role: MembershipRole;
   /** true si entró por consola de plataforma y no por membresía propia. */
   impersonated: boolean;
 };
+
+/**
+ * Prefijo de emergencia.
+ *
+ * Solo aplica a un inquilino dado de alta antes de que la columna existiera y
+ * cuyo relleno falló. Es deliberadamente feo: un folio `ORG-000001` se nota y
+ * se corrige, mientras que caer a "EVO-" habría repetido en silencio el error
+ * que esta columna vino a arreglar.
+ */
+const FALLBACK_FOLIO_PREFIX = "ORG";
 
 /** Membresías activas del usuario, para el selector de empresa. */
 export async function listMemberships(userId: string) {
@@ -95,6 +149,7 @@ export async function listMemberships(userId: string) {
       slug: tenants.slug,
       name: tenants.name,
       status: tenants.status,
+      folioPrefix: tenants.folioPrefix,
       role: memberships.role,
       schemaName: tenantSchemas.schemaName,
     })
@@ -112,8 +167,14 @@ export async function listMemberships(userId: string) {
  * empresa donde NO es miembro — eso es entrar por consola, y queda marcado
  * como `impersonated` para que la UI lo muestre y nadie confunda "administrar
  * mi empresa" con "estar dentro de la de un cliente".
+ *
+ * Memoizado por petición con `cache()` de React. No es un adorno: `tenantDb()`
+ * llama aquí, y `tenantDb()` se invoca en CADA una de las ~110 funciones de
+ * datos. Sin memoizar, una pantalla que hace diez consultas repetía diez veces
+ * `auth()` y la consulta de membresías. La memoización dura lo que la
+ * petición, así que no puede servir el inquilino de otro usuario.
  */
-export async function getTenantContext(): Promise<TenantContext | null> {
+export const getTenantContext = cache(async function getTenantContext(): Promise<TenantContext | null> {
   const session = await auth();
   if (!session?.user?.id) return null;
 
@@ -130,6 +191,7 @@ export async function getTenantContext(): Promise<TenantContext | null> {
         slug: own.slug,
         name: own.name,
         schemaName: own.schemaName,
+        folioPrefix: own.folioPrefix ?? FALLBACK_FOLIO_PREFIX,
         role: own.role,
         impersonated: false,
       };
@@ -142,6 +204,7 @@ export async function getTenantContext(): Promise<TenantContext | null> {
           tenantId: tenants.id,
           slug: tenants.slug,
           name: tenants.name,
+          folioPrefix: tenants.folioPrefix,
           schemaName: tenantSchemas.schemaName,
         })
         .from(tenants)
@@ -154,6 +217,7 @@ export async function getTenantContext(): Promise<TenantContext | null> {
           slug: t.slug,
           name: t.name,
           schemaName: t.schemaName,
+          folioPrefix: t.folioPrefix ?? FALLBACK_FOLIO_PREFIX,
           role: "admin",
           impersonated: true,
         };
@@ -168,10 +232,11 @@ export async function getTenantContext(): Promise<TenantContext | null> {
     slug: only.slug,
     name: only.name,
     schemaName: only.schemaName,
+    folioPrefix: only.folioPrefix ?? FALLBACK_FOLIO_PREFIX,
     role: only.role,
     impersonated: false,
   };
-}
+});
 
 /** Igual que el anterior pero falla si no hay inquilino: para código que lo exige. */
 export async function requireTenant(): Promise<TenantContext> {
@@ -182,6 +247,26 @@ export async function requireTenant(): Promise<TenantContext> {
     );
   }
   return ctx;
+}
+
+/**
+ * Rol de la persona EN LA EMPRESA ACTIVA. `null` si no hay empresa o no es
+ * miembro de ninguna.
+ *
+ * Reemplaza a `(await currentRole())` en TODA decisión de permisos. La diferencia
+ * no es de estilo: el rol de la sesión era global, así que una consultora que
+ * atiende a dos laboratorios entraba como administradora en ambos aunque en uno
+ * solo fuera agente. La sesión dice quién es la persona; qué puede hacer
+ * depende de dónde está parada.
+ *
+ * Devuelve `null` en vez de lanzar porque casi todas las llamadas son de la
+ * forma `if (!isAdminRole(await currentRole())) notFound()`: un `null` recorre
+ * ese camino solo, mientras que una excepción daría error 500 donde
+ * corresponde una pantalla de "no existe".
+ */
+export async function currentRole(): Promise<MembershipRole | null> {
+  const ctx = await getTenantContext();
+  return ctx?.role ?? null;
 }
 
 /**

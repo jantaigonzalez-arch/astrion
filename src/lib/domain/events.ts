@@ -35,7 +35,14 @@ export type AggregateType =
   | "goal"
   | "label"
   | "email_template"
-  | "automation";
+  | "automation"
+  | "supplier"
+  | "requisition"
+  | "purchase_order"
+  | "supplier_invoice"
+  | "supplier_credit_note"
+  | "supplier_advance"
+  | "payable_import";
 
 /**
  * Tipos de evento en uso. Convención: `agregado.verbo_en_pasado`.
@@ -49,6 +56,45 @@ export type DomainEventType =
   | "ticket.comment_added"
   | "part.consumed"
   | "part.stock_overdrawn"
+  | "part.received"
+  // Requisiciones. El circuito completo deja rastro porque su valor es
+  // justamente ese: quién pidió, quién autorizó y en qué órdenes acabó.
+  | "requisition.created"
+  | "requisition.submitted"
+  | "requisition.approved"
+  | "requisition.rejected"
+  | "requisition.cancelled"
+  | "requisition.ordered"
+  // Compras. `sent` es el evento que congela la orden: a partir de ahí el
+  // proveedor tiene una copia y las líneas dejan de ser editables.
+  | "purchase_order.created"
+  | "purchase_order.sent"
+  | "purchase_order.received"
+  | "purchase_order.cancelled"
+  // Cuentas por pagar. La factura crea la deuda; cada pago la reduce.
+  | "supplier_invoice.registered"
+  | "supplier_invoice.paid"
+  | "supplier_invoice.settled"
+  | "supplier_invoice.cancelled"
+  // Notas de crédito. Bajan la deuda sin que salga dinero, así que su rastro
+  // va separado del de los pagos: el reporte de salidas de caja no debe verlas.
+  | "supplier_credit_note.registered"
+  | "supplier_credit_note.applied"
+  | "supplier_credit_note.cancelled"
+  // Anticipos. El dinero sale el día del anticipo; la aplicación solo lo
+  // imputa a una factura, no vuelve a mover caja.
+  | "supplier_advance.paid"
+  | "supplier_advance.applied"
+  | "supplier_advance.cancelled"
+  // Parcialidades: partir una factura en varios vencimientos.
+  | "supplier_invoice.split"
+  // Suspensión de compras. Es temporal y con causa, a diferencia de la baja
+  // del proveedor, así que deja rastro de las dos puntas.
+  | "supplier.suspended"
+  | "supplier.reinstated"
+  // Importación masiva de cargos y abonos. El lote deja un evento con el
+  // recuento; cada documento creado deja el suyo con la fila cruda.
+  | "payable_import.committed"
   | "lead.qualified"
   // Migración del sistema anterior. Cada registro importado deja su evento con
   // la fila cruda en el payload: es la única forma de responder después "de
@@ -74,7 +120,8 @@ export type DomainEventType =
   | "goal.deleted"
   | "label.deleted"
   | "email_template.deleted"
-  | "automation.deleted";
+  | "automation.deleted"
+  | "supplier.deleted";
 
 export type EventInput = {
   aggregateType: AggregateType;

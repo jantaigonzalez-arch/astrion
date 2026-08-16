@@ -62,7 +62,7 @@ export function Navbar() {
           <LocaleSwitcher />
           <ThemeToggle />
           <Button asChild variant="ghost" size="sm">
-            <Link href="/login">{t("login")}</Link>
+            <Link href="/evoelution/acceso">{t("login")}</Link>
           </Button>
           <Button asChild variant="accent" size="sm">
             <Link href="/contacto">{t("requestService")}</Link>
@@ -97,7 +97,7 @@ export function Navbar() {
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <Button asChild variant="outline" size="sm">
-                <Link href="/login" onClick={() => setOpen(false)}>
+                <Link href="/evoelution/acceso" onClick={() => setOpen(false)}>
                   {t("login")}
                 </Link>
               </Button>

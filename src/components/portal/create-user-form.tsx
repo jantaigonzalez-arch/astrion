@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { Boxes, CheckCircle2, Copy, Loader2, RefreshCw, UserPlus } from "lucide-react";
 import { createUser, type CreateUserState } from "@/lib/actions/users";
-import { Link } from "@/i18n/navigation";
+import { Link } from "@/lib/nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,41 +31,49 @@ export function CreateUserForm() {
 
   if (state.ok) {
     const creds = `${state.createdEmail} / ${password}`;
+    // La cuenta ya existía en la plataforma: se le dio acceso a esta empresa
+    // conservando su contraseña. Enseñar la que se escribió en el formulario
+    // sería entregar unas credenciales que no funcionan.
+    const linked = state.linkedExisting;
     return (
       <div className="flex flex-col items-center gap-4 py-8 text-center">
         <CheckCircle2 className="size-12 text-success" />
         <div>
-          <p className="font-medium">Cuenta creada</p>
+          <p className="font-medium">{linked ? "Acceso concedido" : "Cuenta creada"}</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Comparte estas credenciales con el laboratorio:
+            {linked
+              ? "Esa persona ya tenía cuenta en la plataforma. Ahora también pertenece a esta empresa y entra con la contraseña que ya usaba."
+              : "Comparte estas credenciales con el laboratorio:"}
           </p>
         </div>
-        <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-4 py-2.5 font-mono text-sm">
-          <span>{creds}</span>
-          <button
-            type="button"
-            onClick={() => {
-              navigator.clipboard.writeText(creds);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            }}
-            className="text-muted-foreground hover:text-foreground"
-            aria-label="Copiar"
-          >
-            <Copy className="size-4" />
-          </button>
-          {copied && <span className="text-xs text-success">¡copiado!</span>}
-        </div>
+        {!linked && (
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-4 py-2.5 font-mono text-sm">
+            <span>{creds}</span>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(creds);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              }}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Copiar"
+            >
+              <Copy className="size-4" />
+            </button>
+            {copied && <span className="text-xs text-success">¡copiado!</span>}
+          </div>
+        )}
         <div className="flex flex-wrap justify-center gap-2">
           {state.createdRole === "client" && state.createdId && (
             <Button asChild variant="accent">
-              <Link href={`/admin/users/${state.createdId}/equipos`}>
+              <Link href={`/admin/equipos/${state.createdId}`}>
                 <Boxes className="size-4" /> Registrar equipos
               </Link>
             </Button>
           )}
           <Button asChild variant="outline">
-            <Link href="/admin/users">Ver usuarios</Link>
+            <Link href="/admin/configuracion/usuarios">Ver usuarios</Link>
           </Button>
           <Button variant="ghost" onClick={() => location.reload()}>
             Crear otro
@@ -141,7 +149,10 @@ export function CreateUserForm() {
       </div>
 
       {state.error === "duplicate" && (
-        <p className="text-sm text-destructive">Ya existe una cuenta con ese correo.</p>
+        <p className="text-sm text-destructive">
+          Esa persona ya pertenece a esta empresa. Para cambiarle el rol, edítala
+          desde el listado de usuarios.
+        </p>
       )}
       {state.error === "invalid" && (
         <p className="text-sm text-destructive">Revisa los campos: correo válido y contraseña de 8+ caracteres.</p>

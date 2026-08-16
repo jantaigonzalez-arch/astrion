@@ -12,6 +12,7 @@ import {
   tenantSchemas,
   RESERVED_SLUGS,
   schemaNameFor,
+  suggestFolioPrefix,
 } from "@/lib/db/platform";
 
 /**
@@ -165,6 +166,8 @@ export type ProvisionInput = {
   /** Se le crea membresía de `owner`: quien puede facturar y dar consentimiento de datos. */
   ownerUserId?: string;
   plan?: string;
+  /** Prefijo de folio. Si se omite, se deriva del nombre. */
+  folioPrefix?: string;
 };
 
 /**
@@ -195,7 +198,15 @@ export async function provisionTenant(input: ProvisionInput) {
   const tenant = await db.transaction(async (tx) => {
     const [t] = await tx
       .insert(tenants)
-      .values({ slug, name: input.name.trim(), plan: input.plan ?? "poc", status: "trial" })
+      .values({
+        slug,
+        name: input.name.trim(),
+        plan: input.plan ?? "poc",
+        status: "trial",
+        // Se fija al crear y no al emitir el primer folio: un inquilino sin
+        // prefijo emitiría `null-000001`, y ese folio ya no se corrige.
+        folioPrefix: input.folioPrefix ?? suggestFolioPrefix(input.name),
+      })
       .returning({ id: tenants.id, slug: tenants.slug });
 
     await tx.insert(tenantSchemas).values({ tenantId: t.id, schemaName });

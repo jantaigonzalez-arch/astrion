@@ -4,8 +4,19 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { getDb, isDbConfigured } from "@/lib/db";
 import { users } from "@/lib/db/platform";
+import { ROOT_DOMAIN } from "@/lib/tenancy/host";
 
-export type Role = "admin" | "agent" | "client" | "sales";
+/**
+ * La sesión dice QUIÉN es la persona, no qué puede hacer.
+ *
+ * Aquí vivía `Role`, un rol global: la misma persona era "admin" en todas las
+ * empresas o en ninguna. Se fue con la columna `users.role`. Lo que puede hacer
+ * alguien depende de la empresa en la que está parado y se pregunta con
+ * `currentRole()` (`tenancy/context.ts`), que lee su membresía.
+ *
+ * `platformRole` sí vive aquí, y es una dimensión distinta: no habla de una
+ * empresa, habla de operar el SaaS por encima de todas.
+ */
 
 /**
  * Rol de PLATAFORMA: quien opera el SaaS, por encima de los inquilinos.
@@ -17,19 +28,51 @@ declare module "next-auth" {
   interface Session {
     user: {
       id: string;
-      role: Role;
       platformRole: PlatformRole;
     } & DefaultSession["user"];
   }
   interface User {
-    role?: Role;
     platformRole?: PlatformRole;
   }
 }
 
+/**
+ * Dominio de la cookie de sesión.
+ *
+ * Sin esto, el modo subdominio no funciona en absoluto: una cookie escrita en
+ * `astraion.com` es de HOST por defecto, así que el navegador no la manda a
+ * `evoelution.astraion.com`. Entrar a una empresa desde la consola cerraría la
+ * sesión en el salto, y nadie entendería por qué.
+ *
+ * El punto inicial la comparte con todos los subdominios del producto. Es
+ * aceptable porque todos los sirve esta misma aplicación: no hay contenido de
+ * terceros bajo `*.astraion.com` que pudiera leerla. El día que se ofrezca a un
+ * cliente alojar algo suyo ahí, esta decisión hay que revisarla — por eso queda
+ * escrito aquí y no como una línea de configuración suelta.
+ *
+ * `undefined` deja el comportamiento anterior intacto: en desarrollo y en
+ * despliegues de un solo dominio, cookie de host y nada que compartir.
+ */
+const COOKIE_DOMAIN = ROOT_DOMAIN ? `.${ROOT_DOMAIN}` : undefined;
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
+  cookies: {
+    sessionToken: {
+      name:
+        process.env.NODE_ENV === "production"
+          ? "__Secure-authjs.session-token"
+          : "authjs.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+        domain: COOKIE_DOMAIN,
+      },
+    },
+  },
   providers: [
     Credentials({
       credentials: {
@@ -57,7 +100,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           id: user.id,
           name: user.name ?? undefined,
           email: user.email,
-          role: user.role,
           platformRole: user.platformRole ?? null,
         };
       },
@@ -67,7 +109,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.role = (user as { role?: Role }).role ?? "client";
         token.platformRole =
           (user as { platformRole?: PlatformRole }).platformRole ?? null;
       }
@@ -76,7 +117,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
-        session.user.role = (token.role as Role) ?? "client";
         session.user.platformRole = (token.platformRole as PlatformRole) ?? null;
       }
       return session;

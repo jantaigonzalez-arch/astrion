@@ -21,10 +21,38 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-evoelution}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?definí POSTGRES_PASSWORD en deploy/.env}
       POSTGRES_DB: ${POSTGRES_DB:-evoelution}
+      # La MISMA zona que la aplicación, y por la misma razón. Postgres decide
+      # aquí qué significan `now()`, `current_date` y `date_trunc('month', …)`:
+      # con la base en UTC y la aplicación en México, el corte de mes de los
+      # informes cae seis horas antes que el cambio de día que ve el usuario, y
+      # las ventas del último día del mes aparecen en el mes siguiente.
+      TZ: ${TZ:-America/Mexico_City}
+      PGTZ: ${TZ:-America/Mexico_City}
     volumes:
       - pgdata:/var/lib/postgresql/data
     # Sin `ports`: la base NO se expone a internet. Solo la alcanzan los
     # contenedores de esta red. Para conectarte desde afuera, túnel SSH.
+    #
+    # El techo de empresas concurrentes es aritmética de conexiones, no de CPU
+    # ni de disco. Con el aislamiento por esquema, cada empresa ACTIVA mantiene
+    # su propio pool:
+    #
+    #   max_connections − reservadas − pool del plano de control
+    #   ─────────────────────────────────────────────────────────  = empresas
+    #                DB_TENANT_POOL_MAX                              a la vez
+    #
+    # Con el default de Postgres (100) daban ~29. Pasada esa cifra la petición
+    # no falla: se queda esperando una conexión libre, que es peor de
+    # diagnosticar. Con 300 el techo sube a ~95 empresas activas a la vez
+    # (activa = con actividad en los últimos DB_TENANT_IDLE segundos).
+    #
+    # No es gratis: cada conexión reserva memoria de backend. Súbelo junto con
+    # la RAM del VPS, no en abstracto. shared_buffers en ~25% de la RAM.
+    command: >
+      postgres
+      -c max_connections=${PG_MAX_CONNECTIONS:-300}
+      -c shared_buffers=${PG_SHARED_BUFFERS:-512MB}
+      -c effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1536MB}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-evoelution} -d ${POSTGRES_DB:-evoelution}"]
       interval: 10s
@@ -54,15 +82,40 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-evoelution}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-evoelution}
+      # Se repite lo que ya fija el Dockerfile para que se pueda cambiar sin
+      # reconstruir la imagen: quien opera el despliegue toca `deploy/.env`.
+      TZ: ${TZ:-America/Mexico_City}
       AUTH_SECRET: ${AUTH_SECRET:?generá uno con `openssl rand -base64 32`}
       AUTH_TRUST_HOST: "true"
-      AUTH_URL: https://${APP_DOMAIN:?definí APP_DOMAIN en deploy/.env}
-      NEXT_PUBLIC_SITE_URL: https://${APP_DOMAIN}
+      # Dónde vive el login. Explícito y no derivado de ROOT_DOMAIN a propósito:
+      # la sustitución anidada de Compose (`${A:-${B}}`) no se comporta igual en
+      # todas las versiones, y una AUTH_URL mal resuelta no falla al arrancar —
+      # falla al iniciar sesión, que es mucho peor de diagnosticar.
+      #
+      #   una empresa   AUTH_DOMAIN = APP_DOMAIN   (evoelution.com)
+      #   multiempresa  AUTH_DOMAIN = ROOT_DOMAIN  (astraion.com)
+      AUTH_URL: https://${AUTH_DOMAIN:?definí AUTH_DOMAIN en deploy/.env}
+      NEXT_PUBLIC_SITE_URL: https://${APP_DOMAIN:?definí APP_DOMAIN en deploy/.env}
       NEXT_PUBLIC_WHATSAPP: ${NEXT_PUBLIC_WHATSAPP:-}
+      # Activa el modo subdominio. Sin esta variable la aplicación resuelve el
+      # inquilino por el primer segmento del path, exactamente como antes: la
+      # migración se puede hacer y deshacer sin desplegar código nuevo.
+      #
+      # Se lee solo en el servidor. El navegador no la necesita —recibe el modo
+      # desde el layout del inquilino— y por eso NO lleva el prefijo
+      # NEXT_PUBLIC_, que además la congelaría en el build en vez de leerla del
+      # entorno del contenedor.
+      ROOT_DOMAIN: ${ROOT_DOMAIN}
       # Conexión directa a Postgres (sin pooler): los prepared statements sí
       # se pueden usar y ahorran replanificar cada consulta.
       DB_PREPARE: "true"
       DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      # Conexiones por empresa activa. Junto con max_connections del servicio
+      # postgres, fijan cuántas empresas se atienden a la vez. Ver la nota ahí.
+      DB_TENANT_POOL_MAX: ${DB_TENANT_POOL_MAX:-3}
+      DB_TENANT_IDLE: ${DB_TENANT_IDLE:-20}
+      # Pools de empresa vivos en memoria antes de cerrar el menos usado.
+      DB_TENANT_POOL_CACHE: ${DB_TENANT_POOL_CACHE:-64}
       UPLOADS_DIR: /data/uploads
       # Red interna: el ML se llama servidor-a-servidor, sin salir a internet.
       ML_SERVICE_URL: ${ML_SERVICE_URL:-http://evoai-backend:8000}
@@ -82,14 +135,24 @@ services:
       - "443:443"
     environment:
       APP_DOMAIN: ${APP_DOMAIN}
+      # Solo lo usa la plantilla de multiempresa. Vacío en modo una empresa.
+      ROOT_DOMAIN: ${ROOT_DOMAIN:-}
       ML_DOMAIN: ${ML_DOMAIN:-cromatografia.evoelution.com}
       # Solo sustituir estas dos: sin el filtro, envsubst se comería $host,
       # $remote_addr y el resto de variables propias de nginx.
-      NGINX_ENVSUBST_FILTER: "^(APP_DOMAIN|ML_DOMAIN)$$"
+      NGINX_ENVSUBST_FILTER: "^(APP_DOMAIN|ML_DOMAIN|ROOT_DOMAIN)$$"
     volumes:
       # La imagen procesa /etc/nginx/templates/*.template con envsubst y
       # escribe el resultado en /etc/nginx/conf.d/ al arrancar.
-      - ./deploy/nginx:/etc/nginx/templates:ro
+      #
+      # Cuál se monta depende del modo (ver deploy/.env.example):
+      #   una-empresa   un dominio, sin comodín  ← por defecto
+      #   multiempresa  apex + *.dominio, exige certificado comodín
+      #
+      # nginx NO arranca si referencia un certificado que no existe, así que
+      # montar la plantilla de multiempresa sin haber emitido el comodín tumba
+      # el sitio entero. Por eso el modo es explícito y no se deduce.
+      - ./deploy/nginx/${NGINX_TEMPLATES:-una-empresa}:/etc/nginx/templates:ro
       # Las fotos las sirve nginx directo desde el volumen: no tiene sentido
       # despertar a Node para devolver un JPG.
       - uploads:/srv/uploads:ro
@@ -132,6 +195,63 @@ services:
                  && echo \"[backup] ok evoelution-$$ts.dump\"
                  || echo '[backup] FALLÓ';
                find /backups -name '*.dump' -mtime +$${RETENTION_DAYS} -delete;
+               sleep 24h;
+             done"
+
+  # Copia los dumps FUERA del servidor.
+  #
+  # Sin esto, `backup` escribe a un volumen del mismo host: un disco perdido se
+  # lleva los datos y los respaldos juntos, que es lo mismo que no tener
+  # respaldo. Va en un perfil porque necesita credenciales que hay que sacar
+  # aparte, pero NO es opcional antes de cargar datos reales.
+  #
+  #   docker compose -f docker-compose.prod.yml --profile respaldo-remoto up -d
+  #
+  # rclone habla con Storage Box de Hetzner (sftp), S3, Backblaze B2 y demás.
+  # La configuración va por variables RCLONE_CONFIG_*, sin archivo que montar.
+  # Ejemplo para Storage Box, en deploy/.env:
+  #
+  #   RCLONE_CONFIG_REMOTO_TYPE=sftp
+  #   RCLONE_CONFIG_REMOTO_HOST=uXXXXX.your-storagebox.de
+  #   RCLONE_CONFIG_REMOTO_USER=uXXXXX
+  #   RCLONE_CONFIG_REMOTO_PASS=<obtenido con: rclone obscure 'tu-contraseña'>
+  #   BACKUP_REMOTE=REMOTO:/respaldos/evoelution
+  backup-offsite:
+    profiles: ["respaldo-remoto"]
+    image: rclone/rclone:latest
+    restart: unless-stopped
+    environment:
+      # `:-` y no `:?`: Compose interpola TODO el archivo antes de filtrar por
+      # perfil, así que exigirla aquí abortaría un `up -d` normal que ni
+      # siquiera levanta este servicio. Se comprueba en el arranque, abajo.
+      BACKUP_REMOTE: ${BACKUP_REMOTE:-}
+      RCLONE_CONFIG_REMOTO_TYPE: ${RCLONE_CONFIG_REMOTO_TYPE:-}
+      RCLONE_CONFIG_REMOTO_HOST: ${RCLONE_CONFIG_REMOTO_HOST:-}
+      RCLONE_CONFIG_REMOTO_USER: ${RCLONE_CONFIG_REMOTO_USER:-}
+      RCLONE_CONFIG_REMOTO_PASS: ${RCLONE_CONFIG_REMOTO_PASS:-}
+      RCLONE_CONFIG_REMOTO_PROVIDER: ${RCLONE_CONFIG_REMOTO_PROVIDER:-}
+      RCLONE_CONFIG_REMOTO_ACCESS_KEY_ID: ${RCLONE_CONFIG_REMOTO_ACCESS_KEY_ID:-}
+      RCLONE_CONFIG_REMOTO_SECRET_ACCESS_KEY: ${RCLONE_CONFIG_REMOTO_SECRET_ACCESS_KEY:-}
+      RCLONE_CONFIG_REMOTO_ENDPOINT: ${RCLONE_CONFIG_REMOTO_ENDPOINT:-}
+      RCLONE_CONFIG_REMOTO_REGION: ${RCLONE_CONFIG_REMOTO_REGION:-}
+    volumes:
+      - backups:/backups:ro
+    # `copy` y no `sync`: sync borraría en el destino lo que ya no está en el
+    # origen, así que la retención local de 14 días se propagaría al remoto y
+    # perderías la copia vieja justo cuando la necesitás. El remoto conserva.
+    #
+    # Corre 20 minutos después que el dump para no copiar un archivo a medias.
+    entrypoint: >
+      sh -c "if [ -z \"$$BACKUP_REMOTE\" ]; then
+               echo '[offsite] BACKUP_REMOTE está vacío: no hay a dónde copiar.';
+               echo '[offsite] Configuralo en deploy/.env — ver los ejemplos ahí.';
+               exit 1;
+             fi;
+             sleep 1200;
+             while :; do
+               rclone copy /backups \"$$BACKUP_REMOTE\" --stats-one-line
+                 && echo '[offsite] ok'
+                 || echo '[offsite] FALLÓ — el respaldo NO salió del servidor';
                sleep 24h;
              done"
 

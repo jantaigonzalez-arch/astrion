@@ -11,25 +11,35 @@ export type PlatformCopy = ReturnType<typeof getCopy>;
 
 const es = {
   brand: "Astraion",
-  nav: { caso: "El caso Evoelution", entrar: "Entrar" },
+  nav: {
+    arquitectura: "Arquitectura",
+    modulos: "Módulos",
+    caso: "El caso Evoelution",
+    acceso: "Solicitar acceso",
+    entrar: "Entrar",
+  },
 
   hero: {
     eyebrow: "ERP + Machine Learning",
-    title1: "La empresa chica no decide peor.",
-    title2: "Decide con menos.",
-    lede:
-      "La brecha con las grandes nunca fue de talento ni de ambición. Fue de infraestructura: equipos de datos, almacenes, ingenieros de modelos. Cosas que se pagan con una nómina que una empresa de treinta personas no tiene. Esta iniciativa parte de que esa brecha ya se puede cerrar.",
-    spectrumNote:
-      "Un astrónomo sabe de qué está hecha una estrella leyendo sus líneas de emisión. Un cromatógrafo identifica un compuesto por su pico de retención. Es el mismo gesto: medir una señal para saber qué hay dentro.",
-    spectrumStrong: "Astraion hace eso con la operación de una empresa.",
+    // El titular dice qué es y para quién. Es lo único que abre la página: la
+    // tesis («una pyme no decide peor…») y el duelo de las dos respuestas
+    // vivían aquí y se retiraron — el «para una PYME» del titular ya carga con
+    // esa idea sin gastar media pantalla.
+    h1a: "El primer ERP con",
+    h1em: "machine learning adentro",
+    h1b: "para una PYME",
+    claim:
+      "No un módulo de IA colgado encima: tres capas en un solo sistema —datos, historia e inteligencia—.",
   },
 
   forecast: {
     tag: "Ejemplo",
     title: "Consumo mensual",
     part: "Sello de bomba · WAT270919",
-    history: "histórico",
-    model: "pronóstico",
+    unit: "piezas",
+    history: "Histórico · 14 meses",
+    model: "Pronóstico · 4 meses",
+    band: "Banda 80 %",
     today: "hoy",
     readoutLabel: "Punto de reorden sugerido",
     readoutValue: "8",
@@ -37,19 +47,75 @@ const es = {
     foot: "Sale del libro mayor de inventario. Nadie captura nada aparte.",
   },
 
-  duel: {
-    question: "«¿Cuántas bombas de HPLC compro este trimestre?»",
-    caption: "La misma pregunta, dos empresas.",
-    big: {
-      who: "Empresa grande",
-      answer: "Un pronóstico",
-      how: "Consumo histórico por número de parte, estacionalidad, tiempo de entrega del proveedor. Un modelo lo calcula; alguien lo revisa.",
-    },
-    small: {
-      who: "Empresa chica — hasta hoy",
-      answer: "Una corazonada",
-      how: "«El año pasado se acabaron en marzo.» El dato existía, en tickets y notas de servicio. Nunca hubo quién lo convirtiera en decisión.",
-    },
+  layers: {
+    eyebrow: "La arquitectura",
+    title: "Tres capas, un solo sistema",
+    lede: "Cada una se apoya en la de abajo. Sin la segunda, la tercera no existe.",
+    ceiling: "Aquí para un ERP tradicional",
+    stack: [
+      {
+        n: "3",
+        name: "Inteligencia",
+        body: "Los modelos deciden dentro del ERP, no en un tablero aparte.",
+      },
+      {
+        n: "2",
+        name: "Historia",
+        body: "Una bitácora que nadie puede reescribir. Sin pasado no hay modelo.",
+      },
+      {
+        n: "1",
+        name: "Datos",
+        body: "La operación completa: servicio, inventario, compras, ventas.",
+      },
+    ],
+  },
+
+  modules: {
+    eyebrow: "La capa 1",
+    title: "El ERP completo",
+    lede: "Ya construido y corriendo.",
+    groups: [
+      {
+        name: "Servicio",
+        items: [
+          "Cola de tickets",
+          "Levantamientos",
+          "Equipos y parque instalado",
+          "Reportes de servicio",
+          "Portal del cliente",
+        ],
+      },
+      {
+        name: "Inventario",
+        items: ["Refacciones", "Libro mayor de inventario", "Catálogo"],
+      },
+      {
+        name: "Compras",
+        items: ["Órdenes de compra", "Proveedores", "Cuentas por pagar"],
+      },
+      {
+        name: "Ventas",
+        items: [
+          "Embudo de negocios",
+          "Leads",
+          "Organizaciones y contactos",
+          "Actividades",
+          "Contratos",
+          "Objetivos",
+        ],
+      },
+      {
+        name: "Análisis",
+        items: ["Rentabilidad", "Informes comerciales", "ML y predicciones"],
+      },
+      {
+        name: "Configuración",
+        items: ["Usuarios y permisos", "Embudos", "Plantillas", "Automatizaciones"],
+      },
+    ],
+    proof:
+      "Corriendo hoy en Evoelution, el primer cliente: 602 tickets · 257 equipos · 161 clientes · 2 766 horas.",
   },
 
   gap: {
@@ -88,6 +154,11 @@ const es = {
         kicker: "La decisión de diseño",
         title: "Guardar la historia, no solo el estado",
         body: "Cada cambio queda escrito en una bitácora que la base de datos impide reescribir. Es la diferencia entre poder reconstruir en qué situación estaba algo hace treinta días y no poder. Sin eso, cualquier modelo aprende del desenlace que ya conoce y falla en cuanto se usa de verdad.",
+      },
+      {
+        kicker: "Lo que se elimina",
+        title: "El proyecto de extracción",
+        body: "Así decide una empresa grande: saca los datos del sistema operativo, los lleva a otra capa, los procesa ahí y devuelve un tablero. Esa mudanza es la mitad del costo y todo el retraso. En Astraion la capa de decisión vive dentro del mismo sistema que produce el dato: no hay nada que extraer.",
       },
       {
         kicker: "La consecuencia",
@@ -150,51 +221,66 @@ const es = {
     ],
   },
 
-  status: {
-    eyebrow: "Dónde está hoy",
-    title1: "El ERP ya opera.",
-    title2: "Los modelos vienen detrás de la historia.",
-    caseKicker: "Primer cliente",
-    caseTitle: "Evoelution",
-    caseBody:
-      "Servicio a instrumentación analítica en México. Es el cliente con el que Astraion se está construyendo: dos años y medio de operación real migrados, verificados y corriendo hoy sobre la plataforma. No es una demostración armada para enseñar — es una empresa trabajando.",
-    figures: [
-      { n: "602", l: "Tickets" },
-      { n: "257", l: "Equipos" },
-      { n: "161", l: "Clientes" },
-      { n: "2 766", l: "Horas de servicio" },
-    ],
-    closing:
-      "Para una empresa de treinta personas, cerrar la brecha no significa tener el equipo de datos de una corporación. Significa que la pregunta de los lunes —cuánto compro, a quién visito, qué se me va a caer— deje de responderse de memoria.",
+  signup: {
+    eyebrow: "Solicitar acceso",
+    title: "Astraion no se contrata con un clic.",
+    lede:
+      "Cada empresa que entra recibe su propio esquema aislado, y eso se aprovisiona a mano por ahora. Deja los datos y te escribimos: si el producto todavía no te sirve, preferimos decírtelo antes que después.",
+    fields: {
+      company: "Empresa",
+      contact: "Tu nombre",
+      email: "Correo",
+      phone: "Teléfono (opcional)",
+      size: "Personas",
+      industry: "Giro (opcional)",
+      note: "¿Qué decisión quieres dejar de tomar de memoria?",
+    },
+    sizes: ["1–10", "11–30", "31–80", "81–200", "200+"],
+    industryPlaceholder: "Laboratorio, distribución, manufactura…",
+    notePlaceholder:
+      "Cuánto comprar, a quién visitar, qué equipo está por fallar…",
+    submit: "Enviar solicitud",
+    sending: "Enviando…",
+    doneTitle: "Solicitud recibida.",
+    doneBody:
+      "Queda en la bandeja del equipo. Si tu empresa encaja, te llega el acceso con tu propio espacio ya creado.",
+    privacy:
+      "Estos datos solo se usan para responderte. No hay cuenta creada ni acceso otorgado hasta que alguien revise la solicitud.",
   },
 
   footer: {
-    a: "Astraion · ERP con Machine Learning",
-    b: "Para empresas pequeñas que deciden con datos",
+    a: "ERP con Machine Learning para empresas pequeñas",
+    b: "Hecho en México",
   },
 } as const;
 
 const en = {
   brand: "Astraion",
-  nav: { caso: "The Evoelution case", entrar: "Sign in" },
+  nav: {
+    arquitectura: "Architecture",
+    modulos: "Modules",
+    caso: "The Evoelution case",
+    acceso: "Request access",
+    entrar: "Sign in",
+  },
 
   hero: {
     eyebrow: "ERP + Machine Learning",
-    title1: "Small companies don't decide worse.",
-    title2: "They decide with less.",
-    lede:
-      "The gap with large companies was never about talent or ambition. It was infrastructure: data teams, warehouses, ML engineers — things paid for with a payroll a thirty-person company does not have. This initiative starts from the fact that the gap can now be closed.",
-    spectrumNote:
-      "An astronomer knows what a star is made of by reading its emission lines. A chromatographer identifies a compound by its retention peak. Same gesture: measure a signal to learn what is inside.",
-    spectrumStrong: "Astraion does that with a company's operation.",
+    h1a: "The first ERP with",
+    h1em: "machine learning inside",
+    h1b: "for a small business",
+    claim:
+      "Not an AI module bolted on top: three layers in a single system — data, history and intelligence.",
   },
 
   forecast: {
     tag: "Example",
     title: "Monthly consumption",
     part: "Pump seal · WAT270919",
-    history: "history",
-    model: "forecast",
+    unit: "units",
+    history: "History · 14 months",
+    model: "Forecast · 4 months",
+    band: "80% band",
     today: "today",
     readoutLabel: "Suggested reorder point",
     readoutValue: "8",
@@ -202,19 +288,75 @@ const en = {
     foot: "It comes from the inventory ledger. Nobody keys in anything extra.",
   },
 
-  duel: {
-    question: '"How many HPLC pumps should I buy this quarter?"',
-    caption: "Same question, two companies.",
-    big: {
-      who: "Large company",
-      answer: "A forecast",
-      how: "Historical consumption per part number, seasonality, supplier lead time. A model computes it; someone reviews it.",
-    },
-    small: {
-      who: "Small company — until now",
-      answer: "A hunch",
-      how: '"We ran out last March." The data existed, in tickets and service notes. There was never anyone to turn it into a decision.',
-    },
+  layers: {
+    eyebrow: "The architecture",
+    title: "Three layers, one system",
+    lede: "Each rests on the one below. Without the second, the third does not exist.",
+    ceiling: "This is where a traditional ERP stops",
+    stack: [
+      {
+        n: "3",
+        name: "Intelligence",
+        body: "The models decide inside the ERP, not on a separate dashboard.",
+      },
+      {
+        n: "2",
+        name: "History",
+        body: "A log nobody can rewrite. With no past there is no model.",
+      },
+      {
+        n: "1",
+        name: "Data",
+        body: "The full operation: service, inventory, purchasing, sales.",
+      },
+    ],
+  },
+
+  modules: {
+    eyebrow: "Layer 1",
+    title: "The full ERP",
+    lede: "Already built and running.",
+    groups: [
+      {
+        name: "Service",
+        items: [
+          "Ticket queue",
+          "Service intake",
+          "Machines and installed base",
+          "Service reports",
+          "Client portal",
+        ],
+      },
+      {
+        name: "Inventory",
+        items: ["Spare parts", "Inventory ledger", "Catalog"],
+      },
+      {
+        name: "Purchasing",
+        items: ["Purchase orders", "Suppliers", "Accounts payable"],
+      },
+      {
+        name: "Sales",
+        items: [
+          "Deal pipeline",
+          "Leads",
+          "Organizations and contacts",
+          "Activities",
+          "Contracts",
+          "Targets",
+        ],
+      },
+      {
+        name: "Analytics",
+        items: ["Profitability", "Sales reports", "ML and predictions"],
+      },
+      {
+        name: "Configuration",
+        items: ["Users and permissions", "Pipelines", "Templates", "Automations"],
+      },
+    ],
+    proof:
+      "Running today at Evoelution, the first client: 602 tickets · 257 machines · 161 clients · 2,766 hours.",
   },
 
   gap: {
@@ -253,6 +395,11 @@ const en = {
         kicker: "The design decision",
         title: "Keep the history, not just the state",
         body: "Every change is written to a log the database refuses to let anyone rewrite. It is the difference between being able to reconstruct how things stood thirty days ago and not. Without it, a model learns from an outcome it already knows and fails the moment it is used for real.",
+      },
+      {
+        kicker: "What disappears",
+        title: "The extraction project",
+        body: "This is how a large company decides: pull the data out of the operational system, move it to another layer, process it there and hand back a dashboard. That move is half the cost and all of the delay. In Astraion the decision layer lives inside the same system that produces the data: there is nothing to extract.",
       },
       {
         kicker: "The consequence",
@@ -315,27 +462,35 @@ const en = {
     ],
   },
 
-  status: {
-    eyebrow: "Where it stands today",
-    title1: "The ERP is running.",
-    title2: "The models follow the history.",
-    caseKicker: "First client",
-    caseTitle: "Evoelution",
-    caseBody:
-      "Analytical instrument service in Mexico. The client Astraion is being built with: two and a half years of real operation, migrated, verified and running on the platform today. Not a demo assembled to show — a company at work.",
-    figures: [
-      { n: "602", l: "Tickets" },
-      { n: "257", l: "Machines" },
-      { n: "161", l: "Clients" },
-      { n: "2,766", l: "Service hours" },
-    ],
-    closing:
-      "For a thirty-person company, closing the gap does not mean having a corporation's data team. It means the Monday question — how much to buy, who to visit, what is about to break — stops being answered from memory.",
+  signup: {
+    eyebrow: "Request access",
+    title: "Astraion is not signed up for with one click.",
+    lede:
+      "Every company that comes in gets its own isolated schema, and that is provisioned by hand for now. Leave your details and we will write back — if the product is not right for you yet, we would rather say so early.",
+    fields: {
+      company: "Company",
+      contact: "Your name",
+      email: "Email",
+      phone: "Phone (optional)",
+      size: "People",
+      industry: "Industry (optional)",
+      note: "Which decision do you want to stop making from memory?",
+    },
+    sizes: ["1–10", "11–30", "31–80", "81–200", "200+"],
+    industryPlaceholder: "Lab, distribution, manufacturing…",
+    notePlaceholder: "How much to buy, who to visit, what is about to break…",
+    submit: "Send request",
+    sending: "Sending…",
+    doneTitle: "Request received.",
+    doneBody:
+      "It is now in the team's queue. If your company is a fit, you get access with your own space already created.",
+    privacy:
+      "These details are only used to reply to you. No account is created and no access is granted until someone reviews the request.",
   },
 
   footer: {
-    a: "Astraion · ERP with Machine Learning",
-    b: "For small companies that decide with data",
+    a: "ERP with Machine Learning for small companies",
+    b: "Made in Mexico",
   },
 } as const;
 

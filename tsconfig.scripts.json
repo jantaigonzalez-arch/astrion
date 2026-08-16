@@ -1,0 +1,18 @@
+{
+  // Config SOLO para correr scripts con tsx contra una base real.
+  //
+  // Lo único que cambia respecto del principal es que `server-only` resuelve a
+  // un módulo vacío. Ese import existe para que el build de Next falle si un
+  // módulo de servidor se cuela en el bundle del cliente; fuera de Next el
+  // paquete no existe y bloquea cualquier script que quiera usar `lib/domain/*`.
+  //
+  // No se toca `tsconfig.json` a propósito: en la aplicación la protección debe
+  // seguir siendo real.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"],
+      "server-only": ["./scripts/_server-only.ts"]
+    }
+  }
+}

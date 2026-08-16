@@ -310,6 +310,15 @@
       "submit": "Iniciar sesión",
       "noAccount": "¿Tu laboratorio necesita acceso?",
       "register": "Solicítalo"
+    },
+    "loginAstraion": {
+      "title": "Entra a Astraion",
+      "subtitle": "El sistema de tu empresa, con su capa de decisión adentro.",
+      "email": "Correo",
+      "password": "Contraseña",
+      "submit": "Iniciar sesión",
+      "noAccount": "¿Tu empresa todavía no está en Astraion?",
+      "register": "Solicita acceso"
     }
   }
 }

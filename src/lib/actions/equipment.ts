@@ -1,9 +1,9 @@
 "use server";
 
 import { z } from "zod";
-import { revalidatePath } from "next/cache";
+import { revalidateTenant } from "@/lib/revalidate";
 import { eq } from "drizzle-orm";
-import { tenantDb } from "@/lib/tenancy/context";
+import { tenantDb, currentRole } from "@/lib/tenancy/context";
 import {
   equipment,
   equipmentModules,
@@ -20,13 +20,8 @@ export type EquipState = { ok: boolean; error?: string };
 async function requireStaff() {
   const session = await auth();
   // Solo soporte (agente/admin) administra el inventario de equipos.
-  if (!isSupport(session?.user?.role)) return null;
+  if (!isSupport(await currentRole())) return null;
   return session;
-}
-
-function revalidateLab(ownerId: string) {
-  revalidatePath(`/admin/users/${ownerId}/equipos`);
-  revalidatePath(`/en/admin/users/${ownerId}/equipos`);
 }
 
 const brandEnum = z.enum(EQUIPMENT_BRANDS);
@@ -62,7 +57,7 @@ export async function addEquipment(
       model: parsed.data.model,
       photo,
     });
-    revalidateLab(parsed.data.ownerId);
+    revalidateTenant();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "server" };
@@ -102,7 +97,7 @@ export async function addModule(
       serialNumber: parsed.data.serialNumber,
       photo,
     });
-    revalidateLab(parsed.data.ownerId);
+    revalidateTenant();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "server" };
@@ -139,7 +134,7 @@ export async function addSubmodule(
       serialNumber: parsed.data.serialNumber,
       photo,
     });
-    revalidateLab(parsed.data.ownerId);
+    revalidateTenant();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "server" };
@@ -152,7 +147,6 @@ export async function deleteEquipmentItem(formData: FormData) {
   if (!session) return;
   const kind = String(formData.get("kind"));
   const id = String(formData.get("id"));
-  const ownerId = String(formData.get("ownerId"));
   if (!id) return;
   const db = await tenantDb();
 
@@ -198,5 +192,5 @@ export async function deleteEquipmentItem(formData: FormData) {
       });
     }
   });
-  revalidateLab(ownerId);
+  revalidateTenant();
 }

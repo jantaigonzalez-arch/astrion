@@ -26,7 +26,7 @@
 import "./_env"; // DEBE ir primero: ver el comentario en scripts/_env.ts
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { tenantDbFor } from "../src/lib/tenancy/context";
 import { schemaNameFor } from "../src/lib/db/platform";
 import {
@@ -40,34 +40,21 @@ import {
   ticketComments,
   tickets,
 } from "../src/lib/db/schema";
-import { companies, users } from "../src/lib/db/platform";
+import { companies, memberships, tenants, users } from "../src/lib/db/platform";
 
 /* ===================== utilidades de parseo ===================== */
 
-/** CSV con comillas dobles, saltos de línea embebidos y BOM. */
-function parseCsv(text: string): Record<string, string>[] {
-  const s = text.replace(/^﻿/, "");
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let inQuotes = false;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if (inQuotes) {
-      if (c === '"') {
-        if (s[i + 1] === '"') { cell += '"'; i++; } else inQuotes = false;
-      } else cell += c;
-    } else if (c === '"') inQuotes = true;
-    else if (c === ",") { row.push(cell); cell = ""; }
-    else if (c === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
-    else if (c !== "\r") cell += c;
-  }
-  if (cell || row.length) { row.push(cell); rows.push(row); }
-  const [head, ...body] = rows.filter((r) => r.some((x) => x.trim() !== ""));
-  return body.map((r) =>
-    Object.fromEntries(head.map((h, i) => [h.trim(), (r[i] ?? "").trim()])),
-  );
-}
+/**
+ * El lector de CSV vive en `src/lib/import/csv.ts` desde que la importación de
+ * cuentas por pagar necesitó el mismo: es el mismo código probado contra estos
+ * cuatro archivos, no una copia.
+ *
+ * Lo que NO se comparte son las fechas y los importes: los de abajo están
+ * calibrados para el formato de ESTE origen (mm/dd, verificado sobre las 337
+ * fechas del volcado) y llevarlos al módulo común los aplicaría a archivos que
+ * no tienen por qué venir así.
+ */
+import { parseCsv } from "../src/lib/import/csv";
 
 /**
  * Fechas del origen: mm/dd/yyyy. Verificado sobre los 4 archivos — 337 fechas
@@ -340,6 +327,19 @@ async function main() {
     throw new Error("Falta --tenant <slug>: indicá a qué empresa se importa.");
   }
   const db = tenantDbFor(schemaNameFor(slugArg));
+
+  // El esquema dice DÓNDE se escriben las tablas de negocio; el id del
+  // inquilino dice A QUIÉN pertenece cada persona importada. Hacen falta los
+  // dos: una cuenta sin membresía es una cuenta que no puede entrar a nada.
+  const [tenantRow] = await db
+    .select({ id: tenants.id })
+    .from(tenants)
+    .where(eq(tenants.slug, slugArg))
+    .limit(1);
+  if (!tenantRow) {
+    throw new Error(`No existe el inquilino "${slugArg}" en el plano de control.`);
+  }
+  const tenantId = tenantRow.id;
   const counts = {
     orgs: 0, labs: 0, techs: 0, equipos: 0, modulos: 0,
     contratos: 0, contratoEquipos: 0, tickets: 0, comentarios: 0, refacciones: 0,
@@ -378,8 +378,19 @@ async function main() {
       await tx.execute(sql`delete from crm_contacts`);
       await tx.execute(sql`delete from crm_organizations`);
       await tx.execute(sql`delete from spare_parts`);
-      // Solo las cuentas de laboratorio: admin/agente/ventas siguen entrando.
-      await tx.execute(sql`delete from users where role = 'client'`);
+      // Solo los laboratorios de ESTA empresa: el staff sigue entrando, y las
+      // cuentas son globales, así que se revoca la pertenencia en vez de
+      // borrar la identidad — la misma persona puede ser cliente de otro
+      // inquilino y no tiene por qué desaparecer de ahí.
+      await tx.execute(sql`
+        delete from memberships
+         where tenant_id = ${tenantId}::uuid and role = 'client'`);
+      // Las cuentas sintetizadas por el importador que ya no pertenecen a
+      // ninguna empresa sí se van: nacieron aquí y no las reclama nadie.
+      await tx.execute(sql`
+        delete from users u
+         where u.email like '%@import.evoelution.local'
+           and not exists (select 1 from memberships m where m.user_id = u.id)`);
     }
 
     const [company] = await tx.select({ id: companies.id }).from(companies).limit(1);
@@ -389,8 +400,11 @@ async function main() {
     // .authorId es NOT NULL, así que hace falta una cuenta real de staff.
     const [fallbackAuthor] = await tx
       .select({ id: users.id })
-      .from(users)
-      .where(sql`role in ('admin','agent')`)
+      .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .where(sql`
+        ${memberships.tenantId} = ${tenantId}::uuid
+        and ${memberships.role} in ('owner','admin','agent')`)
       .limit(1);
 
     /**
@@ -415,14 +429,39 @@ async function main() {
       raw: Record<string, string>,
     ) => pending.push({ aggregateType, aggregateId, eventType, payload: { origen: raw } });
 
+    /**
+     * Le da a una persona su papel en la empresa que se está importando.
+     *
+     * El importador crea identidades globales; esto es lo que las ata a este
+     * inquilino. Es idempotente por el índice único (persona, empresa): una
+     * reimportación actualiza el rol en vez de estrellarse.
+     */
+    const grantMembership = async (
+      tx2: typeof tx,
+      userId: string,
+      role: "agent" | "client",
+    ) => {
+      await tx2
+        .insert(memberships)
+        .values({ userId, tenantId, role, active: true, acceptedAt: new Date() })
+        .onConflictDoUpdate({
+          target: [memberships.userId, memberships.tenantId],
+          set: { role, active: true },
+        });
+    };
+
     /* --- técnicos --- */
     const techId = new Map<string, string>();
     for (const [name, email] of Object.entries(TECH_EMAIL)) {
       const [u] = await tx
         .insert(users)
-        .values({ name: name.replace(/\s+/g, " ").trim(), email, role: "agent" })
-        .onConflictDoUpdate({ target: users.email, set: { role: "agent" } })
+        .values({ name: name.replace(/\s+/g, " ").trim(), email })
+        .onConflictDoUpdate({
+          target: users.email,
+          set: { name: name.replace(/\s+/g, " ").trim() },
+        })
         .returning({ id: users.id });
+      await grantMembership(tx, u.id, "agent");
       techId.set(name, u.id);
       counts.techs++;
       if (email !== "ruben.barrios@evoelution.com") {
@@ -452,13 +491,13 @@ async function main() {
         .values({
           name,
           email,
-          role: "client",
           company: name,
           phone: s?.TELEFONO?.trim() || null,
           active: name !== UNASSIGNED,
         })
         .onConflictDoUpdate({ target: users.email, set: { name } })
         .returning({ id: users.id });
+      await grantMembership(tx, u.id, "client");
       labId.set(key, u.id);
       counts.labs++;
       if (!s && name !== UNASSIGNED) {

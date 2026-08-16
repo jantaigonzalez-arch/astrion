@@ -23,18 +23,35 @@ ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 ENV AUTH_SECRET="build-time-placeholder-not-used-at-runtime"
 RUN npm run build
 
-# ---------- migrator: aplica migraciones antes de arrancar la app ----------
-# Necesita node_modules completo (drizzle-kit es devDependency) y el schema.
+# ---------- migrator: migraciones y administración de empresas ----------
+# Necesita node_modules completo (drizzle-kit y tsx son devDependencies).
+#
+# Lleva DOS juegos de migraciones y las herramientas para operarlas, porque son
+# dos planos distintos:
+#
+#   drizzle/         plano de control en `public` — tenants, users, memberships
+#   drizzle-tenant/  tablas de negocio, replicadas en el esquema de CADA empresa
+#
+# Antes esta imagen solo llevaba el primero, y por eso un servidor recién
+# montado quedaba sin salida: se creaba el plano de control, pero no había
+# forma de aprovisionar la primera empresa —ni `scripts/tenant.ts`, ni las
+# migraciones de negocio— así que el seed fallaba y la app no tenía qué servir.
 FROM node:22-alpine AS migrator
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json drizzle.config.ts ./
+COPY package.json tsconfig.json drizzle.config.ts drizzle.tenant.config.ts ./
 COPY drizzle ./drizzle
-COPY src/lib/db ./src/lib/db
-COPY tsconfig.json ./
+COPY drizzle-tenant ./drizzle-tenant
+COPY scripts ./scripts
+# `src` entero y no solo `lib/db`: el aprovisionamiento importa el contexto de
+# inquilino, el esquema de negocio y el dominio (folios, eventos).
+COPY src ./src
 # `migrate` aplica los .sql versionados y registra cuáles ya corrieron.
 # NUNCA usar `db:push` en producción: sincroniza el schema por diferencia,
 # sin historial ni control de qué hace, y puede descartar datos.
+#
+# Solo el plano de control. Las de negocio las aplica `scripts/tenant.ts
+# migrate` a cada esquema, porque hay que recorrer uno por empresa.
 CMD ["npx", "drizzle-kit", "migrate"]
 
 # ---------- runner: lo mínimo para servir ----------
@@ -44,6 +61,24 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+
+# Zona horaria de la operación, no del centro de datos.
+#
+# Un contenedor sin `TZ` corre en UTC, y eso no es un detalle cosmético: las
+# actividades del CRM se capturan con `datetime-local` —un texto SIN zona, como
+# "2026-08-14T09:00"— y `new Date()` lo interpreta en la zona del SERVIDOR. Con
+# UTC, un seguimiento agendado a las 9:00 de la mañana queda a las 3:00 de la
+# madrugada. En desarrollo no se ve, porque la máquina de quien programa ya está
+# en horario de México: es un fallo que solo aparece después de desplegar.
+#
+# `tzdata` hace falta en alpine: sin el paquete, `TZ` se ignora en silencio y el
+# contenedor sigue en UTC creyendo que obedeció.
+#
+# Se puede cambiar por empresa el día que haya clientes en otro huso; hoy toda
+# la operación es de México y una constante explícita vale más que un valor por
+# omisión que nadie eligió.
+ENV TZ=America/Mexico_City
+RUN apk add --no-cache tzdata
 
 # Usuario sin privilegios: si alguien logra ejecución remota, no es root.
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs

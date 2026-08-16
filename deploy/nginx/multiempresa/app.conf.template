@@ -1,0 +1,238 @@
+# Enrutado por dominio. Cada app es dueña de su raíz, así que las rutas
+# /api/* de cada una no chocan: el /api/auth de NextAuth y el /api del
+# FastAPI viven en dominios distintos.
+#
+# Es una PLANTILLA: la imagen nginx la procesa con envsubst al arrancar y
+# reemplaza ${APP_DOMAIN} y ${ML_DOMAIN} con lo que haya en deploy/.env.
+# NGINX_ENVSUBST_FILTER limita la sustitución a esas dos, para que $host,
+# $remote_addr y demás variables de nginx lleguen intactas.
+#
+# Requiere certificados en /etc/letsencrypt. Emitilos con:
+#   ./deploy/init-letsencrypt.sh
+# (el script arranca con certificados temporales para que nginx levante y
+#  pueda responder el desafío ACME; sin eso es un problema del huevo y la
+#  gallina: certbot necesita nginx arriba, y nginx necesita el certificado).
+
+# Docker resuelve nombres de servicio aquí. Se declara para poder usar
+# variables en proxy_pass más abajo.
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+upstream web_app {
+    server web:3000;
+}
+
+# --- HTTP: solo desafío ACME; todo lo demás va a HTTPS --------------------
+server {
+    listen 80;
+    listen [::]:80;
+    server_name _;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# --- Host desconocido: cortar ---------------------------------------------
+# Sin esto, cualquiera que apunte su dominio a esta IP sirve tu sitio bajo su
+# nombre. 444 cierra la conexión sin responder.
+server {
+    listen 443 ssl default_server;
+    http2 on;
+    server_name _;
+    ssl_certificate     /etc/letsencrypt/live/${APP_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${APP_DOMAIN}/privkey.pem;
+    return 444;
+}
+
+# --- astraion.com y *.astraion.com: producto + portales de cliente --------
+#
+# Un solo bloque para el apex y TODOS los subdominios, y eso es el objetivo del
+# diseño: dar de alta al cliente número 12 no debe requerir tocar este archivo
+# ni emitir un certificado. El apex sirve la landing, /entrar y la consola; cada
+# subdominio sirve el portal de una empresa. Quién es quién lo decide la
+# aplicación leyendo el `Host` que se reenvía más abajo — ver lib/tenancy/host.ts.
+#
+# El comodín EXIGE un certificado comodín, y ése solo se emite por desafío DNS
+# (Let's Encrypt no valida `*.dominio` por HTTP). Con Cloudflare:
+#
+#   docker compose -f docker-compose.prod.yml run --rm --entrypoint "\
+#     certbot certonly --dns-cloudflare \
+#       --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini \
+#       -d ${ROOT_DOMAIN} -d '*.${ROOT_DOMAIN}' \
+#       --agree-tos --no-eff-email -m tu@correo" certbot
+#
+# El bucle de renovación del servicio `certbot` recoge este certificado igual
+# que los demás: `certbot renew` recuerda con qué plugin se emitió cada uno.
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${ROOT_DOMAIN} www.${ROOT_DOMAIN} *.${ROOT_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${ROOT_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${ROOT_DOMAIN}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:SSL:10m;
+
+    client_max_body_size 12M;
+
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript image/svg+xml;
+    gzip_min_length 1024;
+
+    # `includeSubDomains` es correcto aquí y no es un detalle: si un subdominio
+    # de cliente quedara accesible por http, la cookie de sesión —que se emite
+    # para `.${ROOT_DOMAIN}` y por tanto viaja a TODOS— saldría en claro.
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location /uploads/ {
+        alias /srv/uploads/;
+        access_log off;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        autoindex off;
+        try_files $uri =404;
+    }
+
+    location /_next/static/ {
+        proxy_pass http://web_app;
+        proxy_set_header Host $host;
+        access_log off;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location / {
+        proxy_pass http://web_app;
+        proxy_http_version 1.1;
+        # `$host` y no un valor fijo: es el subdominio lo que le dice a la
+        # aplicación de qué empresa es este portal. Aplastarlo aquí dejaría a
+        # todos los clientes viendo el mismo inquilino.
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        "upgrade";
+        proxy_read_timeout 120s;
+    }
+}
+
+# --- evoelution.com: sitio corporativo del cliente -------------------------
+# Dominio propio, servido por la misma aplicación. Se mantiene aparte del
+# bloque de arriba a propósito: es la web DE Evoelution, no el producto. Si
+# ${APP_DOMAIN} y ${ROOT_DOMAIN} apuntaran al mismo nombre, nginx aborta con
+# "conflicting server name" — que es la forma correcta de enterarse.
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${APP_DOMAIN} www.${APP_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${APP_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${APP_DOMAIN}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:SSL:10m;
+
+    # 6 MB es el límite de imagen que valida la app; 12 MB deja margen para
+    # el resto del formulario multipart sin que nginx corte antes que ella.
+    client_max_body_size 12M;
+
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript image/svg+xml;
+    gzip_min_length 1024;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Fotos de equipos: directo desde el volumen. No tiene sentido despertar
+    # a Node para devolver un JPG. Es el mismo volumen donde escribe la app
+    # (UPLOADS_DIR=/data/uploads), montado aquí de solo lectura.
+    location /uploads/ {
+        alias /srv/uploads/;
+        access_log off;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        # Los nombres son UUID: no se pueden adivinar, pero tampoco se listan.
+        autoindex off;
+        try_files $uri =404;
+    }
+
+    # Estáticos con hash en el nombre: cachear agresivo es seguro.
+    location /_next/static/ {
+        proxy_pass http://web_app;
+        proxy_set_header Host $host;
+        access_log off;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location / {
+        proxy_pass http://web_app;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        # NextAuth lo usa para construir las URLs de callback. Sin esto
+        # generaría enlaces http:// detrás del proxy y el login fallaría.
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        "upgrade";
+        proxy_read_timeout 120s;
+    }
+}
+
+# --- cromatografia.evoelution.com: evo_ai (perfil opcional) ---------------
+# Los proxy_pass usan variables a propósito: así nginx arranca aunque los
+# contenedores de evo_ai no estén levantados (devuelve 502 solo aquí) en vez
+# de negarse a iniciar y tumbar también el sitio principal.
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${ML_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${APP_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${APP_DOMAIN}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    # Los .dat de Waters Empower son grandes.
+    client_max_body_size 100M;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    location /api/ {
+        set $evoai_backend "evoai-backend:8000";
+        proxy_pass http://$evoai_backend;
+        proxy_set_header Host            $host;
+        proxy_set_header X-Real-IP       $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # El análisis cromatográfico tarda: el default de 60 s corta corridas
+        # legítimas a la mitad.
+        proxy_read_timeout 300s;
+    }
+
+    location / {
+        set $evoai_frontend "evoai-frontend:3000";
+        proxy_pass http://$evoai_frontend;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        "upgrade";
+    }
+}

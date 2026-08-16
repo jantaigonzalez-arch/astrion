@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { AssignableRole } from "@/lib/roles";
 
 const initial: UpdateUserState = { ok: false };
 const selectCls =
@@ -34,6 +35,7 @@ function ErrorMsg({ error }: { error?: string }) {
     auth: "No autorizado. Solo un administrador puede editar cuentas.",
     invalid: "Revisa los campos (contraseña de 8+ caracteres).",
     self: "No puedes quitarte a ti mismo el rol de administrador ni desactivarte.",
+    owner: "La cuenta del dueño no se edita desde aquí: transferir la titularidad es otra operación.",
     server: "Ocurrió un error. Intenta de nuevo.",
   };
   return <p className="text-sm text-destructive">{map[error] ?? error}</p>;
@@ -45,7 +47,8 @@ export type EditableUser = {
   email: string;
   company: string | null;
   phone: string | null;
-  role: "client" | "agent" | "admin" | "sales";
+  role: AssignableRole;
+  /** Pertenencia a ESTA empresa, no la cuenta global. Ver `people.ts`. */
   active: boolean;
 };
 
@@ -135,7 +138,7 @@ export function EditUserForm({
                 onChange={(e) => setActive(e.target.checked)}
                 className="size-4 rounded border-input"
               />
-              Cuenta activa (puede iniciar sesión)
+              Pertenece a esta empresa
             </label>
           </div>
         </div>

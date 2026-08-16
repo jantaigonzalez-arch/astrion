@@ -1,31 +1,75 @@
 /* ============================================================
    Página de la iniciativa — mundo visual propio.
    Encapsulada en un módulo CSS a propósito: la app usa tokens
-   azul/cian en OKLCH para el producto, y esta página vive en un
-   registro distinto (cielo profundo, acento H-alfa). Mezclarlas
-   contaminaría el sistema de diseño del portal.
+   OKLCH para el producto y esta página tiene su propia escala.
+   Mezclarlas contaminaría el sistema de diseño del portal.
 
    Compromiso deliberado con un solo tema: el cielo es oscuro. No
    es una omisión — una lámina nocturna en claro dejaría de ser
    lo que es.
+
+   Es una noche de campo: la vía láctea cruzando un cielo profundo,
+   estrellas por todas partes, y abajo una fogata — pequeña, la
+   única mancha cálida de la escena.
+
+   Esa proporción es la regla. El azul manda y ocupa; todo lo demás
+   son luces dentro de él, nunca fondos. Cuando el cálido creció y se
+   abrió de lado a lado, la página dejó de leerse como un cielo.
+
+   El azul viene del de Prusia —el de la ola de Hokusai— pero con la
+   croma rebajada: a plena saturación, ocupando toda la pantalla, se
+   leía como una ilustración y no como una herramienta. La saturación
+   se guarda para lo pequeño.
+
+   No es un índigo violeta: en toda esta escala el verde va siempre
+   por delante del rojo, que es lo que impide que se vaya a morado.
    ============================================================ */
 
 .page {
-  /* Línea de emisión H-alfa (656 nm): el rojo real del hidrógeno
-     interestelar. Único acento fuerte de toda la página. */
-  --halpha: #e1594b;
-  --halpha-lit: #f0745f;
-  --oiii: #46c3ab;   /* 500 nm — solo para "funcionando" */
-  --sodium: #e9a94e; /* 589 nm — solo para "en desarrollo" */
+  /* La escena es azul y casi nada más. Solo dos colores la interrumpen, cada
+     uno con un papel estrecho; en cuanto uno se extiende deja de significar y
+     se vuelve el tema, que es lo que pasó cuando el cálido se abrió de lado a
+     lado.
 
-  --void: #06080f;
-  --panel: #0d1220;
-  --panel-2: #11172a;
-  --line: #1e2740;
-  --line-soft: #161d30;
-  --text: #dce2ee;
-  --text-2: #a3aec4;
-  --muted: #6f7b92;
+       fogata = la decisión — el pronóstico, el énfasis del titular, el botón,
+                y el pulso que sube por la pila
+       oleaje = lo que solo se midió — el pasado registrado, frente a lo que
+                el sistema estima
+
+     La arquitectura no tiene color propio: es cristal, y contrasta por
+     luminosidad. */
+
+  /* Verde solo para el estado «funcionando» de la tabla. No es un color de
+     marca: es la convención de que verde = corriendo, y no aparece en ningún
+     otro sitio. Se queda pese a sumar una cuarta familia porque verde/ámbar/
+     gris es lo que un lector descifra sin leer, y eso vale más que la pureza. */
+  --ok: #5cbd8c;
+
+  --accent: #eba75a;
+  --accent-lit: #f9c483;
+
+  --cool: #82a9d2;
+  --cool-lit: #a9c4de;
+
+  /* Azul de noche, con la croma baja a propósito.
+     Era Prusia puro —#0b1d38 y compañía— y el problema no era el tono sino la
+     superficie: un azul cargado ocupando el 90% de la pantalla hace que la
+     página se lea como un tema y no como una herramienta. Aquí la saturación
+     se reserva para lo pequeño; el campo casi no tiene.
+
+     Dos reglas al retocar estos valores:
+       · G > R siempre, o el azul se va a morado.
+       · La distancia entre --void y --panel es de 8-10 puntos, no más: en un
+         fondo oscuro los paneles se separan por un escalón mínimo, y en cuanto
+         se abre, dejan de ser superficies y pasan a ser bloques de color. */
+  --void: #0e1a2b;
+  --panel: #152136;
+  --panel-2: #1a2941;
+  --line: #2c3b55;
+  --line-soft: #222e44;
+  --text: #eef1f7;
+  --text-2: #b5c0d0;
+  --muted: #8a94a6;
 
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua",
     "URW Palladio L", Georgia, serif;
@@ -82,20 +126,30 @@
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  background: var(--halpha-lit);
-  box-shadow: 0 0 14px 3px rgb(225 89 75 / 0.55);
+  background: var(--accent-lit);
+  box-shadow: 0 0 14px 3px rgb(235 167 90 / 0.55);
 }
 .brandName {
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: #8b97ae;
+  color: #9aa5b8;
 }
 .topLinks {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+/* Las anclas a secciones solo caben cuando hay sitio: por debajo de 1020px la
+   barra se partiría en dos filas. */
+.navAnchor {
+  display: none;
+}
+@media (min-width: 1020px) {
+  .navAnchor {
+    display: inline-flex;
+  }
 }
 .linkGhost,
 .linkSolid {
@@ -109,43 +163,65 @@
   transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
 }
 .linkGhost {
-  color: #8b97ae;
-  border: 1px solid #222c46;
+  color: #9aa5b8;
+  border: 1px solid #2c3b55;
 }
 .linkGhost:hover {
   color: var(--text);
-  border-color: #33405f;
+  border-color: #46587a;
 }
+/* Texto oscuro sobre el oro, no blanco: el acento es claro y el blanco daría
+   2:1. Así son 9:1 y de paso el botón pesa más. */
 .linkSolid {
-  color: #fff3f1;
-  background: var(--halpha);
-  border: 1px solid var(--halpha);
+  color: #14202e;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  font-weight: 600;
 }
 .linkSolid:hover {
-  background: var(--halpha-lit);
+  background: var(--accent-lit);
 }
 
 /* ---------------- Cielo ---------------- */
 .sky {
   position: relative;
   overflow: hidden;
-  border-bottom: 1px solid #1a2338;
+  border-bottom: 1px solid #222e44;
 }
+/* Las estrellas llegan casi hasta abajo, como en una noche de campo: solo se
+   apagan en la última franja, donde está la fogata y donde empieza a pesar el
+   texto. */
 .stars {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   display: block;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 62%, transparent 96%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 62%, transparent 96%);
 }
 .veil {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  /* La fogata y la vía láctea. La fogata es deliberadamente pequeña y no está
+     centrada: una mancha cálida a un lado, como en el campo. Antes ocupaba todo
+     el ancho y teñía la página entera de oro — el problema no era el color,
+     era el tamaño.
+
+     La banda pálida en diagonal insinúa la vía láctea. Va muy tenue: tiene que
+     notarse solo cuando se la busca. */
   background:
-    radial-gradient(120% 70% at 18% 0%, rgb(225 89 75 / 0.13), transparent 62%),
-    radial-gradient(90% 60% at 88% 8%, rgb(70 120 199 / 0.1), transparent 60%),
-    linear-gradient(180deg, transparent 55%, rgb(6 8 15 / 0.9) 100%);
+    radial-gradient(22% 13% at 63% 103%, rgb(255 184 96 / 0.42), transparent 68%),
+    radial-gradient(40% 22% at 63% 108%, rgb(232 126 56 / 0.16), transparent 72%),
+    linear-gradient(
+      197deg,
+      transparent 32%,
+      rgb(198 214 244 / 0.05) 44%,
+      rgb(224 232 250 / 0.09) 51%,
+      rgb(198 214 244 / 0.045) 58%,
+      transparent 70%
+    );
 }
 .heroInner {
   position: relative;
@@ -155,34 +231,31 @@
   gap: 32px;
 }
 .heroTitle {
-  font-size: clamp(2.5rem, 6.2vw, 4.5rem);
-  line-height: 1.02;
+  /* Se bajó de 4.5rem: a ese tamaño el titular gritaba más de lo que decía. */
+  font-size: clamp(2.3rem, 5.4vw, 3.85rem);
+  line-height: 1.04;
   max-width: 17ch;
   color: #f2f5fa;
 }
+/* El énfasis va en cálido: es lo que el sistema aporta, no su estructura. */
 .heroTitle em {
   font-style: italic;
-  color: var(--halpha-lit);
+  color: var(--accent-lit);
 }
-.lede {
-  max-width: 60ch;
-  font-size: 1.075rem;
-  color: #a9b4ca;
-}
-.ledeSm {
-  max-width: 62ch;
-  font-size: 0.95rem;
-  color: #a9b4ca;
-}
-.ledeSm strong {
-  color: #d6dce8;
-  font-weight: 500;
+
+/* Lo que el titular deja abierto: qué es exactamente. Va inmediatamente
+   debajo del h1 y por eso pesa más que el resto del cuerpo. */
+.claim {
+  max-width: 52ch;
+  font-size: 1.16rem;
+  line-height: 1.5;
+  color: #c8d0dd;
 }
 
 /* ---------------- Encabezado a dos columnas ----------------
    El titular ocupa 17ch por diseño, así que en pantallas anchas sobraba media
-   pantalla. Ahí va el pronóstico: no es relleno, es el argumento del titular
-   hecho objeto. */
+   pantalla. Ahí va la pila: no es relleno, es el argumento del titular hecho
+   objeto —«tres capas en un solo sistema» dicho en geometría—. */
 .heroGrid {
   display: grid;
   gap: 34px;
@@ -204,7 +277,7 @@
 .fcast {
   border: 1px solid var(--line);
   border-radius: 3px;
-  background: linear-gradient(180deg, rgb(17 23 42 / 0.86), rgb(9 13 24 / 0.9));
+  background: linear-gradient(180deg, rgb(27 42 65 / 0.84), rgb(17 26 42 / 0.9));
   backdrop-filter: blur(3px);
   padding: 20px 22px 18px;
   display: grid;
@@ -246,8 +319,47 @@
 .fcastCanvas {
   display: block;
   width: 100%;
-  height: 176px;
+  height: 208px;
 }
+
+/* Leyenda: sin ella, la banda y la línea punteada son decoración. */
+.fcastKey {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.fcastKey li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.fcastKey i {
+  width: 16px;
+  flex: none;
+}
+.keyHist i {
+  height: 2px;
+  background: rgb(169 196 222 / 0.95);
+}
+.keyModel i {
+  height: 0;
+  border-top: 2px dashed rgb(249 196 131 / 0.95);
+}
+.keyBand i {
+  height: 9px;
+  background: linear-gradient(90deg, rgb(235 167 90 / 0.34), rgb(235 167 90 / 0.08));
+  border: 1px solid rgb(235 167 90 / 0.4);
+}
+
 .fcastReadout {
   display: flex;
   align-items: baseline;
@@ -263,11 +375,12 @@
   color: var(--muted);
   flex: 1;
 }
+/* La decisión: el único número cálido del panel. */
 .fcastReadout .value {
   font-family: var(--serif);
   font-size: 2rem;
   line-height: 1;
-  color: var(--halpha-lit);
+  color: var(--accent-lit);
   font-variant-numeric: tabular-nums;
 }
 .fcastReadout .unit {
@@ -281,115 +394,23 @@
   margin: 0;
 }
 
-/* Espectro de emisión: la firma visual de la página */
-.spectrum {
-  height: 54px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  position: relative;
-  overflow: hidden;
-  background: linear-gradient(
-    90deg,
-    #05070c 0%, #0b1226 14%, #12203f 26%, #0e1a33 34%,
-    #1a1430 46%, #2a1220 60%, #35111b 74%, #200a12 88%, #05070c 100%
-  );
-}
-.spectrum::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(90deg, transparent 0 21.5%, rgb(120 170 255 / 0.95) 21.5% 21.9%, transparent 21.9%),
-    linear-gradient(90deg, transparent 0 33.2%, rgb(90 200 235 / 0.9) 33.2% 33.5%, transparent 33.5%),
-    linear-gradient(90deg, transparent 0 44.8%, rgb(70 199 174 / 0.95) 44.8% 45.2%, transparent 45.2%),
-    linear-gradient(90deg, transparent 0 58%, rgb(233 169 78 / 0.95) 58% 58.5%, transparent 58.5%),
-    linear-gradient(90deg, transparent 0 59.1%, rgb(233 169 78 / 0.75) 59.1% 59.4%, transparent 59.4%),
-    linear-gradient(90deg, transparent 0 71.4%, rgb(225 89 75 / 1) 71.4% 72%, transparent 72%);
-}
-.spectrumKey {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 22px;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  color: #7f8ba3;
-}
-.spectrumKey b {
-  color: #a9b4ca;
-  font-weight: 500;
-}
-
-/* ---------------- Duelo: misma pregunta, dos respuestas ---------------- */
-.duel {
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: var(--panel);
-  overflow: hidden;
-}
-.duelQ {
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel-2);
-  font-size: 1.06rem;
-  font-weight: 600;
-}
-.duelQ span {
-  display: block;
-  margin-top: 4px;
-  font-weight: 400;
-  color: var(--halpha-lit);
-  font-size: 0.95rem;
-}
-.duelRows {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-}
-.duelCell {
-  padding: 24px;
-  display: grid;
-  gap: 9px;
-  align-content: start;
-}
-.duelCell + .duelCell {
-  border-left: 1px solid var(--line);
-}
-.who {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.ansBig {
-  font-family: var(--serif);
-  font-size: 1.5rem;
-  color: #8fb4e0;
-}
-.ansSmall {
-  font-family: var(--serif);
-  font-size: 1.5rem;
-  color: var(--halpha-lit);
-}
-.how {
-  font-size: 0.92rem;
-  color: var(--text-2);
-}
-
 /* ---------------- Secciones ---------------- */
 .section {
-  padding: 84px 0;
+  /* Las secciones son destino de las anclas de la barra: sin este margen el
+     título aterriza pegado al borde superior de la ventana. */
+  scroll-margin-top: 24px;
+  padding: 96px 0;
   border-bottom: 1px solid var(--line-soft);
 }
 .secHead {
   display: grid;
   gap: 14px;
   max-width: 62ch;
-  margin-bottom: 42px;
+  margin-bottom: 48px;
 }
 .secHead h2 {
-  font-size: clamp(1.8rem, 3.4vw, 2.5rem);
-  line-height: 1.12;
+  font-size: clamp(1.7rem, 3vw, 2.2rem);
+  line-height: 1.14;
 }
 .secHead p {
   color: var(--text-2);
@@ -430,7 +451,437 @@
   font-size: 10.5px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--halpha);
+  color: var(--accent);
+}
+
+/* ---------------- La arquitectura: tres planos que se integran ----------------
+   Los planos llegan separados y se ensamblan en una sola pila. Entran de abajo
+   hacia arriba porque esa es la dependencia: sin datos no hay historia, sin
+   historia no hay modelo. La geometría hace el argumento; el texto de al lado
+   solo lo nombra. */
+/* En el encabezado: la pila y, debajo, los nombres de sus planos. */
+.arch {
+  margin: 0;
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+}
+
+/* En la sección: el pronóstico junto a las capas nombradas. */
+.archSplit {
+  display: grid;
+  gap: 22px;
+  align-items: start;
+}
+@media (min-width: 940px) {
+  .archSplit {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    gap: 34px;
+  }
+}
+
+/* La opacidad de entrada vive aquí y no en los planos a propósito: una
+   opacidad < 1 sobre un elemento con `preserve-3d` lo aplana, y con él se
+   perdería el canto de cada lámina. `.stage` no lleva preserve-3d, así que
+   puede desvanecerse sin aplastar la escena. */
+.stage {
+  perspective: 1150px;
+  display: grid;
+  place-items: center;
+  /* Holgura para el recorrido de entrada: el plano de arriba llega desde
+     bastante más alto que su posición final. */
+  min-height: 480px;
+  opacity: 0;
+  transition: opacity 0.55s ease;
+}
+.archLive .stage {
+  opacity: 1;
+}
+/* El ancho es engañoso: al girar 40° el cuadrado se convierte en un rombo
+   cuya diagonal mide ~1.41× el lado, así que 300px se dibujan como ~425px.
+   De ahí que el tope en vw sea bajo. */
+.deck {
+  position: relative;
+  width: min(300px, 46vw);
+  aspect-ratio: 1;
+  transform-style: preserve-3d;
+  /* Isométrico aproximado. La inclinación es menos plana de lo que pide el
+     icono puro: con 58° el rótulo de cada lámina se volvía ilegible. */
+  transform: rotateX(52deg) rotateZ(-38deg);
+}
+
+.plane {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  border: 1px solid var(--edge);
+  background: linear-gradient(135deg, var(--fill-a), var(--fill-b));
+  box-shadow: 0 0 34px var(--glow);
+  transform: translateZ(var(--z-off));
+  transition:
+    transform 1.15s cubic-bezier(0.2, 0.78, 0.2, 1),
+    box-shadow 0.35s ease;
+}
+/* Canto: un segundo plano justo debajo finge el espesor de la lámina. */
+.planeEdge {
+  position: absolute;
+  inset: 0;
+  transform: translateZ(-5px);
+  background: var(--edge-fill);
+  border: 1px solid var(--edge);
+}
+
+/* Cristal, no plástico.
+
+   Cinco tonos se probaron aquí —rojo, cian, oro, crema, verde— y ninguno
+   convencía. El tono no era el problema: el relleno sí. Con un 20-34% de
+   opacidad la lámina deja de ser vidrio y se vuelve una losa de color que
+   domina la página, gane el color que gane.
+
+   Ahora el relleno es casi nada (6-12%, neutro) y el color vive en el canto:
+   una línea fina y brillante. La pila contrasta por LUMINOSIDAD contra el azul
+   —el contraste más fiable que hay— y no compite con el cielo por tono.
+
+   El blanco tira un pelo a cálido a propósito: un blanco azulado sobre azul
+   marino es exactamente lo que se leía como hielo.
+
+   Lo único con color de la pila es el pulso que la recorre: la luz de la
+   fogata subiendo por el cristal.
+
+   `--ly` separa los rótulos. Los planos solo se desplazan en Z, así que sus
+   centros caen casi en el mismo punto de la pantalla y los tres nombres se
+   encimarían. Como el desplazamiento se aplica ya en el marco de la pantalla
+   (ver `.planeLabel`), basta con moverlos en vertical; el escorzo los reduce a
+   0.62, así que 105px se ven como 65. */
+.plane3 {
+  --ly: -105px;
+  --z-open: 134px;
+  --glow-lit: rgb(249 196 131 / 0.4);
+  --z: 92px;
+  --z-off: 175px;
+  --fill-a: rgb(255 252 246 / 0.12);
+  --fill-b: rgb(226 236 250 / 0.05);
+  --edge: rgb(255 253 248 / 0.94);
+  --edge-fill: rgb(26 40 62 / 0.55);
+  --glow: rgb(206 226 250 / 0.22);
+  --lab: #ffffff;
+  transition-delay: 0.72s;
+}
+.plane2 {
+  --ly: 0px;
+  --z-open: 67px;
+  --glow-lit: rgb(240 180 112 / 0.32);
+  --z: 46px;
+  --z-off: 115px;
+  --fill-a: rgb(240 246 254 / 0.085);
+  --fill-b: rgb(196 216 242 / 0.035);
+  --edge: rgb(222 236 252 / 0.72);
+  --edge-fill: rgb(20 32 50 / 0.5);
+  --glow: rgb(172 200 238 / 0.16);
+  --lab: #e8f1fd;
+  transition-delay: 0.55s;
+}
+.plane1 {
+  --ly: 105px;
+  --z-open: 0px;
+  --glow-lit: rgb(232 166 96 / 0.26);
+  --z: 0px;
+  --z-off: -45px;
+  /* La más tenue de las tres, pero el canto se mantiene nítido: es el suelo
+     de la pila y tiene que verse contra el azul del fondo. */
+  --fill-a: rgb(206 224 246 / 0.06);
+  --fill-b: rgb(160 190 228 / 0.025);
+  --edge: rgb(184 210 240 / 0.55);
+  --edge-fill: rgb(15 25 40 / 0.46);
+  --glow: rgb(140 176 220 / 0.12);
+  --lab: #cfdff2;
+  /* Los datos primero: el resto se apoya en ellos. */
+  transition-delay: 0.38s;
+}
+
+.archLive .plane {
+  transform: translateZ(var(--z));
+}
+
+/* ---- Reposo: la pila respira ----
+   Arranca cuando el ensamblaje ya terminó (0.26 s de espera + 0.72 de retardo
+   + 1.15 de recorrido), para no pisar la entrada.
+
+   No gira: se abre y se vuelve a cerrar. Un giro perpetuo en el encabezado
+   marea, y además el movimiento vertical dice mejor lo que hay que decir —las
+   capas se separan lo justo para verse tres, y vuelven a ser una—.
+
+   La capa 1 no se mueve: es el suelo sobre el que se apoyan las otras dos. Que
+   quede plantada mientras las de arriba se levantan es el argumento. */
+@keyframes layerBreathe {
+  0%,
+  100% {
+    transform: translateZ(var(--z));
+  }
+  50% {
+    transform: translateZ(var(--z-open));
+  }
+}
+/* El resplandor sube 1 → 2 → 3: el dato entra, la historia lo guarda, el
+   modelo decide. Es la tesis de la página hecha luz. */
+@keyframes layerPulse {
+  0%,
+  62%,
+  100% {
+    box-shadow: 0 0 34px var(--glow);
+  }
+  18% {
+    box-shadow: 0 0 58px var(--glow-lit);
+  }
+}
+
+/* Los dos retardos van en el orden de la lista de animaciones: el primero para
+   la respiración —igual en las tres, se abren juntas— y el segundo para el
+   resplandor, escalonado de abajo arriba. */
+.archLive .plane {
+  animation:
+    layerBreathe 9s ease-in-out infinite,
+    layerPulse 9s ease-in-out infinite;
+  animation-delay: 2.2s, 2.2s;
+}
+.archLive .plane2 {
+  animation-delay: 2.2s, 3.3s;
+}
+.archLive .plane3 {
+  animation-delay: 2.2s, 4.4s;
+}
+
+/* Al posar el cursor se detiene: quien quiere leer la pila puede. */
+.arch:hover .plane {
+  animation-play-state: paused;
+}
+
+/* Rótulo sobre la lámina.
+   El escenario gira -38° y se inclina 52°, así que un texto normal saldría
+   torcido y comprimido a 0.62 de su altura.
+
+   El orden de las funciones importa y no es intercambiable: `rotate(38deg)` va
+   PRIMERO para cancelar el giro del escenario, y solo entonces el `translate`
+   ocurre ya en el marco de la pantalla. Gracias a eso el desplazamiento del
+   rótulo no gira con la pila —si girase, los tres se encimarían en cuanto el
+   escenario dejara los -38°—. `scaleY(1.62)` cierra la cuenta cancelando el
+   escorzo de `rotateX(52deg)`: 0.62 × 1.62 = 1. */
+.planeLabel {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  transform: rotate(38deg) translate(0, var(--ly)) scaleY(1.62);
+  pointer-events: none;
+}
+.planeChip {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  white-space: nowrap;
+  /* Placa: garantiza contraste aunque el rótulo se lea a través de una o dos
+     láminas. Se estira con el resto y el escorzo la devuelve a su proporción. */
+  padding: 5px 12px;
+  border-radius: 2px;
+  background: rgb(9 15 25 / 0.76);
+  border: 1px solid rgb(255 255 255 / 0.09);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #f4f7fc;
+}
+.planeChip b {
+  font-family: var(--serif);
+  font-size: 21px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--lab);
+}
+
+/* Flechas que juntan: cuatro marcas que entran desde fuera y se cierran sobre
+   la pila. Viven en el plano del escenario, así que comparten su escorzo. */
+.joiner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 2px;
+  margin: -1px 0 0 -23px;
+  /* Asta: opaca en el extremo interior y desvanecida hacia fuera, como una
+     estela. La punta va en el extremo que mira al centro. */
+  background: linear-gradient(
+    90deg, rgb(198 210 228 / 0.8), rgb(198 210 228 / 0)
+  );
+  opacity: 0;
+  /* rotate(--a) orienta la flecha alrededor del centro y translateX la aleja;
+     a 172px la punta cae justo sobre el canto de la pila. */
+  transform: translateZ(46px) rotate(var(--a)) translateX(var(--d));
+  --d: 226px;
+  transition:
+    transform 1.15s cubic-bezier(0.2, 0.78, 0.2, 1),
+    opacity 0.5s ease;
+  transition-delay: 0.62s;
+}
+.joiner::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 11px;
+  height: 11px;
+  border-left: 2px solid rgb(198 210 228 / 0.8);
+  border-bottom: 2px solid rgb(198 210 228 / 0.8);
+  transform: translateY(-50%) rotate(-45deg);
+}
+.joinerN {
+  --a: 0deg;
+}
+.joinerE {
+  --a: 90deg;
+}
+.joinerS {
+  --a: 180deg;
+}
+.joinerW {
+  --a: 270deg;
+}
+.archLive .joiner {
+  --d: 172px;
+  opacity: 1;
+}
+
+/* ---- Filas: nombran cada plano, sin repetir lo que ya se ve ---- */
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--panel);
+}
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 2px 16px;
+  padding: 20px 22px;
+}
+.row + .row {
+  border-top: 1px solid var(--line-soft);
+}
+/* Misma gradación que los planos: la fila y su lámina se reconocen.
+   La variable se llama `--layer` y no `--accent` porque `--accent` ya es el
+   color de la página: reusar el nombre aquí lo sombrearía dentro de las filas
+   y cualquiera que lo leyera después se llevaría un susto. */
+.row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--layer);
+}
+.row3 {
+  --layer: #ffffff;
+}
+.row2 {
+  --layer: #cbd6e6;
+}
+.row1 {
+  --layer: #93a1b8;
+}
+.rowN {
+  grid-row: 1 / span 2;
+  font-family: var(--serif);
+  font-size: 2rem;
+  line-height: 0.85;
+  font-variant-numeric: tabular-nums;
+  color: var(--layer);
+}
+.row h3 {
+  font-size: 1.24rem;
+}
+.row p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.92rem;
+}
+
+/* El techo del ERP tradicional */
+.ceiling {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  padding: 10px 22px;
+  background: var(--panel-2);
+  border-top: 1px dashed #33415c;
+  border-bottom: 1px dashed #33415c;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ceiling::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: repeating-linear-gradient(
+    90deg, #33415c 0 4px, transparent 4px 8px
+  );
+}
+
+/* ---------------- Módulos ---------------- */
+.mods {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(238px, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.mod {
+  background: var(--panel);
+  padding: 24px 22px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+.modName {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0;
+}
+.modList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+  font-size: 0.93rem;
+  color: var(--text-2);
+}
+.modList li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.modList li::before {
+  content: "";
+  flex: none;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #3f4c66;
+  transform: translateY(-2px);
 }
 
 /* ---------------- Medidor de brecha ---------------- */
@@ -490,15 +941,15 @@
   left: 88%;
 }
 .markerBig b {
-  background: #6f9ccb;
+  background: var(--cool);
 }
 .markerSmall {
   left: 12%;
   transition: left 1.9s cubic-bezier(0.22, 0.75, 0.2, 1);
 }
 .markerSmall b {
-  background: var(--halpha-lit);
-  box-shadow: 0 0 14px 2px rgb(225 89 75 / 0.5);
+  background: var(--accent-lit);
+  box-shadow: 0 0 14px 2px rgb(235 167 90 / 0.55);
 }
 .gapSpan {
   position: absolute;
@@ -584,10 +1035,10 @@
   background: currentColor;
 }
 .pillLive {
-  color: var(--oiii);
+  color: var(--ok);
 }
 .pillDev {
-  color: var(--sodium);
+  color: var(--accent);
 }
 .pillNext {
   color: var(--muted);
@@ -596,7 +1047,7 @@
 /* ---------------- Nota ---------------- */
 .note {
   border: 1px solid var(--line);
-  border-left: 2px solid var(--halpha);
+  border-left: 2px solid var(--accent);
   background: var(--panel-2);
   border-radius: 3px;
   padding: 22px 24px;
@@ -611,90 +1062,48 @@
   font-weight: 500;
 }
 
-.caseCard {
-  border: 1px solid var(--line);
-  border-left: 2px solid var(--halpha);
-  background: var(--panel);
-  border-radius: 3px;
-  padding: 26px;
-  display: grid;
-  gap: 10px;
-  margin-bottom: 22px;
-  max-width: 72ch;
-}
-.caseCard h3 {
-  font-size: 1.5rem;
-}
-.caseCard p {
-  margin: 0;
-  color: var(--text-2);
-  font-size: 0.94rem;
-}
-
-/* ---------------- Cifras ---------------- */
-.figures {
-  display: grid;
-  gap: 1px;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  background: var(--line);
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  overflow: hidden;
-  margin-bottom: 26px;
-}
-.fig {
-  background: var(--panel);
-  padding: 24px 22px;
-  display: grid;
-  gap: 6px;
-}
-.figN {
-  font-family: var(--serif);
-  font-size: clamp(1.9rem, 3.6vw, 2.4rem);
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-}
-.figL {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.closingTitle {
-  font-size: clamp(1.9rem, 4.2vw, 3rem);
-  line-height: 1.08;
-  max-width: 22ch;
-  margin-bottom: 34px;
-}
-.closingTitle em {
-  font-style: italic;
-  color: var(--halpha-lit);
-}
-
 /* ---------------- Pie ---------------- */
+.footerWrap {
+  border-top: 1px solid var(--line-soft);
+  margin-top: 8px;
+}
 .footer {
-  padding: 52px 0 70px;
+  padding: 44px 0 20px;
   display: flex;
   flex-wrap: wrap;
-  gap: 14px 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px 32px;
+}
+/* Los enlaces del pie repiten los de la barra: quien llega al final no debería
+   tener que volver arriba para moverse. */
+.footerNav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 26px;
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
-.footer a {
-  color: var(--halpha-lit);
+.footerNav a {
+  color: var(--muted);
+  text-decoration: none;
+  transition: color 0.18s ease;
+}
+.footerNav a:hover {
+  color: var(--text);
+}
+.footerNote {
+  margin: 0;
+  padding-bottom: 56px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--muted);
 }
 
 @media (max-width: 720px) {
-  .duelRows {
-    grid-template-columns: 1fr;
-  }
-  .duelCell + .duelCell {
-    border-left: 0;
-    border-top: 1px solid var(--line);
-  }
   .read {
     grid-template-columns: 1fr;
   }
@@ -703,6 +1112,19 @@
     grid-column: 1;
     justify-self: start;
   }
+  .stage {
+    min-height: 300px;
+  }
+  .row {
+    grid-template-columns: 32px minmax(0, 1fr);
+    padding: 18px 18px;
+  }
+  .rowN {
+    font-size: 1.6rem;
+  }
+  .ceiling {
+    padding: 10px 18px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -710,5 +1132,13 @@
   .gapSpan,
   .gapLabel {
     transition: none;
+  }
+  /* La pila aparece ya ensamblada: sin recorrido, y sin respirar después. */
+  .plane {
+    transition: none;
+    transform: translateZ(var(--z));
+  }
+  .archLive .plane {
+    animation: none;
   }
 }
