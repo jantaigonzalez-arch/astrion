@@ -24,8 +24,53 @@ const remoteImageHosts = (process.env.NEXT_PUBLIC_IMAGE_HOSTS ?? "")
   .map((h) => h.trim())
   .filter(Boolean);
 
+/**
+ * Orígenes de DESARROLLO permitidos.
+ *
+ * Next bloquea las peticiones a los recursos internos de dev (`/_next/*`, HMR)
+ * cuando llegan desde un host que no es localhost. Probar el modo subdominio
+ * choca de frente con eso, y el síntoma es de los peores que hay: la página se
+ * renderiza perfecta en el servidor, el JavaScript nunca carga, y el formulario
+ * de acceso —que evita el envío nativo con `preventDefault` en el cliente— cae
+ * al comportamiento por omisión del navegador: GET, con la contraseña escrita
+ * en la barra de direcciones. Parece "no entra" y en realidad es "no hidrató".
+ *
+ * Solo afecta a `next dev`. En producción sirve nginx y esto no interviene.
+ * Se deriva de ROOT_DOMAIN para que no haya una lista que mantener a mano.
+ */
+const devRoot = process.env.ROOT_DOMAIN?.trim().toLowerCase();
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+
+  allowedDevOrigins: devRoot ? [devRoot, `*.${devRoot}`] : [],
+
+  experimental: {
+    // La importación masiva de cuentas por pagar sube el archivo por una Server
+    // Action, y el tope por omisión es 1 MB. Un CSV de mil facturas cabe de
+    // sobra, pero un lote de CFDI no: cada XML pesa entre 5 y 15 KB y una
+    // descarga masiva de un mes son varios cientos de archivos.
+    //
+    // Con el tope por omisión el fallo es feo — la acción revienta antes de
+    // ejecutarse y el usuario ve un error genérico sin relación con lo que hizo.
+    serverActions: { bodySizeLimit: "12mb" },
+  },
+
+  /**
+   * Polars se carga con el `require` de Node, no se empaqueta.
+   *
+   * Trae un binario nativo (`.node`), y Turbopack no puede meterlo en un chunk
+   * ESM: el build falla con «non-ecmascript placeable asset». Entró al grafo de
+   * la aplicación cuando el laboratorio empezó a congelar sus conjuntos de
+   * entrenamiento —`lab.ts` lo importa, y la pantalla de ML importa `lab.ts`—.
+   *
+   * Declararlo externo es la salida correcta y no un parche: un binario
+   * compilado por plataforma no tiene nada que hacer dentro de un bundle de
+   * JavaScript. El trazado de `output: standalone` lo sigue copiando a la
+   * imagen porque la dependencia es real; lo único que cambia es que se
+   * resuelve en tiempo de ejecución.
+   */
+  serverExternalPackages: ["nodejs-polars"],
 
   // Empaqueta en .next/standalone el servidor con solo las dependencias que
   // realmente usa, para que la imagen Docker no cargue todo node_modules.

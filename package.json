@@ -13,7 +13,10 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx scripts/seed.ts",
-    "db:seed:crm": "tsx scripts/seed-crm.ts"
+    "db:seed:crm": "tsx scripts/seed-crm.ts",
+    "typecheck:probes": "tsc --noEmit -p tsconfig.check.json",
+    "check:requisitions": "tsx --tsconfig tsconfig.scripts.json scripts/check-requisitions.ts",
+    "db:seed:orders": "tsx --tsconfig tsconfig.scripts.json scripts/seed-orders.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",
@@ -28,6 +31,7 @@
     "next": "16.2.10",
     "next-auth": "^5.0.0-beta.32",
     "next-intl": "^4.13.2",
+    "nodejs-polars": "^0.25.2",
     "postgres": "^3.4.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",

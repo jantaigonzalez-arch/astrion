@@ -50,3 +50,7 @@ next-env.d.ts
 
 # Salida del importador: lleva nombres de clientes reales, no va al repo.
 import-report.csv
+
+# Lago analítico: parquet extraído de los esquemas de inquilino.
+# Son datos de cliente derivados; nunca al repositorio.
+.lake/
