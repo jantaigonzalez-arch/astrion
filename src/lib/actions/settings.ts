@@ -1,9 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import { tenantDb } from "@/lib/tenancy/context";
+import { revalidateTenant } from "@/lib/revalidate";
+import { tenantDb, currentRole } from "@/lib/tenancy/context";
 import { settings } from "@/lib/db/schema";
-import { auth } from "@/lib/auth";
 import { isAdminRole } from "@/lib/roles";
 
 export type SettingsState = { ok: boolean; error?: string };
@@ -16,12 +15,60 @@ const money = (v: FormDataEntryValue | null) => {
   return Number.isNaN(n) || n < 0 ? null : n.toFixed(2);
 };
 
+/**
+ * Tipo de cambio USD→MXN de la empresa.
+ *
+ * Vive aparte de las tarifas de mano de obra porque son dos decisiones de
+ * negocio distintas, las toma gente distinta y se revisan con otra frecuencia:
+ * la tarifa se pacta una vez al año, el tipo de cambio se mira cuando hay una
+ * cotización en dólares sobre la mesa.
+ *
+ * Lo que se guarda aquí es el valor VIGENTE. Al guardar un negocio en dólares,
+ * este número se copia al propio negocio junto con la fecha del día — ver
+ * `stampFx` en `actions/crm.ts`—, así que subirlo mañana no cambia lo que ya
+ * se informó de los meses cerrados. Es la diferencia entre un tipo de cambio y
+ * una regla de conversión retroactiva, y solo la primera se puede auditar.
+ */
+export async function updateFxRate(
+  _prev: SettingsState,
+  formData: FormData,
+): Promise<SettingsState> {
+  if (!isAdminRole(await currentRole())) return { ok: false, error: "auth" };
+
+  const raw = String(formData.get("usdRate") ?? "").replace(/[^0-9.]/g, "");
+  const n = Number(raw);
+  // Vacío BORRA el tipo de cambio, y es deliberado: sin tipo de cambio la
+  // empresa declara que no convierte, y los informes lo dicen en vez de
+  // inventarse una paridad. Un cero o un negativo, en cambio, son errores de
+  // captura — convertirían toda la cartera en dólares a cero pesos.
+  const usdRate = raw === "" ? null : Number.isFinite(n) && n > 0 ? n.toFixed(4) : undefined;
+  if (usdRate === undefined) {
+    return { ok: false, error: "invalid" };
+  }
+
+  try {
+    const db = await tenantDb();
+    await db
+      .insert(settings)
+      .values({ id: "global", usdRate })
+      .onConflictDoUpdate({
+        target: settings.id,
+        set: { usdRate, updatedAt: new Date() },
+      });
+
+    revalidateTenant();
+    return { ok: true };
+  } catch (e) {
+    console.error("[settings] fx rate error:", e);
+    return { ok: false, error: "server" };
+  }
+}
+
 export async function updateSettings(
   _prev: SettingsState,
   formData: FormData,
 ): Promise<SettingsState> {
-  const session = await auth();
-  if (!isAdminRole(session?.user?.role)) return { ok: false, error: "auth" };
+  if (!isAdminRole(await currentRole())) return { ok: false, error: "auth" };
 
   const laborCostPerHour = money(formData.get("laborCostPerHour"));
   const laborRatePerHour = money(formData.get("laborRatePerHour"));
@@ -36,8 +83,7 @@ export async function updateSettings(
         set: { laborCostPerHour, laborRatePerHour, updatedAt: new Date() },
       });
 
-    revalidatePath("/admin/configuracion");
-    revalidatePath("/admin/contratos");
+    revalidateTenant();
     return { ok: true };
   } catch (e) {
     console.error("[settings] update error:", e);

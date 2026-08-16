@@ -5,38 +5,38 @@ import {
   Building2,
   CalendarCheck,
   KanbanSquare,
-  Mail,
   Search,
-  Settings2,
   Target,
   Users2,
-  Workflow,
   type LucideIcon,
 } from "lucide-react";
-import { Link, usePathname } from "@/i18n/navigation";
+import { Link, usePathname } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
 type Tab = { href: string; label: string; Icon: LucideIcon; exact?: boolean };
 
 const TABS: Tab[] = [
   { href: "/admin/crm", label: "Embudo", Icon: KanbanSquare, exact: true },
-  { href: "/admin/crm/organizaciones", label: "Organizaciones", Icon: Building2 },
+  { href: "/admin/crm/leads", label: "Leads", Icon: Building2 },
   { href: "/admin/crm/contactos", label: "Contactos", Icon: Users2 },
   { href: "/admin/crm/actividades", label: "Actividades", Icon: CalendarCheck },
   { href: "/admin/crm/informes", label: "Informes", Icon: BarChart3 },
   { href: "/admin/crm/objetivos", label: "Objetivos", Icon: Target },
-  { href: "/admin/crm/plantillas", label: "Plantillas", Icon: Mail },
   { href: "/admin/crm/buscar", label: "Buscar", Icon: Search },
 ];
 
-const ADMIN_TABS: Tab[] = [
-  { href: "/admin/crm/automatizaciones", label: "Automatizaciones", Icon: Workflow },
-  { href: "/admin/crm/configuracion", label: "Embudos", Icon: Settings2 },
-];
-
-export function CrmTabs({ isAdmin }: { isAdmin: boolean }) {
+/**
+ * Las pestañas son solo el trabajo diario del CRM.
+ *
+ * Plantillas, Automatizaciones y Embudos salieron de aquí: son configuración,
+ * se tocan una vez cada varios meses y ahora viven en Configuración. Mezclarlas
+ * con el embudo hacía que la fila de pestañas tuviera diez elementos y que
+ * "Embudo" (el tablero) conviviera con "Embudos" (su setup), dos cosas que se
+ * diferencian en una letra y no tienen nada que ver.
+ */
+export function CrmTabs() {
   const pathname = usePathname();
-  const tabs = isAdmin ? [...TABS, ...ADMIN_TABS] : TABS;
+  const tabs = TABS;
 
   return (
     <nav className="flex gap-1 overflow-x-auto border-b border-border pb-px">

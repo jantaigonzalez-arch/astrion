@@ -1,14 +1,37 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Handshake, Loader2 } from "lucide-react";
-import { createDeal, updateDeal, type CrmState } from "@/lib/actions/crm";
-import { DEAL_SOURCES, SOURCE_LABELS, label } from "@/lib/crm";
-import { Link } from "@/i18n/navigation";
+import {
+  Building2,
+  CheckCircle2,
+  Handshake,
+  Loader2,
+  Plus,
+  Search,
+  X,
+} from "lucide-react";
+import {
+  createDeal,
+  createOrganization,
+  updateDeal,
+  type CrmState,
+} from "@/lib/actions/crm";
+import {
+  DEAL_SOURCES,
+  ORG_KIND_LABELS,
+  ORG_KIND_STYLES,
+  SOURCE_LABELS,
+  label,
+  type OrgKind,
+} from "@/lib/crm";
+import { Link } from "@/lib/nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { OrgPicker } from "@/components/portal/crm/org-picker";
+import { cn } from "@/lib/utils";
 
 const initial: CrmState = { ok: false };
 const selectCls =
@@ -16,7 +39,17 @@ const selectCls =
 
 export type StageOption = { id: string; name: string; probability: number };
 export type OwnerOption = { id: string; name: string | null; email: string };
-export type OrgOption = { id: string; name: string };
+export type OrgOption = {
+  id: string;
+  name: string;
+  kind: OrgKind;
+  /** Con qué se puede buscar además del nombre. Ver `getOrgOptions`. */
+  taxId?: string | null;
+  industry?: string | null;
+  phone?: string | null;
+  openDeals?: number;
+  wonDeals?: number;
+};
 export type ContactOption = {
   id: string;
   name: string;
@@ -73,6 +106,15 @@ export function DealForm({
   const visibleContacts = orgId
     ? contacts.filter((c) => c.organizationId === orgId || !c.organizationId)
     : contacts;
+
+  // La lista vive en estado, no en las props, porque puede crecer sin recargar:
+  // el panel de «Crear nueva» le añade una y la deja seleccionada.
+  const [orgs, setOrgs] = useState(organizations);
+  const [creating, setCreating] = useState(false);
+  const [picking, setPicking] = useState(false);
+  // Lo tecleado en el buscador cuando no hubo resultado: arranca el alta.
+  const [newOrgName, setNewOrgName] = useState("");
+  const selectedOrg = orgs.find((o) => o.id === orgId) ?? null;
 
   if (state.ok && !editing) {
     return (
@@ -150,21 +192,95 @@ export function DealForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <Label htmlFor="organizationId">Organización</Label>
-          <select
+          <div className="flex items-baseline justify-between gap-2">
+            <Label htmlFor="organizationId">Organización</Label>
+            {!creating && (
+              <button
+                type="button"
+                onClick={() => {
+                  setNewOrgName("");
+                  setCreating(true);
+                }}
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+              >
+                <Plus className="size-3" /> Crear nueva
+              </button>
+            )}
+          </div>
+
+          {/*
+            El valor viaja en un campo oculto y el visible es un BOTÓN.
+
+            Aquí había un `<select>` con las 164 organizaciones agrupadas en
+            Clientes y Leads. Agrupar ayudaba, pero el control seguía siendo una
+            tira sin búsqueda y sin más dato que el nombre: para dar con
+            «PROCTER & GAMBLE MANUFACTURA S. DE R.L. DE C.V.» había que acertar
+            la razón social de memoria o desplazarse a ojo. Lo que hacía falta
+            no era ordenar mejor la lista, era poder buscar en ella.
+          */}
+          <input type="hidden" name="organizationId" value={orgId} />
+
+          <button
+            type="button"
             id="organizationId"
-            name="organizationId"
-            className={selectCls}
-            value={orgId}
-            onChange={(e) => setOrgId(e.target.value)}
+            onClick={() => setPicking(true)}
+            className={cn(
+              selectCls,
+              "items-center justify-between gap-2 text-left hover:bg-secondary/40",
+            )}
           >
-            <option value="">— Sin organización —</option>
-            {organizations.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
+            {selectedOrg ? (
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate">{selectedOrg.name}</span>
+                <Badge className={cn("shrink-0", ORG_KIND_STYLES[selectedOrg.kind])}>
+                  {label(ORG_KIND_LABELS, selectedOrg.kind, locale)}
+                </Badge>
+              </span>
+            ) : (
+              <span className="text-muted-foreground">
+                Buscar o elegir organización…
+              </span>
+            )}
+            <Search className="size-4 shrink-0 text-muted-foreground" />
+          </button>
+
+          <OrgPicker
+            orgs={orgs}
+            value={orgId}
+            onPick={setOrgId}
+            onCreateNew={(name) => {
+              setNewOrgName(name);
+              setCreating(true);
+            }}
+            locale={locale}
+            open={picking}
+            onClose={() => setPicking(false)}
+          />
+
+          {selectedOrg && !creating && (
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Building2 className="size-3" />
+              {selectedOrg.kind === "client"
+                ? "Ya es cliente: tiene compras, contrato o cuenta de portal."
+                : "Todavía es un lead: no tiene ninguna compra registrada."}
+            </p>
+          )}
+
+          {creating && (
+            <NewOrgPanel
+              initialName={newOrgName}
+              existing={orgs}
+              onCancel={() => setCreating(false)}
+              onCreated={(org) => {
+                // Se añade a la lista en memoria y queda elegida. Sin recargar:
+                // volver a pedir la página perdería lo que ya se escribió del
+                // negocio, que es justo lo que este panel viene a evitar.
+                setOrgs((prev) => [...prev, org]);
+                setOrgId(org.id);
+                setCreating(false);
+              }}
+            />
+          )}
         </div>
         <div>
           <Label htmlFor="contactId">Contacto</Label>
@@ -256,5 +372,151 @@ export function DealForm({
         {editing ? "Guardar cambios" : "Crear negocio"}
       </Button>
     </form>
+  );
+}
+
+/**
+ * Alta de organización sin salir del formulario del negocio.
+ *
+ * **No es un `<form>`**, y esa es la decisión que manda sobre todo lo demás:
+ * este panel se dibuja DENTRO del formulario del negocio, y anidar formularios
+ * es HTML inválido — el navegador cierra el interno por su cuenta y el botón
+ * termina enviando el negocio a medio capturar. Por eso los botones son
+ * `type="button"` y la acción de servidor se invoca a mano.
+ *
+ * La tecla Enter recibe el mismo trato explícito: dentro de un formulario,
+ * Enter en un campo de texto envía el formulario que lo contiene. Sin
+ * interceptarla, teclear el nombre y pulsar Enter —lo más natural del mundo—
+ * crearía el NEGOCIO en vez de la organización.
+ *
+ * Solo se piden nombre y giro. La ficha completa —RFC, dirección, cuenta de
+ * portal, responsable— se llena después en su pantalla; aquí lo único que hace
+ * falta es poder seguir capturando el negocio, y cada campo de más es una razón
+ * para abandonar a medias.
+ */
+function NewOrgPanel({
+  onCreated,
+  onCancel,
+  existing,
+  initialName = "",
+}: {
+  onCreated: (org: OrgOption) => void;
+  onCancel: () => void;
+  existing: OrgOption[];
+  /** Lo que se buscó sin encontrarlo, para no teclearlo dos veces. */
+  initialName?: string;
+}) {
+  const [name, setName] = useState(initialName);
+  const [industry, setIndustry] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, startSaving] = useTransition();
+
+  // Aviso, no bloqueo: puede haber dos laboratorios con nombre parecido en
+  // ciudades distintas. Pero duplicar una organización es de lo más caro de
+  // deshacer en un CRM —los negocios quedan repartidos entre las copias—, así
+  // que vale la pena decirlo antes y no descubrirlo en el informe.
+  const norm = (s: string) =>
+    s.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const duplicate = name.trim()
+    ? (existing.find((o) => norm(o.name) === norm(name)) ?? null)
+    : null;
+
+  function submit() {
+    if (!name.trim() || saving) return;
+    setError(null);
+
+    startSaving(async () => {
+      const fd = new FormData();
+      fd.set("name", name.trim());
+      if (industry.trim()) fd.set("industry", industry.trim());
+
+      // Sin `ownerId`: la acción lo resuelve como «yo mismo» y valida la
+      // membresía (ver `resolveOwner`). Mandar uno desde aquí sería inventar
+      // una regla distinta de la que usa el resto del CRM.
+      const r = await createOrganization({ ok: false }, fd);
+
+      if (!r.ok || !r.id) {
+        setError(
+          r.error === "auth"
+            ? "No tienes permiso para crear organizaciones."
+            : r.error === "invalid"
+              ? "Revisa el nombre: necesita al menos 2 caracteres."
+              : "No se pudo crear. Intenta de nuevo.",
+        );
+        return;
+      }
+
+      // Nace como lead por definición: todavía no compró nada. En cuanto se
+      // gane este negocio pasará sola a Clientes — ver `ES_CLIENTE`.
+      onCreated({ id: r.id, name: name.trim(), kind: "lead" });
+    });
+  }
+
+  return (
+    <div className="mt-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-xs font-semibold">Nueva organización</p>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-muted-foreground hover:text-foreground"
+          aria-label="Cancelar la creación de organización"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+
+      <div className="grid gap-2">
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          placeholder="Nombre del laboratorio o empresa"
+          aria-label="Nombre de la nueva organización"
+          autoFocus
+        />
+        <Input
+          value={industry}
+          onChange={(e) => setIndustry(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          placeholder="Giro (opcional) — ej. Farmacéutica"
+          aria-label="Giro de la nueva organización"
+        />
+      </div>
+
+      {duplicate && (
+        <p className="mt-2 text-xs text-warning">
+          Ya existe «{duplicate.name}». Si es la misma, cierra esto y elígela de
+          la lista.
+        </p>
+      )}
+      {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+
+      <div className="mt-3 flex justify-end gap-2">
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+          Cancelar
+        </Button>
+        <Button
+          type="button"
+          variant="accent"
+          size="sm"
+          onClick={submit}
+          disabled={!name.trim() || saving}
+        >
+          {saving ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+          Crear y elegir
+        </Button>
+      </div>
+    </div>
   );
 }

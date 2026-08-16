@@ -1,10 +1,10 @@
 "use server";
 
 import { z } from "zod";
-import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { and, eq, ne, sql } from "drizzle-orm";
-import { tenantDb } from "@/lib/tenancy/context";
+import { revalidateTenant } from "@/lib/revalidate";
+import { redirectAfterAction } from "@/lib/nav-server";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
+import { tenantDb, currentRole } from "@/lib/tenancy/context";
 import {
   crmActivities,
   crmAutomations,
@@ -15,9 +15,11 @@ import {
   crmOrganizations,
   crmStages,
   leads,
+  settings,
 } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
 import { isAdminRole, isSalesRole } from "@/lib/roles";
+import { getTenantMember } from "@/lib/data/people";
 import { nextDealReference } from "@/lib/domain/references";
 import { recordDeletion, recordEvent } from "@/lib/domain/events";
 
@@ -59,15 +61,129 @@ const optText = (max: number) =>
 /** Solo perfiles comerciales (vendedor/admin) operan el CRM. */
 async function requireSales() {
   const session = await auth();
-  if (!isSalesRole(session?.user?.role)) return null;
+  if (!isSalesRole(await currentRole())) return null;
   return session!;
 }
 
-function revalidateCrm(dealId?: string) {
-  revalidatePath("/admin/crm");
-  revalidatePath("/admin/crm/actividades");
-  revalidatePath("/admin/crm/informes");
-  if (dealId) revalidatePath(`/admin/crm/negocios/${dealId}`);
+/**
+ * Resuelve el responsable comercial de un negocio, organización o contacto.
+ *
+ * Reemplaza a dos expresiones que se repetían seis veces y que **no decían lo
+ * mismo**: al crear era `ownerId ?? session.user.id` y al editar
+ * `ownerId ?? null`. Los tres formularios rotulan la opción vacía «— Yo
+ * mismo —», así que editar cualquier ficha y dejar esa opción no la ponía a tu
+ * nombre: la dejaba SIN responsable. Y como toda la vista comercial filtra por
+ * `ownerId = yo`, la ficha desaparecía de la cartera de todos los vendedores y
+ * solo la veía un administrador. Nadie iba a relacionar una cosa con la otra.
+ *
+ * Ahora vacío significa siempre lo que dice la etiqueta: yo.
+ *
+ * Y de paso valida la membresía, que es la otra mitad del problema. `ownerId`
+ * apunta por clave foránea a `public.users` —el padrón de TODA la plataforma—,
+ * así que hasta ahora bastaba con mandar un uuid con formato válido para dejar
+ * un negocio a nombre de alguien de otra empresa; el ranking de vendedores lo
+ * habría mostrado después con su nombre y su correo. Es exactamente la
+ * comprobación que `assignTicket` ya hacía y que el CRM nunca tuvo.
+ *
+ * Devuelve `undefined` cuando el candidato no es miembro: quien llama traduce
+ * eso a un error de validación en vez de guardar a medias.
+ */
+async function resolveOwner(
+  candidate: string | undefined,
+  session: { user: { id: string } },
+): Promise<string | undefined> {
+  if (!candidate || candidate === session.user.id) return session.user.id;
+
+  const member = await getTenantMember(candidate);
+  // Se exige pertenencia viva Y perfil comercial: dejarle la cartera a alguien
+  // que ya no trabaja aquí, o a un cliente, es una ficha que nadie va a
+  // atender. `isSalesRole` ya incluye a `owner`.
+  if (!member?.memberActive || !member.accountActive) return undefined;
+  if (!isSalesRole(member.role)) return undefined;
+
+  return member.id;
+}
+
+// Una sola llamada cubre el subárbol entero de la empresa; el parámetro que
+// tenía antes distinguía un caso que hacía exactamente lo mismo.
+function revalidateCrm() {
+  revalidateTenant();
+}
+
+/**
+ * Estampa la moneda y el tipo de cambio con los que se guarda un negocio.
+ *
+ * El problema que resuelve: `value_usd` se capturaba, se guardaba… y **nadie lo
+ * leía**. Ni el tablero, ni el embudo, ni el pronóstico, ni el ranking, ni los
+ * objetivos: todos suman `value_mxn`. Una oportunidad de USD 80 000 aparecía
+ * como «—» en su tarjeta y aportaba cero al pipeline. Un error silencioso y
+ * siempre en la misma dirección: el pronóstico quedaba corto.
+ *
+ * La conversión se hace copiando aquí el tipo de cambio que la empresa fijó en
+ * Configuración → Moneda, junto con la fecha. No se lee la configuración al
+ * pintar los informes, y esa es la decisión de fondo: si los informes leyeran el
+ * tipo de cambio de hoy, tocarlo reescribiría el cierre de meses ya reportados y
+ * dos personas mirando el mismo trimestre en semanas distintas verían números
+ * distintos. Copiado en el negocio, cada cifra conserva la paridad con la que se
+ * pactó, que es además lo que un auditor va a pedir.
+ *
+ * Sin tipo de cambio configurado no se inventa ninguno: el negocio queda en
+ * dólares sin convertir y las pantallas lo muestran aparte.
+ */
+async function stampFx(
+  db: Awaited<ReturnType<typeof tenantDb>>,
+  values: { valueMxn?: string; valueUsd?: string },
+): Promise<{ currency: string | null; fxRate: string | null; fxDate: string | null }> {
+  // Solo hay algo que convertir cuando el importe está en dólares y no hay un
+  // equivalente en pesos capturado a mano, que siempre manda sobre el cálculo.
+  if (!values.valueUsd || values.valueMxn) {
+    return { currency: values.valueMxn ? "MXN" : null, fxRate: null, fxDate: null };
+  }
+
+  const [row] = await db
+    .select({ usdRate: settings.usdRate })
+    .from(settings)
+    .where(eq(settings.id, "global"))
+    .limit(1);
+
+  const rate = Number(row?.usdRate ?? 0);
+  if (!(rate > 0)) return { currency: "USD", fxRate: null, fxDate: null };
+
+  return {
+    currency: "USD",
+    fxRate: rate.toFixed(4),
+    // Fecha local del servidor: es el día que la empresa dirá que pactó esa
+    // paridad, no el día UTC.
+    fxDate: new Date().toLocaleDateString("en-CA"),
+  };
+}
+
+/**
+ * A qué embudo pertenece una etapa. `null` si la etapa no existe.
+ *
+ * El tablero se dibuja como `stages.map(s => deals.filter(d => d.stageId === s.id))`
+ * sobre los negocios de UN embudo. Así que un negocio cuyo `pipeline_id` dice A
+ * y cuya etapa vive en B no cae en ninguna columna: **desaparece del tablero**
+ * sin dejar de existir, sin dejar de contar en los informes y sin ningún aviso.
+ *
+ * Nada lo impedía. Hoy la interfaz no deja llegar a ese estado —el embudo viaja
+ * en un campo oculto y el selector solo ofrece etapas del embudo actual—, pero
+ * eso es una propiedad del formulario, no del sistema: una server action acepta
+ * cualquier `formData`, y el día que haya un segundo embudo la primera
+ * automatización o importación que mueva etapas puede producirlo.
+ *
+ * Se comprueba en el borde, que es donde el dato entra.
+ */
+async function pipelineOfStage(
+  db: Awaited<ReturnType<typeof tenantDb>>,
+  stageId: string,
+): Promise<string | null> {
+  const [stage] = await db
+    .select({ pipelineId: crmStages.pipelineId })
+    .from(crmStages)
+    .where(eq(crmStages.id, stageId))
+    .limit(1);
+  return stage?.pipelineId ?? null;
 }
 
 /**
@@ -167,12 +283,29 @@ export async function createDeal(
   const parsed = DealSchema.safeParse(dealFields(formData));
   if (!parsed.success) return { ok: false, error: "invalid" };
 
+  // Un responsable que no es miembro comercial de esta empresa se rechaza
+  // como dato inválido, no se guarda como nulo: guardar a medias dejaría la
+  // ficha sin dueño sin decírselo a nadie.
+  const owner = await resolveOwner(parsed.data.ownerId, session);
+  if (!owner) return { ok: false, error: "invalid" };
+
   try {
     const db = await tenantDb();
 
     // Negocio + su evento de alta + calificación del lead son un solo hecho:
     // o quedan los tres, o ninguno. Antes eran escrituras sueltas y un fallo
     // a mitad dejaba un negocio sin historial.
+    // La etapa manda sobre el embudo: si no coinciden, el negocio nacería
+    // invisible en el tablero. Ver `pipelineOfStage`.
+    if ((await pipelineOfStage(db, parsed.data.stageId)) !== parsed.data.pipelineId) {
+      return { ok: false, error: "invalid" };
+    }
+
+    const fx = await stampFx(db, {
+      valueMxn: parsed.data.valueMxn,
+      valueUsd: parsed.data.valueUsd,
+    });
+
     const created = await db.transaction(async (tx) => {
       // Nuevo negocio: al tope de su columna del kanban.
       const [{ minPos }] = await tx
@@ -190,9 +323,10 @@ export async function createDeal(
           organizationId: parsed.data.organizationId ?? null,
           contactId: parsed.data.contactId ?? null,
           // Sin responsable explícito, el negocio queda a nombre de quien lo crea.
-          ownerId: parsed.data.ownerId ?? session.user.id,
+          ownerId: owner,
           valueMxn: parsed.data.valueMxn ?? null,
           valueUsd: parsed.data.valueUsd ?? null,
+          ...fx,
           expectedCloseDate: parsed.data.expectedCloseDate ?? null,
           source: parsed.data.source ?? null,
           leadId: parsed.data.leadId ?? null,
@@ -249,7 +383,7 @@ export async function createDeal(
     // negocio por no haber podido crear una tarea de recordatorio.
     await runStageAutomations(created.id, parsed.data.stageId, session.user.id);
 
-    if (parsed.data.leadId) revalidatePath("/admin/leads");
+    if (parsed.data.leadId) revalidateTenant();
     revalidateCrm();
     return { ok: true, id: created.id, reference: created.reference };
   } catch (e) {
@@ -271,6 +405,12 @@ export async function updateDeal(
   });
   if (!parsed.success) return { ok: false, error: "invalid" };
 
+  // Un responsable que no es miembro comercial de esta empresa se rechaza
+  // como dato inválido, no se guarda como nulo: guardar a medias dejaría la
+  // ficha sin dueño sin decírselo a nadie.
+  const owner = await resolveOwner(parsed.data.ownerId, session);
+  if (!owner) return { ok: false, error: "invalid" };
+
   try {
     const db = await tenantDb();
     const [current] = await db
@@ -280,16 +420,30 @@ export async function updateDeal(
       .limit(1);
     if (!current) return { ok: false, error: "invalid" };
 
+    // El embudo se DERIVA de la etapa elegida y se escribe junto con ella.
+    // Antes `pipelineId` viajaba en el formulario y nunca se guardaba, así que
+    // los dos campos podían separarse en silencio.
+    const pipelineId = await pipelineOfStage(db, parsed.data.stageId);
+    if (!pipelineId) return { ok: false, error: "invalid" };
+
+    // Se vuelve a estampar porque el importe pudo cambiar de moneda al editar.
+    const fx = await stampFx(db, {
+      valueMxn: parsed.data.valueMxn,
+      valueUsd: parsed.data.valueUsd,
+    });
+
     await db
       .update(crmDeals)
       .set({
         title: parsed.data.title.trim(),
+        pipelineId,
         stageId: parsed.data.stageId,
         organizationId: parsed.data.organizationId ?? null,
         contactId: parsed.data.contactId ?? null,
-        ownerId: parsed.data.ownerId ?? null,
+        ownerId: owner,
         valueMxn: parsed.data.valueMxn ?? null,
         valueUsd: parsed.data.valueUsd ?? null,
+        ...fx,
         expectedCloseDate: parsed.data.expectedCloseDate ?? null,
         source: parsed.data.source ?? null,
         updatedAt: new Date(),
@@ -306,7 +460,7 @@ export async function updateDeal(
       await runStageAutomations(current.id, parsed.data.stageId, session.user.id);
     }
 
-    revalidateCrm(current.id);
+    revalidateCrm();
     return { ok: true, id: current.id };
   } catch (e) {
     console.error("[crm] updateDeal error:", e);
@@ -350,9 +504,15 @@ export async function moveDeal(formData: FormData) {
   const target = Math.max(0, Math.min(index, rest.length));
   rest.splice(target, 0, dealId);
 
+  // El arrastre solo ofrece columnas del embudo abierto, pero la acción acepta
+  // cualquier `formData`: el embudo se recalcula desde la etapa destino en vez
+  // de darlo por bueno.
+  const pipelineId = await pipelineOfStage(db, stageId);
+  if (!pipelineId) return;
+
   await db
     .update(crmDeals)
-    .set({ stageId, updatedAt: new Date() })
+    .set({ stageId, pipelineId, updatedAt: new Date() })
     .where(eq(crmDeals.id, dealId));
 
   // Reescribe posiciones 0..n de la columna destino.
@@ -370,7 +530,7 @@ export async function moveDeal(formData: FormData) {
     await runStageAutomations(dealId, stageId, session.user.id);
   }
 
-  revalidateCrm(dealId);
+  revalidateCrm();
 }
 
 /** Marca el negocio como ganado, perdido o lo reabre. */
@@ -400,12 +560,12 @@ export async function setDealStatus(formData: FormData) {
     authorId: session.user.id,
   });
 
-  revalidateCrm(dealId);
+  revalidateCrm();
 }
 
 export async function deleteDeal(formData: FormData) {
   const session = await auth();
-  if (!isAdminRole(session?.user?.role)) return;
+  if (!session?.user || !isAdminRole(await currentRole())) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = await tenantDb();
@@ -423,7 +583,7 @@ export async function deleteDeal(formData: FormData) {
     });
   });
   revalidateCrm();
-  redirect("/admin/crm");
+  await redirectAfterAction("/admin/crm");
 }
 
 /* ========================= Organizaciones ========================= */
@@ -453,7 +613,10 @@ async function enforceSingleClientLink(clientId: string, orgId: string) {
       and(eq(crmOrganizations.clientId, clientId), ne(crmOrganizations.id, orgId)),
     )
     .returning({ id: crmOrganizations.id });
-  for (const o of stale) revalidatePath(`/admin/crm/organizaciones/${o.id}`);
+  // Antes se revalidaba la ficha de cada organización desvinculada; ahora una
+  // sola llamada cubre el subárbol entero, así que basta con saber si hubo
+  // alguna.
+  if (stale.length > 0) revalidateTenant();
 }
 
 function orgFields(formData: FormData) {
@@ -479,6 +642,12 @@ export async function createOrganization(
   const parsed = OrgSchema.safeParse(orgFields(formData));
   if (!parsed.success) return { ok: false, error: "invalid" };
 
+  // Un responsable que no es miembro comercial de esta empresa se rechaza
+  // como dato inválido, no se guarda como nulo: guardar a medias dejaría la
+  // ficha sin dueño sin decírselo a nadie.
+  const owner = await resolveOwner(parsed.data.ownerId, session);
+  if (!owner) return { ok: false, error: "invalid" };
+
   try {
     const db = await tenantDb();
     const [created] = await db
@@ -489,7 +658,7 @@ export async function createOrganization(
         website: parsed.data.website ?? null,
         phone: parsed.data.phone ?? null,
         address: parsed.data.address ?? null,
-        ownerId: parsed.data.ownerId ?? session.user.id,
+        ownerId: owner,
         clientId: parsed.data.clientId ?? null,
         notes: parsed.data.notes ?? null,
       })
@@ -498,8 +667,7 @@ export async function createOrganization(
     if (parsed.data.clientId) {
       await enforceSingleClientLink(parsed.data.clientId, created.id);
     }
-    revalidatePath("/admin/crm/organizaciones");
-    revalidatePath("/admin/users");
+    revalidateTenant();
     return { ok: true, id: created.id };
   } catch (e) {
     console.error("[crm] createOrganization error:", e);
@@ -520,6 +688,12 @@ export async function updateOrganization(
   });
   if (!parsed.success) return { ok: false, error: "invalid" };
 
+  // Un responsable que no es miembro comercial de esta empresa se rechaza
+  // como dato inválido, no se guarda como nulo: guardar a medias dejaría la
+  // ficha sin dueño sin decírselo a nadie.
+  const owner = await resolveOwner(parsed.data.ownerId, session);
+  if (!owner) return { ok: false, error: "invalid" };
+
   try {
     const db = await tenantDb();
     await db
@@ -530,7 +704,7 @@ export async function updateOrganization(
         website: parsed.data.website ?? null,
         phone: parsed.data.phone ?? null,
         address: parsed.data.address ?? null,
-        ownerId: parsed.data.ownerId ?? null,
+        ownerId: owner,
         clientId: parsed.data.clientId ?? null,
         notes: parsed.data.notes ?? null,
       })
@@ -539,9 +713,7 @@ export async function updateOrganization(
     if (parsed.data.clientId) {
       await enforceSingleClientLink(parsed.data.clientId, parsed.data.id);
     }
-    revalidatePath("/admin/crm/organizaciones");
-    revalidatePath(`/admin/crm/organizaciones/${parsed.data.id}`);
-    revalidatePath("/admin/users");
+    revalidateTenant();
     return { ok: true, id: parsed.data.id };
   } catch (e) {
     console.error("[crm] updateOrganization error:", e);
@@ -549,9 +721,39 @@ export async function updateOrganization(
   }
 }
 
+/**
+ * Toma una organización sin responsable y la pone a tu nombre.
+ *
+ * Es la contraparte de que la bandeja «sin asignar» sea visible para todo el
+ * equipo comercial: si cualquiera la ve, cualquiera tiene que poder tomarla sin
+ * pedirle a un administrador que reparta.
+ *
+ * La condición `owner_id is null` viaja DENTRO del `update` y no en un `if`
+ * previo. Con dos vendedores mirando la misma bandeja —que es exactamente lo
+ * que va a pasar— comprobar antes y escribir después deja que el segundo pise
+ * al primero: los dos leerían "sin dueño" y el último en escribir se la
+ * quedaría, sin que el primero se entere de que la perdió. Así, el segundo
+ * `update` no afecta ninguna fila y la acción se lo dice.
+ */
+export async function claimOrganization(formData: FormData) {
+  const session = await requireSales();
+  if (!session) return;
+
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  const db = await tenantDb();
+  await db
+    .update(crmOrganizations)
+    .set({ ownerId: session.user.id })
+    .where(and(eq(crmOrganizations.id, id), isNull(crmOrganizations.ownerId)));
+
+  revalidateTenant();
+}
+
 export async function deleteOrganization(formData: FormData) {
   const session = await auth();
-  if (!isAdminRole(session?.user?.role)) return;
+  if (!session?.user || !isAdminRole(await currentRole())) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = await tenantDb();
@@ -569,8 +771,8 @@ export async function deleteOrganization(formData: FormData) {
       snapshot: row,
     });
   });
-  revalidatePath("/admin/crm/organizaciones");
-  redirect("/admin/crm/organizaciones");
+  revalidateTenant();
+  await redirectAfterAction("/admin/crm/organizaciones");
 }
 
 /* ========================= Contactos ========================= */
@@ -613,6 +815,12 @@ export async function createContact(
   const parsed = ContactSchema.safeParse(contactFields(formData));
   if (!parsed.success) return { ok: false, error: "invalid" };
 
+  // Un responsable que no es miembro comercial de esta empresa se rechaza
+  // como dato inválido, no se guarda como nulo: guardar a medias dejaría la
+  // ficha sin dueño sin decírselo a nadie.
+  const owner = await resolveOwner(parsed.data.ownerId, session);
+  if (!owner) return { ok: false, error: "invalid" };
+
   try {
     const db = await tenantDb();
     const [created] = await db
@@ -623,14 +831,14 @@ export async function createContact(
         phone: parsed.data.phone ?? null,
         position: parsed.data.position ?? null,
         organizationId: parsed.data.organizationId ?? null,
-        ownerId: parsed.data.ownerId ?? session.user.id,
+        ownerId: owner,
         notes: parsed.data.notes ?? null,
       })
       .returning({ id: crmContacts.id });
 
-    revalidatePath("/admin/crm/contactos");
+    revalidateTenant();
     if (parsed.data.organizationId)
-      revalidatePath(`/admin/crm/organizaciones/${parsed.data.organizationId}`);
+      revalidateTenant();
     return { ok: true, id: created.id };
   } catch (e) {
     console.error("[crm] createContact error:", e);
@@ -651,6 +859,12 @@ export async function updateContact(
   });
   if (!parsed.success) return { ok: false, error: "invalid" };
 
+  // Un responsable que no es miembro comercial de esta empresa se rechaza
+  // como dato inválido, no se guarda como nulo: guardar a medias dejaría la
+  // ficha sin dueño sin decírselo a nadie.
+  const owner = await resolveOwner(parsed.data.ownerId, session);
+  if (!owner) return { ok: false, error: "invalid" };
+
   try {
     const db = await tenantDb();
     await db
@@ -661,12 +875,12 @@ export async function updateContact(
         phone: parsed.data.phone ?? null,
         position: parsed.data.position ?? null,
         organizationId: parsed.data.organizationId ?? null,
-        ownerId: parsed.data.ownerId ?? null,
+        ownerId: owner,
         notes: parsed.data.notes ?? null,
       })
       .where(eq(crmContacts.id, parsed.data.id));
 
-    revalidatePath("/admin/crm/contactos");
+    revalidateTenant();
     return { ok: true, id: parsed.data.id };
   } catch (e) {
     console.error("[crm] updateContact error:", e);
@@ -676,7 +890,7 @@ export async function updateContact(
 
 export async function deleteContact(formData: FormData) {
   const session = await auth();
-  if (!isAdminRole(session?.user?.role)) return;
+  if (!session?.user || !isAdminRole(await currentRole())) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = await tenantDb();
@@ -694,7 +908,7 @@ export async function deleteContact(formData: FormData) {
       snapshot: row,
     });
   });
-  revalidatePath("/admin/crm/contactos");
+  revalidateTenant();
 }
 
 /* ========================= Actividades ========================= */
@@ -727,8 +941,8 @@ export async function createActivity(formData: FormData) {
     createdById: session.user.id,
   });
 
-  revalidateCrm(dealId ?? undefined);
-  if (organizationId) revalidatePath(`/admin/crm/organizaciones/${organizationId}`);
+  revalidateCrm();
+  if (organizationId) revalidateTenant();
 }
 
 /** Marca/desmarca una actividad como completada. */
@@ -741,13 +955,12 @@ export async function toggleActivity(formData: FormData) {
   if (!id) return;
 
   const db = await tenantDb();
-  const [row] = await db
+  await db
     .update(crmActivities)
     .set({ done, doneAt: done ? new Date() : null })
-    .where(eq(crmActivities.id, id))
-    .returning({ dealId: crmActivities.dealId });
+    .where(eq(crmActivities.id, id));
 
-  revalidateCrm(row?.dealId ?? undefined);
+  revalidateCrm();
 }
 
 export async function deleteActivity(formData: FormData) {
@@ -756,7 +969,7 @@ export async function deleteActivity(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = await tenantDb();
-  const row = await db.transaction(async (tx) => {
+  await db.transaction(async (tx) => {
     const [deleted] = await tx
       .delete(crmActivities)
       .where(eq(crmActivities.id, id))
@@ -771,7 +984,7 @@ export async function deleteActivity(formData: FormData) {
     });
     return deleted;
   });
-  revalidateCrm(row?.dealId ?? undefined);
+  revalidateCrm();
 }
 
 /* ========================= Notas ========================= */
@@ -795,8 +1008,8 @@ export async function createNote(formData: FormData) {
     authorId: session.user.id,
   });
 
-  revalidateCrm(dealId ?? undefined);
-  if (organizationId) revalidatePath(`/admin/crm/organizaciones/${organizationId}`);
+  revalidateCrm();
+  if (organizationId) revalidateTenant();
 }
 
 export async function deleteNote(formData: FormData) {
@@ -805,7 +1018,7 @@ export async function deleteNote(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = await tenantDb();
-  const row = await db.transaction(async (tx) => {
+  await db.transaction(async (tx) => {
     const [deleted] = await tx
       .delete(crmNotes)
       .where(eq(crmNotes.id, id))
@@ -820,14 +1033,14 @@ export async function deleteNote(formData: FormData) {
     });
     return deleted;
   });
-  revalidateCrm(row?.dealId ?? undefined);
+  revalidateCrm();
 }
 
 /* ========================= Etapas del embudo ========================= */
 
 export async function createStage(formData: FormData) {
   const session = await auth();
-  if (!isAdminRole(session?.user?.role)) return;
+  if (!session?.user || !isAdminRole(await currentRole())) return;
 
   const pipelineId = String(formData.get("pipelineId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
@@ -847,13 +1060,12 @@ export async function createStage(formData: FormData) {
     order: maxOrder + 1,
   });
 
-  revalidatePath("/admin/crm/configuracion");
-  revalidatePath("/admin/crm");
+  revalidateTenant();
 }
 
 export async function updateStage(formData: FormData) {
   const session = await auth();
-  if (!isAdminRole(session?.user?.role)) return;
+  if (!session?.user || !isAdminRole(await currentRole())) return;
 
   const id = String(formData.get("id") ?? "");
   const name = String(formData.get("name") ?? "").trim();
@@ -872,14 +1084,13 @@ export async function updateStage(formData: FormData) {
     })
     .where(eq(crmStages.id, id));
 
-  revalidatePath("/admin/crm/configuracion");
-  revalidatePath("/admin/crm");
+  revalidateTenant();
 }
 
 /** Sube o baja una etapa en el embudo (intercambia el orden con su vecina). */
 export async function moveStage(formData: FormData) {
   const session = await auth();
-  if (!isAdminRole(session?.user?.role)) return;
+  if (!session?.user || !isAdminRole(await currentRole())) return;
 
   const id = String(formData.get("id") ?? "");
   const dir = String(formData.get("dir") ?? "");
@@ -912,14 +1123,13 @@ export async function moveStage(formData: FormData) {
     .set({ order: siblings[i].order })
     .where(eq(crmStages.id, siblings[j].id));
 
-  revalidatePath("/admin/crm/configuracion");
-  revalidatePath("/admin/crm");
+  revalidateTenant();
 }
 
 /** Elimina una etapa solo si está vacía (evita perder negocios). */
 export async function deleteStage(formData: FormData) {
   const session = await auth();
-  if (!isAdminRole(session?.user?.role)) return;
+  if (!session?.user || !isAdminRole(await currentRole())) return;
 
   const id = String(formData.get("id") ?? "");
   if (!id) return;
@@ -945,8 +1155,7 @@ export async function deleteStage(formData: FormData) {
       snapshot: row,
     });
   });
-  revalidatePath("/admin/crm/configuracion");
-  revalidatePath("/admin/crm");
+  revalidateTenant();
 }
 
 /* ========================= Lead → Negocio ========================= */
@@ -969,8 +1178,38 @@ export async function convertLeadToDeal(formData: FormData) {
   // negocio, evento) y marca el lead. Sin transacción, un fallo a mitad dejaba
   // un contacto huérfano y el lead sin convertir: al reintentar se duplicaba.
   const dealId = await db.transaction(async (tx) => {
-    const [lead] = await tx.select().from(leads).where(eq(leads.id, leadId)).limit(1);
+    /*
+      El lead se bloquea y se comprueba que siga sin convertir, dentro de la
+      misma transacción.
+
+      Sin esto, convertir no era idempotente: un doble clic —o dos comerciales
+      mirando la misma bandeja— creaba DOS negocios y DOS contactos del mismo
+      lead, ambos sumando al pronóstico. El botón no se desactiva por estado, así
+      que era cuestión de tiempo.
+
+      `for update` es lo que lo cierra de verdad. Con un simple `select` las dos
+      peticiones leerían «nuevo» a la vez y las dos seguirían adelante; el
+      bloqueo hace que la segunda espere a que la primera termine y encuentre el
+      lead ya calificado.
+    */
+    const [lead] = await tx
+      .select()
+      .from(leads)
+      .where(eq(leads.id, leadId))
+      .for("update")
+      .limit(1);
     if (!lead) return null;
+
+    // Ya convertido: en vez de no hacer nada —que se lee como "el botón no
+    // funciona"— se lleva al negocio que salió de este lead la primera vez.
+    if (lead.status === "qualified") {
+      const [existing] = await tx
+        .select({ id: crmDeals.id })
+        .from(crmDeals)
+        .where(eq(crmDeals.leadId, lead.id))
+        .limit(1);
+      return existing?.id ?? null;
+    }
 
     const [firstStage] = await tx
       .select()
@@ -981,13 +1220,19 @@ export async function convertLeadToDeal(formData: FormData) {
     if (!firstStage) return null;
 
     // Reutiliza la organización si ya existe una con el mismo nombre.
+    //
+    // La comparación ignora mayúsculas y espacios de sobra: quien llena el
+    // formulario web escribe «Lab Genoma», «lab genoma» o «LAB GENOMA» según el
+    // día, y con una igualdad exacta cada variante abría una ficha nueva del
+    // mismo laboratorio. Duplicar organizaciones es de lo más caro de deshacer
+    // en un CRM, porque los negocios ya quedaron repartidos entre las copias.
     let organizationId: string | null = null;
     const orgName = lead.company?.trim();
     if (orgName) {
       const [existing] = await tx
         .select({ id: crmOrganizations.id })
         .from(crmOrganizations)
-        .where(eq(crmOrganizations.name, orgName))
+        .where(sql`lower(btrim(${crmOrganizations.name})) = lower(${orgName})`)
         .limit(1);
       organizationId =
         existing?.id ??
@@ -1058,10 +1303,10 @@ export async function convertLeadToDeal(formData: FormData) {
 
   if (!dealId) return;
 
-  revalidatePath("/admin/leads");
+  revalidateTenant();
   revalidateCrm();
   // redirect() FUERA de la transacción: lanza NEXT_REDIRECT como control de
   // flujo, y dentro del bloque haría rollback de todo lo que acabamos de
   // escribir. Es el error clásico al meter Server Actions en transacciones.
-  redirect(`/admin/crm/negocios/${dealId}`);
+  await redirectAfterAction(`/admin/crm/negocios/${dealId}`);
 }

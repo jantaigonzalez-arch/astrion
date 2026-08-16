@@ -1,8 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateTenant } from "@/lib/revalidate";
 import { and, eq } from "drizzle-orm";
-import { tenantDb } from "@/lib/tenancy/context";
+import { tenantDb, currentRole } from "@/lib/tenancy/context";
 import {
   crmAutomations,
   crmDealLabels,
@@ -20,13 +20,13 @@ import { recordDeletion } from "@/lib/domain/events";
 
 async function requireSales() {
   const session = await auth();
-  if (!isSalesRole(session?.user?.role)) return null;
+  if (!isSalesRole(await currentRole())) return null;
   return session!;
 }
 
 async function requireAdmin() {
   const session = await auth();
-  if (!isAdminRole(session?.user?.role)) return null;
+  if (!isAdminRole(await currentRole())) return null;
   return session!;
 }
 
@@ -48,11 +48,24 @@ async function recalcDealValue(dealId: string) {
     .from(crmDealProducts)
     .where(eq(crmDealProducts.dealId, dealId));
 
-  if (items.length === 0) return;
-  const total = items.reduce((acc, i) => acc + lineTotal(i), 0);
+  // Sin líneas, el valor se BORRA en vez de dejarse como estaba.
+  //
+  // Antes había un `if (items.length === 0) return;` y el efecto era un importe
+  // fantasma: cargabas una partida de 100 000, la borrabas, y el negocio seguía
+  // valiendo 100 000 sin una sola línea que lo respaldara. Ese número entraba
+  // en el pronóstico, en el ranking y en los objetivos, y no había forma de
+  // llegar a él desde la cotización porque la cotización estaba vacía.
+  //
+  // Cero sería igual de mentiroso al revés: diría que el negocio no vale nada.
+  // `null` es lo único cierto —"todavía no hay importe"— y devuelve el campo a
+  // captura manual, que es justo de donde venía antes de tener partidas.
+  const total = items.length
+    ? items.reduce((acc, i) => acc + lineTotal(i), 0).toFixed(2)
+    : null;
+
   await db
     .update(crmDeals)
-    .set({ valueMxn: total.toFixed(2), updatedAt: new Date() })
+    .set({ valueMxn: total, updatedAt: new Date() })
     .where(eq(crmDeals.id, dealId));
 }
 
@@ -91,8 +104,7 @@ export async function addDealItem(formData: FormData) {
   });
 
   await recalcDealValue(dealId);
-  revalidatePath(`/admin/crm/negocios/${dealId}`);
-  revalidatePath("/admin/crm");
+  revalidateTenant();
 }
 
 export async function deleteDealItem(formData: FormData) {
@@ -122,8 +134,7 @@ export async function deleteDealItem(formData: FormData) {
     });
   });
   await recalcDealValue(dealId);
-  revalidatePath(`/admin/crm/negocios/${dealId}`);
-  revalidatePath("/admin/crm");
+  revalidateTenant();
 }
 
 /* ========================= Etiquetas ========================= */
@@ -137,7 +148,7 @@ export async function createLabel(formData: FormData) {
 
   const db = await tenantDb();
   await db.insert(crmLabels).values({ name, color });
-  revalidatePath("/admin/crm/configuracion");
+  revalidateTenant();
 }
 
 export async function deleteLabel(formData: FormData) {
@@ -157,8 +168,7 @@ export async function deleteLabel(formData: FormData) {
       snapshot: row,
     });
   });
-  revalidatePath("/admin/crm/configuracion");
-  revalidatePath("/admin/crm");
+  revalidateTenant();
 }
 
 /** Añade o quita una etiqueta de un negocio. */
@@ -196,8 +206,7 @@ export async function toggleDealLabel(formData: FormData) {
       });
     });
   }
-  revalidatePath(`/admin/crm/negocios/${dealId}`);
-  revalidatePath("/admin/crm");
+  revalidateTenant();
 }
 
 /* ========================= Objetivos ========================= */
@@ -225,7 +234,7 @@ export async function createGoal(formData: FormData) {
     periodStart,
     periodEnd,
   });
-  revalidatePath("/admin/crm/objetivos");
+  revalidateTenant();
 }
 
 export async function deleteGoal(formData: FormData) {
@@ -245,7 +254,7 @@ export async function deleteGoal(formData: FormData) {
       snapshot: row,
     });
   });
-  revalidatePath("/admin/crm/objetivos");
+  revalidateTenant();
 }
 
 /* ========================= Plantillas de correo ========================= */
@@ -263,7 +272,7 @@ export async function createEmailTemplate(formData: FormData) {
   await db
     .insert(crmEmailTemplates)
     .values({ name, subject, body, createdById: session.user.id });
-  revalidatePath("/admin/crm/plantillas");
+  revalidateTenant();
 }
 
 export async function deleteEmailTemplate(formData: FormData) {
@@ -286,7 +295,7 @@ export async function deleteEmailTemplate(formData: FormData) {
       snapshot: row,
     });
   });
-  revalidatePath("/admin/crm/plantillas");
+  revalidateTenant();
 }
 
 /* ========================= Automatizaciones ========================= */
@@ -316,7 +325,7 @@ export async function createAutomation(formData: FormData) {
     activitySubject,
     dueInDays: Math.max(0, Math.min(365, dueInDays)),
   });
-  revalidatePath("/admin/crm/automatizaciones");
+  revalidateTenant();
 }
 
 export async function toggleAutomation(formData: FormData) {
@@ -327,7 +336,7 @@ export async function toggleAutomation(formData: FormData) {
   if (!id) return;
   const db = await tenantDb();
   await db.update(crmAutomations).set({ active }).where(eq(crmAutomations.id, id));
-  revalidatePath("/admin/crm/automatizaciones");
+  revalidateTenant();
 }
 
 export async function deleteAutomation(formData: FormData) {
@@ -352,7 +361,7 @@ export async function deleteAutomation(formData: FormData) {
       snapshot: row,
     });
   });
-  revalidatePath("/admin/crm/automatizaciones");
+  revalidateTenant();
 }
 
 /* ========================= Días de estancamiento ========================= */
@@ -369,6 +378,5 @@ export async function updateStageRotting(formData: FormData) {
     .update(crmStages)
     .set({ rottingDays: Math.max(0, Math.min(365, days)) })
     .where(eq(crmStages.id, id));
-  revalidatePath("/admin/crm/configuracion");
-  revalidatePath("/admin/crm");
+  revalidateTenant();
 }

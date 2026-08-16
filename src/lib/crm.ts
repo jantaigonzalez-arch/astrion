@@ -75,6 +75,28 @@ export const SOURCE_LABELS: Record<string, { es: string; en: string }> = {
   otro: { es: "Otro", en: "Other" },
 };
 
+/* ------------------------- Cliente o lead ------------------------- */
+/**
+ * En qué punto del ciclo está una organización: ya compró, o todavía no.
+ *
+ * El tipo vive aquí —y no en `data/crm.ts`— porque lo necesitan los formularios,
+ * que son componentes de cliente. `data/crm.ts` es `server-only`, así que
+ * importar de ahí ataría el navegador a un módulo que nunca debe cruzar.
+ * La REGLA que decide cuál es cuál sí vive allá, en `ES_CLIENTE`: es una
+ * consulta, y esa sí es cosa del servidor.
+ */
+export type OrgKind = "client" | "lead";
+
+export const ORG_KIND_LABELS: Record<OrgKind, { es: string; en: string }> = {
+  client: { es: "Cliente", en: "Client" },
+  lead: { es: "Lead", en: "Lead" },
+};
+
+export const ORG_KIND_STYLES: Record<OrgKind, string> = {
+  client: "bg-success/15 text-success ring-success/25",
+  lead: "bg-muted text-muted-foreground ring-border",
+};
+
 /** Toma la etiqueta en el idioma activo, con respaldo al valor crudo. */
 export function label<T extends string>(
   dict: Record<T, { es: string; en: string }>,
@@ -84,11 +106,6 @@ export function label<T extends string>(
   const entry = dict[key];
   if (!entry) return key;
   return locale === "en" ? entry.en : entry.es;
-}
-
-/** Folio legible del negocio: EVO-D-000123. */
-export function dealReference(n: number) {
-  return `EVO-D-${String(n).padStart(6, "0")}`;
 }
 
 /** Formatea un monto guardado como numeric (string) de Postgres. */

@@ -4,8 +4,15 @@ import { useMemo, useState } from "react";
 import { Building2, Search, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Link } from "@/i18n/navigation";
-import { money } from "@/lib/crm";
+import { Link } from "@/lib/nav";
+import {
+  ORG_KIND_LABELS,
+  ORG_KIND_STYLES,
+  label,
+  money,
+  type OrgKind,
+} from "@/lib/crm";
+import { claimOrganization } from "@/lib/actions/crm";
 import { cn } from "@/lib/utils";
 
 export type OrganizationRow = {
@@ -16,14 +23,26 @@ export type OrganizationRow = {
   address: string | null;
   phone: string | null;
   ownerName: string | null;
-  /** Tiene cuenta de portal enlazada (es cliente activo, no solo prospecto). */
-  isClient: boolean;
+  /**
+   * Si ya compró (`client`) o sigue siendo prospecto (`lead`). La regla vive en
+   * `ES_CLIENTE`, en la capa de datos, y es la misma que agrupa el selector del
+   * formulario de negocio.
+   */
+  kind: OrgKind;
+  /**
+   * Tiene cuenta de portal enlazada.
+   *
+   * Ya NO es lo mismo que «es cliente», aunque antes este campo se llamaba
+   * `isClient` y se pintaba como tal. Son dos hechos distintos: una empresa
+   * puede haberte comprado sin que nadie de su equipo entre nunca al portal.
+   */
+  hasPortal: boolean;
   contacts: number;
   openDeals: number;
   openValue: number;
 };
 
-type Filter = "all" | "clients" | "deals" | "unassigned";
+type Filter = "all" | "clients" | "leads" | "deals" | "unassigned";
 
 /**
  * Listado de organizaciones con búsqueda.
@@ -51,7 +70,8 @@ export function OrganizationsList({
     const term = norm(q.trim());
 
     return orgs.filter((o) => {
-      if (filter === "clients" && !o.isClient) return false;
+      if (filter === "clients" && o.kind !== "client") return false;
+      if (filter === "leads" && o.kind !== "lead") return false;
       if (filter === "deals" && o.openDeals === 0) return false;
       if (filter === "unassigned" && o.ownerName) return false;
       if (!term) return true;
@@ -62,7 +82,8 @@ export function OrganizationsList({
     });
   }, [orgs, q, filter]);
 
-  const clientCount = orgs.filter((o) => o.isClient).length;
+  const clientCount = orgs.filter((o) => o.kind === "client").length;
+  const leadCount = orgs.filter((o) => o.kind === "lead").length;
   const dealCount = orgs.filter((o) => o.openDeals > 0).length;
   const unassignedCount = orgs.filter((o) => !o.ownerName).length;
 
@@ -101,12 +122,29 @@ export function OrganizationsList({
           <button onClick={() => setFilter("all")} className={chip(filter === "all")}>
             Todas ({orgs.length})
           </button>
-          <button
-            onClick={() => setFilter("clients")}
-            className={chip(filter === "clients")}
-          >
-            Con portal ({clientCount})
-          </button>
+          {/*
+            Los filtros de tipo solo aparecen cuando hay de los dos.
+
+            Esta lista sirve al catálogo completo y también a la pantalla de
+            Leads, donde todas las filas son leads: ahí un botón «Clientes (0)»
+            no filtra nada y solo invita a pulsarlo para no obtener resultados.
+          */}
+          {clientCount > 0 && leadCount > 0 && (
+            <>
+              <button
+                onClick={() => setFilter("clients")}
+                className={chip(filter === "clients")}
+              >
+                Clientes ({clientCount})
+              </button>
+              <button
+                onClick={() => setFilter("leads")}
+                className={chip(filter === "leads")}
+              >
+                Leads ({leadCount})
+              </button>
+            </>
+          )}
           <button onClick={() => setFilter("deals")} className={chip(filter === "deals")}>
             Con negocios ({dealCount})
           </button>
@@ -155,11 +193,25 @@ export function OrganizationsList({
                     {[o.industry, o.taxId].filter(Boolean).join(" · ") || "—"}
                   </p>
                 </div>
-                {o.isClient && (
-                  <Badge className="shrink-0 bg-success/15 text-success ring-success/25">
-                    Cliente
+                {/*
+                  Siempre se pinta, también en los leads. Un distintivo que solo
+                  aparece en un caso obliga a razonar por ausencia («no dice
+                  nada, entonces será prospecto… ¿o se me olvidó cargarlo?»);
+                  decirlo en los dos casos hace que la lista se lea de un
+                  vistazo. El título del elemento explica de dónde sale.
+                */}
+                <span
+                  className="shrink-0"
+                  title={
+                    o.kind === "client"
+                      ? "Ya compró: tiene un negocio ganado, un contrato firmado o cuenta de portal."
+                      : "Todavía no tiene ninguna compra registrada."
+                  }
+                >
+                  <Badge className={ORG_KIND_STYLES[o.kind]}>
+                    {label(ORG_KIND_LABELS, o.kind, locale)}
                   </Badge>
-                )}
+                </span>
               </div>
 
               <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
@@ -170,9 +222,27 @@ export function OrganizationsList({
                 </span>
               </div>
 
-              <p className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
-                Responsable: {o.ownerName ?? "Sin asignar"}
-              </p>
+              <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
+                <span>Responsable: {o.ownerName ?? "Sin asignar"}</span>
+                {/*
+                  Tomar una ficha de la bandeja común sin pedirle a nadie que la
+                  reparta. Es un `form` y no un botón con `onClick` porque la
+                  acción es una escritura del servidor: así funciona también con
+                  el JavaScript a medio cargar, que en una tabla de 164 tarjetas
+                  es un instante real.
+                */}
+                {!o.ownerName && (
+                  <form action={claimOrganization}>
+                    <input type="hidden" name="id" value={o.id} />
+                    <button
+                      type="submit"
+                      className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-secondary"
+                    >
+                      Tomarla
+                    </button>
+                  </form>
+                )}
+              </div>
             </Card>
           ))}
         </div>

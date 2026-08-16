@@ -16,6 +16,37 @@ import {
 } from "@/lib/db/schema";
 import { users } from "@/lib/db/platform";
 
+/**
+ * Valor de un negocio en pesos, venga como venga capturado.
+ *
+ * Una sola definición para el tablero, el embudo, el pronóstico, el ranking,
+ * los objetivos y los orígenes. Antes cada consulta escribía `sum(value_mxn)`
+ * por su cuenta, y el resultado era que un negocio en dólares valía cero en
+ * todas partes a la vez.
+ *
+ * El orden de preferencia es deliberado:
+ *
+ *   1. `value_mxn`  — si alguien capturó el importe en pesos, manda. Es un
+ *      número que una persona escribió mirando la cotización.
+ *   2. `value_usd × fx_rate` — el importe en dólares con la paridad ESTAMPADA
+ *      en el negocio al guardarlo (ver `stampFx`), no con la de hoy.
+ *   3. Nada. Un negocio en dólares sin tipo de cambio no se convierte y no
+ *      suma: se informa aparte con `SIN_CONVERTIR`. Convertirlo con una
+ *      paridad inventada sería peor que no sumarlo, porque nadie podría
+ *      auditar de dónde salió el número.
+ */
+export const VALOR_MXN = sql<string>`coalesce(
+  ${crmDeals.valueMxn},
+  ${crmDeals.valueUsd} * ${crmDeals.fxRate}
+)`;
+
+/** Negocios en dólares que nadie puede convertir: se cuentan, no se suman. */
+export const SIN_CONVERTIR = sql<number>`count(*) filter (
+  where ${crmDeals.valueMxn} is null
+    and ${crmDeals.valueUsd} is not null
+    and ${crmDeals.fxRate} is null
+)::int`;
+
 /* ========================= Informes ========================= */
 
 /** Embudo: negocios abiertos por etapa (conteo, valor y valor ponderado). */
@@ -28,7 +59,8 @@ export async function getFunnelByStage(pipelineId: string, ownerId?: string) {
       probability: crmStages.probability,
       order: crmStages.order,
       count: sql<number>`count(${crmDeals.id})::int`,
-      value: sql<string>`coalesce(sum(${crmDeals.valueMxn}), 0)`,
+      value: sql<string>`coalesce(sum(${VALOR_MXN}), 0)`,
+      sinConvertir: SIN_CONVERTIR,
     })
     .from(crmStages)
     .leftJoin(
@@ -55,7 +87,7 @@ export async function getMonthlyClosed(pipelineId: string, ownerId?: string) {
   return db
     .select({
       month: sql<string>`to_char(date_trunc('month', ${crmDeals.closedAt}), 'YYYY-MM')`,
-      wonValue: sql<string>`coalesce(sum(${crmDeals.valueMxn}) filter (where ${crmDeals.status} = 'won'), 0)`,
+      wonValue: sql<string>`coalesce(sum(${VALOR_MXN}) filter (where ${crmDeals.status} = 'won'), 0)`,
       wonCount: sql<number>`count(*) filter (where ${crmDeals.status} = 'won')::int`,
       lostCount: sql<number>`count(*) filter (where ${crmDeals.status} = 'lost')::int`,
     })
@@ -79,8 +111,9 @@ export async function getForecastByMonth(pipelineId: string, ownerId?: string) {
     .select({
       month: sql<string>`to_char(date_trunc('month', ${crmDeals.expectedCloseDate}), 'YYYY-MM')`,
       count: sql<number>`count(*)::int`,
-      value: sql<string>`coalesce(sum(${crmDeals.valueMxn}), 0)`,
-      weighted: sql<string>`coalesce(sum(${crmDeals.valueMxn} * ${crmStages.probability} / 100.0), 0)`,
+      value: sql<string>`coalesce(sum(${VALOR_MXN}), 0)`,
+      weighted: sql<string>`coalesce(sum(${VALOR_MXN} * ${crmStages.probability} / 100.0), 0)`,
+      sinConvertir: SIN_CONVERTIR,
     })
     .from(crmDeals)
     .innerJoin(crmStages, eq(crmDeals.stageId, crmStages.id))
@@ -104,7 +137,7 @@ export async function getOwnerRanking(pipelineId: string) {
       ownerId: crmDeals.ownerId,
       name: users.name,
       email: users.email,
-      wonValue: sql<string>`coalesce(sum(${crmDeals.valueMxn}) filter (where ${crmDeals.status} = 'won'), 0)`,
+      wonValue: sql<string>`coalesce(sum(${VALOR_MXN}) filter (where ${crmDeals.status} = 'won'), 0)`,
       wonCount: sql<number>`count(*) filter (where ${crmDeals.status} = 'won')::int`,
       openCount: sql<number>`count(*) filter (where ${crmDeals.status} = 'open')::int`,
       lostCount: sql<number>`count(*) filter (where ${crmDeals.status} = 'lost')::int`,
@@ -113,7 +146,7 @@ export async function getOwnerRanking(pipelineId: string) {
     .leftJoin(users, eq(crmDeals.ownerId, users.id))
     .where(eq(crmDeals.pipelineId, pipelineId))
     .groupBy(crmDeals.ownerId, users.name, users.email)
-    .orderBy(desc(sql`coalesce(sum(${crmDeals.valueMxn}) filter (where ${crmDeals.status} = 'won'), 0)`));
+    .orderBy(desc(sql`coalesce(sum(${VALOR_MXN}) filter (where ${crmDeals.status} = 'won'), 0)`));
 }
 
 /** Motivos de pérdida más frecuentes. */
@@ -123,7 +156,7 @@ export async function getLostReasons(pipelineId: string, ownerId?: string) {
     .select({
       reason: crmDeals.lostReason,
       count: sql<number>`count(*)::int`,
-      value: sql<string>`coalesce(sum(${crmDeals.valueMxn}), 0)`,
+      value: sql<string>`coalesce(sum(${VALOR_MXN}), 0)`,
     })
     .from(crmDeals)
     .where(
@@ -146,7 +179,7 @@ export async function getSourceBreakdown(pipelineId: string) {
     .select({
       source: crmDeals.source,
       count: sql<number>`count(*)::int`,
-      value: sql<string>`coalesce(sum(${crmDeals.valueMxn}), 0)`,
+      value: sql<string>`coalesce(sum(${VALOR_MXN}), 0)`,
     })
     .from(crmDeals)
     .where(eq(crmDeals.pipelineId, pipelineId))
@@ -225,7 +258,7 @@ export async function getGoalsWithProgress() {
     goals.map(async (g) => {
       const [row] = await db
         .select({
-          value: sql<string>`coalesce(sum(${crmDeals.valueMxn}), 0)`,
+          value: sql<string>`coalesce(sum(${VALOR_MXN}), 0)`,
           count: sql<number>`count(*)::int`,
         })
         .from(crmDeals)

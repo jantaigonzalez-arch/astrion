@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
-import { isSalesRole } from "@/lib/roles";
-import { getDb } from "@/lib/db";
+import { isSalesRole, isAdminRole } from "@/lib/roles";
 import { crmContacts, crmDeals, crmOrganizations } from "@/lib/db/schema";
+import { currentRole, tenantDb } from "@/lib/tenancy/context";
 
 /** Escapa un campo para CSV (comillas dobles y separadores). */
 function cell(v: unknown) {
@@ -24,17 +24,26 @@ function toCsv(headers: string[], rows: unknown[][]) {
 /**
  * Exportación CSV del CRM: /api/crm/export?tipo=negocios|organizaciones|contactos
  * Restringido al área comercial. El vendedor exporta solo su cartera.
+ *
+ * Se consulta con `tenantDb()` y no con `getDb()`.
+ *
+ * No es un detalle de estilo: `getDb()` habla con el plano de control, donde
+ * las tablas del CRM sencillamente no existen. Esta ruta se quedó atrás en la
+ * mudanza de las tablas de negocio al esquema del inquilino, y el síntoma era
+ * un 500 con `relation "crm_deals" does not exist` en los tres tipos de
+ * exportación — es decir, el botón «Exportar» del informe llevaba roto desde
+ * entonces. Era el último sitio del código con esa mezcla.
  */
 export async function GET(request: Request) {
   const session = await auth();
-  if (!isSalesRole(session?.user?.role)) {
+  if (!isSalesRole(await currentRole())) {
     return new NextResponse("No autorizado", { status: 403 });
   }
-  const admin = session!.user.role === "admin";
+  const admin = isAdminRole(await currentRole());
   const ownerId = admin ? undefined : session!.user.id;
 
   const tipo = new URL(request.url).searchParams.get("tipo") ?? "negocios";
-  const db = getDb();
+  const db = await tenantDb();
   let csv: string;
   let filename: string;
 

@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { AlertTriangle, Building2, GripVertical, Loader2, User2 } from "lucide-react";
-import { Link } from "@/i18n/navigation";
+import { Link } from "@/lib/nav";
 import { moveDeal } from "@/lib/actions/crm";
 import { LABEL_STYLES, daysIdle, isRotting, money, weightedValue } from "@/lib/crm";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,15 @@ export type BoardDeal = {
   title: string;
   stageId: string;
   valueMxn: string | null;
+  /** Importe en dólares tal como se capturó, para poder rotularlo. */
+  valueUsd: string | null;
+  /**
+   * Importe comparable en pesos, calculado en la base: el de pesos si lo hay,
+   * si no el de dólares por el tipo de cambio estampado en el negocio. `null`
+   * cuando es un negocio en dólares y la empresa no tenía tipo de cambio
+   * configurado — ese caso se rotula, no se suma como cero.
+   */
+  valorMxn: string | null;
   expectedCloseDate: string | null;
   updatedAt: Date | string;
   organization: { id: string; name: string } | null;
@@ -113,14 +122,20 @@ export function PipelineBoard({
 
       <div className="flex gap-4 overflow-x-auto pb-4">
         {cols.map((col) => {
+          // Se suma el valor COMPARABLE, no el de pesos: antes un negocio en
+          // dólares aportaba cero a la columna y a nadie se le avisaba.
           const total = col.deals.reduce(
-            (acc, d) => acc + Number(d.valueMxn ?? 0),
+            (acc, d) => acc + Number(d.valorMxn ?? 0),
             0,
           );
           const weighted = col.deals.reduce(
-            (acc, d) => acc + weightedValue(d.valueMxn, col.stage.probability),
+            (acc, d) => acc + weightedValue(d.valorMxn, col.stage.probability),
             0,
           );
+          // Los que no se pueden convertir se cuentan aparte para decirlo.
+          const sinConvertir = col.deals.filter(
+            (d) => !d.valorMxn && d.valueUsd,
+          ).length;
           const isOverEnd =
             over?.stageId === col.stage.id && over.index >= col.deals.length;
 
@@ -161,6 +176,19 @@ export function PipelineBoard({
                     {col.stage.probability}% · {money(String(weighted), "MXN", locale)}
                   </span>
                 </div>
+                {/*
+                  El total de arriba no incluye estos negocios, y decirlo es
+                  media función: un número que se queda corto en silencio es
+                  peor que uno acompañado de «faltan dos por convertir».
+                */}
+                {sinConvertir > 0 && (
+                  <p
+                    className="mt-1 text-[11px] font-medium text-warning"
+                    title="Están en dólares y no hay tipo de cambio configurado, así que no entran en el total. Se fija en Configuración → Moneda."
+                  >
+                    +{sinConvertir} en USD sin convertir
+                  </p>
+                )}
               </header>
 
               {/* Tarjetas */}
@@ -235,7 +263,27 @@ export function PipelineBoard({
                         </div>
 
                         <p className="mt-2 font-mono text-sm font-semibold">
-                          {money(deal.valueMxn, "MXN", locale)}
+                          {deal.valorMxn
+                            ? money(deal.valorMxn, "MXN", locale)
+                            : deal.valueUsd
+                              ? money(deal.valueUsd, "USD", locale)
+                              : "—"}
+                          {/* Un negocio convertido dice en qué moneda se pactó:
+                              el número en pesos es derivado y quien lo mira
+                              tiene derecho a saberlo. */}
+                          {deal.valueUsd && deal.valorMxn && (
+                            <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                              USD
+                            </span>
+                          )}
+                          {deal.valueUsd && !deal.valorMxn && (
+                            <span
+                              className="ml-1 text-[10px] font-normal text-warning"
+                              title="Falta el tipo de cambio: fíjalo en Configuración → Moneda para que este negocio sume al embudo."
+                            >
+                              sin convertir
+                            </span>
+                          )}
                         </p>
 
                         {rotting && (

@@ -9,7 +9,7 @@ import {
   updateOrganization,
   type CrmState,
 } from "@/lib/actions/crm";
-import { Link } from "@/i18n/navigation";
+import { Link } from "@/lib/nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -144,14 +144,28 @@ export function OrganizationForm({
           </select>
         </div>
         <div>
-          <Label htmlFor="clientId">Cuenta de portal (si ya es cliente)</Label>
+          {/*
+            Este campo enlaza la cuenta con la que el cliente entra al portal.
+            NO es lo que decide si la organización es cliente.
+
+            Antes decía «si ya es cliente» y «— Todavía no es cliente —», y eso
+            dejó de ser cierto: cliente es quien tiene un negocio ganado, un
+            contrato firmado **o** cuenta de portal (ver `ES_CLIENTE`). Hay al
+            menos un caso real —Laboratorios Genoma, cliente por negocio
+            ganado— donde la etiqueta vieja afirmaba lo contrario de lo que la
+            propia pantalla de Clientes muestra.
+
+            Lo que sí depende de este campo es poder VER sus equipos y sus
+            tickets, porque cuelgan de esa cuenta y no de la organización.
+          */}
+          <Label htmlFor="clientId">Cuenta de portal</Label>
           <select
             id="clientId"
             name="clientId"
             className={selectCls}
             defaultValue={defaults?.clientId ?? ""}
           >
-            <option value="">— Todavía no es cliente —</option>
+            <option value="">— Sin cuenta de portal —</option>
             {clients.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.company ?? c.name ?? c.email}
