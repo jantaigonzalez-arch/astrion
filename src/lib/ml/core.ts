@@ -18,6 +18,15 @@
 export type Sample = {
   /** Cuándo ocurrió. Manda el corte temporal del backtest. */
   at: Date;
+  /**
+   * De QUÉ entidad es este caso: el equipo, la pieza, el ticket.
+   *
+   * El núcleo no lo usa para nada —`train` y `predict` solo miran `features`—
+   * y aun así viaja, porque es lo que permite a la etapa de rasgos derivados
+   * agrupar la historia de cada entidad consigo misma. Opcional para no
+   * romper los conjuntos congelados antes de que existiera.
+   */
+  key?: string;
   /** Rasgos disponibles ANTES de conocer el resultado. */
   features: Record<string, string>;
   /** Lo que se quiere predecir. */

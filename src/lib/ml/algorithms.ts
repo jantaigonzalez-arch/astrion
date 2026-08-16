@@ -153,7 +153,28 @@ export const medianByGroup: Algorithm = {
    2 · Árbol de regresión — el escalón intermedio
    ============================================================ */
 
-type TreeConfig = { maxDepth: number; minLeaf: number };
+/** Lo que limita el crecimiento, sin decir con qué rasgos. Ver `growTree`. */
+type Pruning = { maxDepth: number; minLeaf: number };
+
+/**
+ * La configuración del árbol INCLUYE con qué rasgos se le deja partir.
+ *
+ * Estaba fuera y ese era el fallo: `fit` recibe `(muestras, config)` y no la
+ * lista de rasgos, así que la reconstruía leyendo las claves presentes en las
+ * muestras. Mientras cada plantilla trajo exactamente sus columnas y ninguna
+ * más, el resultado coincidía y nadie lo notó.
+ *
+ * Deja de coincidir en cuanto el histórico lleva columnas que la plantilla NO
+ * eligió —que es justo lo que pasa con los rasgos derivados, calculados todos
+ * de una vez sobre el mismo conjunto—. El árbol se ponía a partir por rasgos
+ * que el usuario no había pedido y que la pantalla no enseña: un modelo que
+ * explica sus decisiones con una lista que no es la suya.
+ *
+ * Se descubrió midiendo, no leyendo: tres variantes con UN rasgo distinto cada
+ * una dieron el mismo error hasta el segundo decimal, que es imposible si de
+ * verdad estuvieran partiendo por rasgos distintos.
+ */
+type TreeConfig = Pruning & { features: string[] };
 
 type TreeNode =
   | { kind: "leaf"; leaf: Leaf }
@@ -201,7 +222,7 @@ function bestSplit(
 function growTree(
   rows: Sample[],
   featureIds: string[],
-  cfg: TreeConfig,
+  cfg: Pruning,
   depth: number,
 ): TreeNode {
   if (depth >= cfg.maxDepth || rows.length < cfg.minLeaf * 2) {
@@ -241,17 +262,16 @@ export const regressionTree: Algorithm = {
     ids.length === 0
       ? []
       : ([
-          { maxDepth: 2, minLeaf: 25 },
-          { maxDepth: 3, minLeaf: 15 },
-          { maxDepth: 4, minLeaf: 10 },
+          { maxDepth: 2, minLeaf: 25, features: ids },
+          { maxDepth: 3, minLeaf: 15, features: ids },
+          { maxDepth: 4, minLeaf: 10, features: ids },
         ] satisfies TreeConfig[]),
   fit: (samples, config) => {
     const cfg = config as TreeConfig;
-    const ids = [...new Set(samples.flatMap((s) => Object.keys(s.features)))].sort();
     return {
       algorithm: "regression_tree",
       config: cfg,
-      root: growTree(samples, ids, cfg, 0),
+      root: growTree(samples, cfg.features, cfg, 0),
     } satisfies TreeParams;
   },
   load: (params) => {
@@ -281,6 +301,8 @@ type ForestConfig = {
   /** Fracción de rasgos que ve cada corte. El «aleatorio» del nombre. */
   featureFrac: number;
   seed: number;
+  /** Con qué rasgos se le deja partir. Mismo motivo que en `TreeConfig`. */
+  features: string[];
 };
 
 type ForestParams = {
@@ -320,12 +342,12 @@ export const randomForest: Algorithm = {
     ids.length < 2
       ? []
       : ([
-          { trees: 40, maxDepth: 4, minLeaf: 10, featureFrac: 0.7, seed: 20260815 },
-          { trees: 80, maxDepth: 5, minLeaf: 8, featureFrac: 0.6, seed: 20260815 },
+          { trees: 40, maxDepth: 4, minLeaf: 10, featureFrac: 0.7, seed: 20260815, features: ids },
+          { trees: 80, maxDepth: 5, minLeaf: 8, featureFrac: 0.6, seed: 20260815, features: ids },
         ] satisfies ForestConfig[]),
   fit: (samples, config) => {
     const cfg = config as ForestConfig;
-    const ids = [...new Set(samples.flatMap((s) => Object.keys(s.features)))].sort();
+    const ids = cfg.features;
     const rand = rng(cfg.seed);
     const perSplit = Math.max(1, Math.round(ids.length * cfg.featureFrac));
 

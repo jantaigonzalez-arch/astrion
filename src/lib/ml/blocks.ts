@@ -6,6 +6,7 @@ import {
   TYPE_LABELS,
   label as labelOf,
 } from "@/lib/tickets";
+import { DERIVED } from "@/lib/analytics/features";
 
 /**
  * El vocabulario con el que se arman las preguntas.
@@ -63,7 +64,15 @@ export type Subject = {
    * historia por respetar una llave que en este negocio no es la identidad.
    */
   subjectType: "ticket" | "equipment" | "part" | "period";
-  /** El id de esa entidad, leído desde la fila del caso. */
+  /**
+   * El id de esa entidad, leído desde la fila del caso.
+   *
+   * Estaba declarado desde el principio y no se seleccionaba: al histórico le
+   * bastaba con «cuándo, con qué rasgos, qué pasó». Empezó a hacer falta con
+   * los rasgos DERIVADOS —los que resumen el pasado de la MISMA pieza o el
+   * MISMO equipo—, porque sin saber de quién es cada caso no hay forma de
+   * agrupar su propia historia. Ver `analytics/features.ts`.
+   */
   key: SQL;
   /** Cómo encontrar el caso vivo al momento de predecir. */
   servingWhere: (id: string) => SQL;
@@ -410,7 +419,23 @@ export type Feature = {
   /** Sujetos en los que está disponible. */
   subjects: string[];
   label: string;
-  expr: SQL;
+  /**
+   * Cómo se lee de la base. AUSENTE en los rasgos derivados.
+   *
+   * Un rasgo derivado —«el ritmo propio de esta pieza»— no es una columna: es
+   * un resumen del pasado de la entidad que se calcula después de la consulta,
+   * con ventanas, en `analytics/features.ts`. Escribirlo en SQL sería una
+   * subconsulta correlacionada con ventana dentro de otra, ilegible y de costo
+   * cuadrático.
+   *
+   * Que viva en la MISMA lista que los demás sí es deliberado: el usuario elige
+   * de un solo catálogo, con la misma justificación al lado y contra el mismo
+   * tope de `MAX_FEATURES`. Que por dentro uno se compile a SQL y otro se
+   * calcule con ventanas es un detalle de implementación, y en cuanto asoma a
+   * la pantalla se convierte en dos catálogos que el usuario tiene que
+   * aprender a distinguir sin motivo.
+   */
+  expr?: SQL;
   /** Por qué es seguro: qué lo fija en el instante del ancla. */
   safeBecause: string;
   /**
@@ -423,6 +448,8 @@ export type Feature = {
    * marca, el cliente— no llevan mapa: ya vienen escritos por una persona.
    */
   valueLabel?: (raw: string, locale: string) => string;
+  /** Se calcula con ventanas, no con SQL. Ver `expr` y `derivedFor`. */
+  derived?: boolean;
 };
 
 export const FEATURES: Feature[] = [
@@ -605,6 +632,24 @@ export const FEATURES: Feature[] = [
     expr: sql`coalesce(u.name, u.email, '')`,
     safeBecause: "Es quien levantó el ticket, conocido desde el primer instante.",
   },
+
+  /*
+    Los DERIVADOS, generados desde `analytics/features.ts`.
+
+    No se copian a mano: se derivan de la misma lista que los calcula. Dos
+    listas paralelas se desincronizan —alguien agrega un rasgo al cálculo y no
+    al catálogo, o al revés— y el síntoma sería un rasgo elegible que sale
+    siempre vacío, que es de los fallos que nadie mira porque no rompe nada.
+  */
+  ...DERIVED.map(
+    (d): Feature => ({
+      id: d.id,
+      subjects: d.subjects,
+      label: d.label,
+      safeBecause: d.safeBecause,
+      derived: true,
+    }),
+  ),
 ];
 
 /* ------------------------- Búsquedas ------------------------- */
@@ -647,11 +692,13 @@ export type Definition = {
  * `target` en vez de repetir la subconsulta entera tres veces en el `where`.
  */
 export function compileQuery(d: Definition): SQL {
-  const cols = d.features.map((f) => sql`${f.expr} as ${sql.raw(f.id)}`);
+  // Los derivados no tienen expresión: se añaden después, sobre estas filas.
+  const cols = sqlFeatures(d).map((f) => sql`${f.expr} as ${sql.raw(f.id)}`);
 
   return sql`
     select * from (
       select ${d.subject.anchor} as at,
+             ${d.subject.key}::text as subject_key,
              ${sql.join(cols, sql`, `)}${cols.length ? sql`,` : sql``}
              (${d.target.expr})::float8 as target
         from ${d.subject.from}
@@ -661,10 +708,31 @@ export function compileQuery(d: Definition): SQL {
   `;
 }
 
+/** Los que sí se leen de la base. Ver `Feature.expr`. */
+export const sqlFeatures = (d: Definition) =>
+  d.features.filter((f) => f.expr !== undefined);
+
 /** Los rasgos de un caso VIVO, con exactamente las mismas expresiones. */
 export function compileServingQuery(d: Definition, subjectId: string): SQL {
-  const cols = d.features.map((f) => sql`${f.expr} as ${sql.raw(f.id)}`);
-  if (cols.length === 0) return sql`select 1 where false`;
+  const cols = sqlFeatures(d).map((f) => sql`${f.expr} as ${sql.raw(f.id)}`);
+
+  /*
+    Con cero columnas la consulta sigue haciendo falta.
+
+    Antes devolvía «ninguna fila» porque una pregunta sin rasgos no existía.
+    Ahora sí puede: una plantilla armada SOLO con rasgos derivados no tiene
+    nada que leer de la base, pero sigue necesitando saber si la entidad
+    existe —predecir sobre un número de parte que nadie ha usado nunca es
+    inventar—. Así que en ese caso se pregunta exactamente eso y nada más.
+  */
+  if (cols.length === 0) {
+    return sql`
+      select 1 as existe
+        from ${d.subject.from}
+       where ${d.subject.where} and ${d.subject.servingWhere(subjectId)}
+       ${d.subject.servingTail}
+    `;
+  }
 
   return sql`
     select ${sql.join(cols, sql`, `)}

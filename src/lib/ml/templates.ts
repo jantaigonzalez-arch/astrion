@@ -4,8 +4,15 @@ import { tenantDb } from "@/lib/tenancy/context";
 import { mlTemplates } from "@/lib/db/schema";
 import type { Ladder, Sample } from "./core";
 import {
+  deriveFeatures,
+  deriveForLive,
+  derivedFor,
+  type Derived,
+} from "@/lib/analytics/features";
+import {
   compileQuery,
   compileServingQuery,
+  sqlFeatures,
   featureById,
   laddersFor,
   subjectById,
@@ -39,11 +46,29 @@ export type Template = {
   question: string;
   unit: string;
   subjectType: "ticket" | "equipment" | "part" | "period";
+  /**
+   * Qué sujeto es, con el id de la ontología.
+   *
+   * `subjectType` dice a QUÉ se le pega la predicción —un equipo, una pieza— y
+   * eso no alcanza: dos sujetos distintos pueden compartirlo. Lo necesita todo
+   * el que tenga que volver a la ontología, y hasta ahora quien lo necesitaba
+   * lo deducía del slug, que es adivinar.
+   */
+  subjectId: string;
   tolerance: number;
   /** Etiquetas legibles de los rasgos elegidos. Manda sobre qué se lee. */
   featureLabels: Record<string, string>;
   /** Las escaleras que van a competir. Ver `chooseLadder`. */
   ladders: Ladder[];
+  /**
+   * Los rasgos elegidos que se calculan con ventanas y no con SQL.
+   *
+   * Viaja en la plantilla porque el histórico y el caso vivo tienen que pasar
+   * por la MISMA lista: si el entrenamiento calculara un rasgo que el servicio
+   * no, el modelo pediría en producción una columna que nadie le da y caería
+   * al peldaño más general de la escalera sin que nada lo denuncie.
+   */
+  derived: Derived[];
   query: SQL;
   featuresFor: (subjectId: string) => Promise<Record<string, string> | null>;
   predictOncePerSubject: boolean;
@@ -84,12 +109,21 @@ function build(r: Row): Template | null {
 
   const def: Definition = { subject, target, features };
 
+  // Los elegidos que son derivados, en el orden del catálogo. `derivedFor` da
+  // los DISPONIBLES para el sujeto; aquí solo entran los que el usuario puso.
+  const derived = derivedFor(subject.id).filter((d) =>
+    features.some((f) => f.id === d.id),
+  );
+  const sqlIds = sqlFeatures(def).map((f) => f.id);
+
   return {
     id: r.slug,
     label: r.label,
     question: r.question,
     unit: target.unit,
     subjectType: subject.subjectType,
+    subjectId: subject.id,
+    derived,
     tolerance: Number(r.tolerance),
     featureLabels: Object.fromEntries(features.map((f) => [f.id, f.label])),
     ladders: laddersFor(features.map((f) => f.id)),
@@ -101,7 +135,25 @@ function build(r: Row): Template | null {
       const rows = (await db.execute(
         compileServingQuery(def, subjectId),
       )) as unknown as Array<Record<string, unknown>>;
-      return rows[0] ? readFeatures(features.map((f) => f.id), rows[0]) : null;
+
+      // Sin fila no hay entidad, y sobre algo que no existe no se predice.
+      if (!rows[0]) return null;
+      const base = readFeatures(sqlIds, rows[0]);
+      if (derived.length === 0) return base;
+
+      /*
+        Los derivados salen de recorrer el histórico OTRA VEZ, en el momento de
+        predecir, con la misma función que los calculó al entrenar.
+
+        Cuesta una consulta más por predicción —unos cientos de filas— y se
+        paga a gusto: la alternativa es guardar los valores calculados al
+        entrenar y leerlos aquí, que es exactamente cómo se produce el desvío
+        entre entrenamiento y servicio. Un rasgo guardado envejece en silencio;
+        este se recalcula sobre lo que hay hoy, que es lo que el modelo va a
+        ver de verdad.
+      */
+      const history = await historyFrom(db, def);
+      return { ...base, ...deriveForLive(history, subjectId, new Date(), derived) };
     },
   };
 }
@@ -247,7 +299,36 @@ function readFeatures(
   return out;
 }
 
-/** El histórico completo de una plantilla, listo para entrenar. */
+/**
+ * El histórico CRUDO de una definición: lo que devuelve la consulta, sin los
+ * rasgos derivados. Lo usan el entrenamiento y el servicio, por lados
+ * distintos, y por eso vive suelto en vez de dentro de `datasetFor`.
+ */
+async function historyFrom(
+  db: Awaited<ReturnType<typeof tenantDb>>,
+  def: Definition,
+): Promise<Sample[]> {
+  const rows = (await db.execute(sql`
+    select * from (${compileQuery(def)}) d order by at
+  `)) as unknown as Array<Record<string, unknown>>;
+
+  const keys = sqlFeatures(def).map((f) => f.id);
+  return rows.map((r) => ({
+    at: new Date(String(r.at)),
+    key: r.subject_key == null ? undefined : String(r.subject_key),
+    target: Number(r.target),
+    features: readFeatures(keys, r),
+  }));
+}
+
+/**
+ * El histórico completo de una plantilla, listo para entrenar.
+ *
+ * Los rasgos derivados se añaden AQUÍ y no en la consulta. El orden importa y
+ * es el único posible: para resumir el pasado de una entidad hay que tener
+ * primero todas sus filas, ordenadas, en un sitio donde se pueda mirar hacia
+ * atrás. Ver `analytics/features.ts`.
+ */
 export async function datasetFor(t: Template): Promise<Sample[]> {
   const db = await tenantDb();
   const rows = (await db.execute(sql`
@@ -255,11 +336,14 @@ export async function datasetFor(t: Template): Promise<Sample[]> {
   `)) as unknown as Array<Record<string, unknown>>;
 
   const keys = Object.keys(t.featureLabels);
-  return rows.map((r) => ({
+  const samples = rows.map((r) => ({
     at: new Date(String(r.at)),
+    key: r.subject_key == null ? undefined : String(r.subject_key),
     target: Number(r.target),
     features: readFeatures(keys, r),
   }));
+
+  return deriveFeatures(samples, t.derived);
 }
 
 /**
