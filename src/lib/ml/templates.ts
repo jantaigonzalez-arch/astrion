@@ -145,12 +145,24 @@ function build(r: Row): Template | null {
         Los derivados salen de recorrer el histórico OTRA VEZ, en el momento de
         predecir, con la misma función que los calculó al entrenar.
 
-        Cuesta una consulta más por predicción —unos cientos de filas— y se
-        paga a gusto: la alternativa es guardar los valores calculados al
-        entrenar y leerlos aquí, que es exactamente cómo se produce el desvío
-        entre entrenamiento y servicio. Un rasgo guardado envejece en silencio;
-        este se recalcula sobre lo que hay hoy, que es lo que el modelo va a
-        ver de verdad.
+        Cuesta una consulta más por predicción y se paga a gusto: la
+        alternativa es guardar los valores calculados al entrenar y leerlos
+        aquí, que es exactamente cómo se produce el desvío entre entrenamiento
+        y servicio. Un rasgo guardado envejece en silencio; este se recalcula
+        sobre lo que hay hoy, que es lo que el modelo va a ver de verdad.
+
+        LO QUE CUESTA, medido sobre 508 consumos: 166 ms la consulta y 6 ms el
+        cálculo. El 96 % del gasto es leer el histórico, no Polars. Hoy son
+        cero porque ninguna plantilla de fábrica usa rasgos derivados y este
+        bloque no se ejecuta; el día que alguien elija uno, ese cuarto de
+        segundo se le añade al alta del ticket.
+
+        Cuando estorbe, la salida está clara y no es quitar Polars: pedir solo
+        las filas de ESA entidad más la mediana del pasado como agregado
+        aparte, que son dos consultas baratas en vez de un histórico entero. Se
+        deja sin hacer a propósito —hoy no lo paga nadie, y adelantarlo
+        rompería la simetría de «una sola función para entrenar y para servir»
+        justo cuando todavía no hay con qué comprobar que sigue dando lo mismo.
       */
       const history = await historyFrom(db, def);
       return { ...base, ...deriveForLive(history, subjectId, new Date(), derived) };

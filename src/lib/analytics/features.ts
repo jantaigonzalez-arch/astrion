@@ -15,6 +15,29 @@ import type { Sample } from "@/lib/ml/core";
  * Polars sigue sin tener un solo algoritmo de ML: prepara la matriz de rasgos y
  * se la pasa a `fit()`. Quien aprende sigue siendo `algorithms.ts`.
  *
+ * ── Y NO ES MÁS RÁPIDO. MEDIDO ─────────────────────────────────────────────
+ *
+ * Conviene dejarlo por escrito antes de que alguien lo suponga. La misma
+ * mediana rodante por entidad, contra una implementación en TypeScript plano de
+ * unas treinta líneas que devuelve exactamente los mismos valores:
+ *
+ *      500 filas → TS 42× más rápido   (0,07 ms contra 2,8 ms)
+ *    5.000 filas → TS  5,8×
+ *   50.000 filas → TS  2,0×
+ *  500.000 filas → TS  1,2×
+ *
+ * Polars pierde en todos los tamaños probados y el cruce ni se asoma. El motivo
+ * es que aquí paga lo que peor se le da: construir el dataframe desde arrays de
+ * JS y devolver los resultados a arrays de JS. Su terreno es el otro —parquet
+ * dentro, parquet fuera, sin cruzar el puente— que es exactamente lo que hacen
+ * `extract.ts` y `datasets.ts`.
+ *
+ * Se queda igual, y por lo que decía arriba: la expresión se lee. No hay que
+ * mantener a mano el desplazamiento, la ventana y la agrupación por entidad,
+ * que son las tres cosas que hay que hacer bien para no filtrar el futuro. A
+ * 6 ms sobre el histórico completo, la legibilidad se paga sola. Lo que NO se
+ * puede es defender esta elección diciendo que es más rápida.
+ *
  * ── LA INVARIANTE ──────────────────────────────────────────────────────────
  *
  * Toda expresión de este archivo empieza por `.shift(1)`.
