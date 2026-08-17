@@ -55,7 +55,10 @@ import-report.csv
 # Son datos de cliente derivados; nunca al repositorio.
 .lake/
 
-# Entorno del servicio de inteligencia
+# Servicio de inteligencia. El entorno virtual va FUERA del repo —ver su
+# README—: un .venv aquí dentro hace entrar en pánico a Turbopack, porque su
+# symlink a python3 apunta fuera de la raíz del proyecto. Se ignora igual por
+# si alguien lo crea a mano.
 services/intelligence/.venv/
 services/intelligence/**/__pycache__/
 services/intelligence/.pytest_cache/

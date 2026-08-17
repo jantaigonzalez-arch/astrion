@@ -35,21 +35,33 @@ con un estimador es cambiar una cifra cierta por una aproximada.
 
 ## Desarrollo
 
+El entorno virtual va **fuera del repositorio**, y no es preferencia:
+
 ```bash
+VENV=~/.venvs/astraion-intelligence
+uv venv --python cpython-3.12-macos-aarch64-none "$VENV"
+uv pip install --python "$VENV/bin/python" -e ".[dev]"
+
 cd services/intelligence
-uv venv --python cpython-3.12-macos-aarch64-none .venv   # nativo: ver nota
-uv pip install --python .venv/bin/python -e ".[dev]"
-.venv/bin/python -m pytest tests/ -q
+"$VENV/bin/python" -m pytest tests/ -q
 
 # Con la base del ERP delante
 set -a; . ../../.env.local; set +a
-.venv/bin/python -m uvicorn app.main:app --port 8099 --reload
+"$VENV/bin/python" -m uvicorn app.main:app --port 8099 --reload
 ```
 
-**Nota sobre el Python nativo en macOS ARM.** Si `uv` es el binario x86_64,
-instala un Python x86_64 y Polars avisa de que le faltan instrucciones de CPU
-—corre bajo Rosetta y puede caerse—. Hay que pedir el arm64 explícito, como
-arriba.
+**Por qué fuera del repositorio.** Un `.venv` dentro del proyecto tiene un
+symlink a `python3` que apunta al intérprete gestionado por `uv`, es decir
+fuera de la raíz del proyecto — y eso hace **entrar en pánico a Turbopack** al
+construir el ERP, con un error que no menciona Python por ningún lado
+(`Symlink … points out of the filesystem root`, colgando de `src/lib/uploads.ts`).
+Ignorarlo en `.gitignore` no alcanza: Turbopack recorre el disco, no el índice
+de git. Fuera del árbol, el problema no existe.
+
+**Nota sobre el Python nativo en macOS ARM.** Si `uv` es el binario x86_64
+instala un Python x86_64, y entonces Polars avisa de que le faltan
+instrucciones de CPU —corre bajo Rosetta y puede caerse—. Hay que pedir el
+arm64 explícito, como arriba.
 
 ## Lo que NO hace
 
