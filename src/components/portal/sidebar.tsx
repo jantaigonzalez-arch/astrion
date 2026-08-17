@@ -9,6 +9,7 @@ import {
   BarChart3,
   ClipboardList,
   ClipboardPlus,
+  Brain,
   Building2,
   CalendarCheck,
   FileSignature,
@@ -213,13 +214,13 @@ function navFor(role: MembershipRole): NavGroup[] {
       items: [
         { href: "/admin/rentabilidad", label: "Rentabilidad", Icon: TrendingUp },
         ...analisis,
-        // El laboratorio va en Análisis y no en Configuración a propósito: no
+        // La inteligencia va en Análisis y no en Configuración a propósito: no
         // es un ajuste que se deja puesto, es una herramienta que se consulta
-        // para decidir, igual que Rentabilidad.
-        // La pantalla del laboratorio se retiró con la capa vieja. El enlace se
-        // quita en vez de dejarse apuntando a una ruta muerta: un menú que
-        // lleva a un 404 enseña que el menú no es de fiar. Vuelve cuando la
-        // capa nueva tenga su pantalla de configuración.
+        // para decidir, igual que Rentabilidad. Y no en una sección propia:
+        // es donde se configura lo que las otras pantallas van a decir, no un
+        // dominio de negocio aparte. Quien entra aquí viene de preguntarse
+        // «cómo vamos», no «qué modelo entreno».
+        { href: "/admin/inteligencia", label: "Inteligencia", Icon: Brain },
       ],
     },
   ];

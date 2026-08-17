@@ -2088,12 +2088,54 @@ export const mlTemplates = pgTable(
      * detrás, y perderlas dejaría huérfano todo lo medido hasta hoy.
      */
     builtin: boolean("builtin").notNull().default(false),
+
+    /**
+     * En qué módulo del ERP vive la pregunta.
+     *
+     * La configuración empieza donde el usuario está —Refacciones, Ventas— y no
+     * donde está el modelo: nadie entra al ERP pensando «quiero una regresión»,
+     * entra a Refacciones y se pregunta cuánto va a necesitar el mes que viene.
+     */
+    module: varchar("module", { length: 40 }).notNull().default("servicio"),
+
+    /**
+     * Qué clase de pregunta es: `forecast`, `regression`, `classification`,
+     * `anomaly`. Cada una se evalúa distinto, y guardarlo es lo que impide que
+     * una de clasificación se mida con el error absoluto de una de regresión.
+     */
+    task: varchar("task", { length: 20 }).notNull().default("forecast"),
+
+    /**
+     * Cuántos periodos hacia adelante. Un pronóstico a tres meses y otro a uno
+     * son dos modelos distintos sobre la misma serie —se entrenan por separado,
+     * directo y no recursivo— y hay que poder tener los dos.
+     */
+    horizon: integer("horizon").notNull().default(1),
+    grain: varchar("grain", { length: 10 }).notNull().default("month"),
+
+    /** `absolute` o `relative`. Ver la migración 0013. */
+    toleranceKind: varchar("tolerance_kind", { length: 10 })
+      .notNull()
+      .default("relative"),
+
+    /**
+     * Familia fijada por el usuario, o `null` para que la elija el AutoML.
+     *
+     * Que se pueda fijar importa: a veces el negocio necesita un modelo que
+     * pueda explicar en una junta aunque otro acierte un punto más, y queda
+     * escrito que fue elección y no búsqueda.
+     */
+    algorithm: varchar("algorithm", { length: 40 }),
+
     createdById: uuid("created_by_id").references(() => users.id, {
       onDelete: "set null",
     }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("ml_templates_slug_uq").on(t.slug)],
+  (t) => [
+    uniqueIndex("ml_templates_slug_uq").on(t.slug),
+    index("ml_templates_module_idx").on(t.module),
+  ],
 );
 
 export const mlModelStatus = pgEnum("ml_model_status", [
@@ -2171,6 +2213,30 @@ export const mlModels = pgTable(
      * existiera el plano analítico — son irreproducibles y conviene que se note.
      */
     datasetPath: varchar("dataset_path", { length: 300 }),
+
+    /**
+     * El modelo entrenado, serializado por el servicio de inteligencia.
+     *
+     * Columna propia y no dentro de `params`: `params` describe CÓMO se
+     * configuró —algo que se lee y se muestra en la pantalla— y esto es un blob
+     * opaco de decenas de kilobytes que solo Python sabe abrir. Mezclarlos
+     * habría hecho ilegible cualquier consulta sobre la configuración.
+     *
+     * Vive aquí, en el esquema de la empresa, y no en el servicio: es lo que
+     * sostiene la promesa de que los modelos viven donde viven los datos del
+     * cliente, y lo que permite reiniciar o reemplazar el servicio sin que
+     * ninguna empresa pierda nada.
+     */
+    modelBlob: text("model_blob"),
+
+    /**
+     * El perfilado del conjunto con el que se entrenó.
+     *
+     * Se guarda CON el modelo porque explica su veredicto, y dentro de seis
+     * meses el histórico ya no será el mismo: «se rechazó por tener 14 periodos»
+     * solo se puede sostener si queda escrito que en ese momento había 14.
+     */
+    dataProfile: jsonb("data_profile").$type<Record<string, unknown>>(),
   },
   (t) => [
     index("ml_models_template_idx").on(t.template, t.status),
@@ -2262,6 +2328,44 @@ export const mlOutcomes = pgTable(
     uniqueIndex("ml_outcomes_prediction_uq").on(t.predictionId),
     index("ml_outcomes_recorded_idx").on(t.recordedAt),
   ],
+);
+
+/**
+ * Los PRONÓSTICOS emitidos, periodo por periodo.
+ *
+ * Tabla propia y no seis filas de `ml_predictions`, y la diferencia no es
+ * cosmética: `ml_predictions` guarda una cifra por ENTIDAD para medir la deriva
+ * contra un desenlace real —un ticket llevó estas horas, esta pieza volvió a
+ * usarse en tantos días—. Meterle periodos futuros rompería ese cálculo sin
+ * avisar, porque un mes no es una entidad y su desenlace tarda un mes en
+ * existir.
+ *
+ * `issued_at` es lo que hace honesta a una proyección con el paso del tiempo:
+ * permite comparar lo que se dijo en marzo con lo que pasó, sin que la versión
+ * de hoy tape lo que la de marzo prometió. Un pronóstico es un hecho de su
+ * momento y no se corrige — la misma regla que `ml_predictions`.
+ */
+export const mlForecasts = pgTable(
+  "ml_forecasts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    modelId: uuid("model_id")
+      .notNull()
+      .references(() => mlModels.id, { onDelete: "cascade" }),
+    issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
+    /** El periodo pronosticado, normalizado a su primer día. */
+    period: date("period").notNull(),
+    value: numeric("value", { precision: 16, scale: 2 }).notNull(),
+    /** La banda. Un pronóstico sin banda invita a leerlo como certeza. */
+    lower: numeric("lower", { precision: 16, scale: 2 }),
+    upper: numeric("upper", { precision: 16, scale: 2 }),
+    /** Qué pasó de verdad. Nulo hasta que el periodo cierre. */
+    actual: numeric("actual", { precision: 16, scale: 2 }),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+    /** Por entidad, cuando la serie se abre por pieza o por equipo. */
+    subjectKey: varchar("subject_key", { length: 120 }),
+  },
+  (t) => [index("ml_forecasts_periodo_idx").on(t.period)],
 );
 
 /* ------------------------- Tipos ------------------------- */

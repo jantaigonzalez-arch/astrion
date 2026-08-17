@@ -92,6 +92,13 @@
       "when": 1786852307333,
       "tag": "0012_analisis_configurables",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786852307334,
+      "tag": "0013_capa_de_inteligencia",
+      "breakpoints": true
     }
   ]
 }
