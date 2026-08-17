@@ -54,3 +54,8 @@ import-report.csv
 # Lago analítico: parquet extraído de los esquemas de inquilino.
 # Son datos de cliente derivados; nunca al repositorio.
 .lake/
+
+# Entorno del servicio de inteligencia
+services/intelligence/.venv/
+services/intelligence/**/__pycache__/
+services/intelligence/.pytest_cache/

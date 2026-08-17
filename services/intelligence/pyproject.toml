@@ -1,0 +1,49 @@
+[project]
+name = "astraion-intelligence"
+version = "0.1.0"
+description = "Capa de inteligencia del ERP Astraion: clasificación de intención, AutoML y pronóstico."
+requires-python = ">=3.12"
+
+dependencies = [
+    # El borde. FastAPI valida el contrato en la frontera entre dos lenguajes,
+    # que es donde nadie más lo puede validar.
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+
+    # El plano de datos. Polars y no pandas: mismo motor Rust que el lado de
+    # Node (`nodejs-polars`), mismo parquet, mismas semánticas de ventana. Los
+    # dos lados del sistema hablan del mismo dataframe, que es lo que evita que
+    # el conjunto con el que se entrena y el que se sirve se separen sin avisar.
+    #
+    # Koalas NO está aquí a propósito: está descontinuado desde Spark 3.2, donde
+    # se absorbió en `pyspark.pandas`. Su sustituto real para este tamaño de
+    # datos es Polars, y para el tamaño en que Spark se justificaría, este ERP
+    # tendría problemas más urgentes que la biblioteca de dataframes.
+    "polars>=1.17",
+    "pyarrow>=18.0",
+    "connectorx>=0.4",
+
+    # Los modelos. scikit-learn cubre regresión, clasificación, agrupamiento y
+    # detección de anomalías con una sola interfaz; statsmodels aporta lo que
+    # le falta en series de tiempo.
+    "scikit-learn>=1.6",
+    "statsmodels>=0.14",
+    "numpy>=2.0",
+
+    # El que gana casi siempre en datos tabulares, y la razón principal de que
+    # esta capa sea Python y no TypeScript.
+    "xgboost>=2.1",
+
+    "psycopg[binary]>=3.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "httpx>=0.28", "ruff>=0.8"]
+
+[tool.ruff]
+line-length = 96
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

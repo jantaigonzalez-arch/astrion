@@ -284,6 +284,46 @@ services:
     depends_on:
       - evoai-backend
 
+  # ---- Capa de inteligencia -------------------------------------------------
+  #
+  # El motor de ML del ERP: clasificación de intención, AutoML y pronóstico.
+  # Vive aparte porque es Python —scikit-learn, XGBoost, statsmodels— y eso no
+  # existe en TypeScript de forma honesta. Ver services/intelligence/.
+  #
+  # SIN `ports`. No se expone a internet ni al host: solo lo alcanzan los
+  # contenedores de esta red, y su único cliente es `web`. Publicar el puerto
+  # sería abrir un servicio que puede leer el histórico de todas las empresas.
+  #
+  # Sin perfil, al contrario que evoai: esto no es un módulo opcional, es parte
+  # del producto. Si está caído, las pantallas de análisis se quedan sin
+  # pronóstico y el ERP sigue funcionando —esa degradación está prevista en el
+  # cliente TypeScript— pero no es un estado deseado.
+  intelligence:
+    build:
+      context: ./services/intelligence
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # La MISMA base que el ERP y en el mismo nombre de variable. Este
+      # servicio no tiene datos propios: lee el esquema de cada empresa y fija
+      # `search_path` a ese esquema y nada más. Ver services/intelligence/app/data.py
+      DATABASE_URL: postgres://${POSTGRES_USER:-evoelution}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-evoelution}
+      TZ: ${TZ:-America/Mexico_City}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # `python` y no `curl`: la imagen slim no trae curl y añadirlo solo para
+      # el healthcheck son 8 MB y un paquete más que actualizar.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/salud', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      # Entrenar carga scikit-learn, xgboost y polars: el primer arranque tarda
+      # más que un servidor web y sin este margen el orquestador lo reinicia
+      # en bucle antes de que llegue a estar listo.
+      start_period: 40s
+
 volumes:
   pgdata:
   uploads:
