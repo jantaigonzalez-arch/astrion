@@ -25,7 +25,6 @@ import {
 import { nextTicketReference } from "@/lib/domain/references";
 import { recordEvent } from "@/lib/domain/events";
 import { consumePart } from "@/lib/domain/inventory";
-import { onTicketOpened, onTicketSettled } from "@/lib/ml/hooks";
 
 const CreateSchema = z.object({
   subject: z.string().min(4).max(240),
@@ -137,7 +136,6 @@ export async function createTicket(
     // Solo si ya entró a la cola. Una solicitud pendiente de revisión todavía
     // puede rechazarse, y predecir sobre algo que quizá no ocurra ensucia la
     // medición con casos que nunca van a tener desenlace.
-    if (isStaff) await onTicketOpened(row.id);
 
     revalidateTenant();
     return { ok: true, reference: row.reference };
@@ -253,7 +251,6 @@ export async function createServiceTicket(
     });
 
     // Un levantamiento del staff nace en la cola: se predice de una vez.
-    await onTicketOpened(row.id);
 
     revalidateTenant();
     return { ok: true, reference: row.reference };
@@ -287,7 +284,6 @@ export async function approveTicket(formData: FormData) {
   // Recién aquí la solicitud se vuelve un servicio que va a ocurrir. Se
   // comprueba que el UPDATE haya tocado algo: el `where` filtra por estado, así
   // que un doble clic no debe emitir una segunda predicción.
-  if (approved.length > 0) await onTicketOpened(ticketId);
 
   revalidateTenant();
 }
@@ -602,7 +598,6 @@ export async function updateTicketStatus(formData: FormData) {
   // vuelve a tocar —una predicción tiene un desenlace—, así que llamar dos
   // veces es inofensivo.
   if (status === "resolved" || status === "closed") {
-    await onTicketSettled(ticketId);
   }
 
   revalidateTenant();

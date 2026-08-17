@@ -22,9 +22,6 @@ import { getSettings } from "@/lib/data/settings";
 import { computeProfit } from "@/lib/profit";
 import { ProfitCard } from "@/components/portal/profit-card";
 import { Link } from "@/lib/nav";
-import { latestPredictionFor } from "@/lib/ml/serve";
-import { templateById } from "@/lib/ml/templates";
-import { PredictionCard } from "@/components/portal/prediction-card";
 import { updateTicketStatus } from "@/lib/actions/tickets";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -86,21 +83,9 @@ export default async function TicketDetailPage({
     laborRatePerHour: appSettings.laborRatePerHour,
   });
 
-  // La estimación del modelo: se LEE, no se calcula. La fila ya se escribió
-  // cuando el ticket entró a la cola, que es cuando el número servía para algo.
-  // Es información interna de planificación, así que sigue la misma regla que
-  // la utilidad: solo staff.
-  const prediction = isStaff
-    ? await latestPredictionFor("service_hours", ticket.id)
-    : null;
-  // La tolerancia sale de la plantilla, no de una constante: el administrador
-  // puede haberla ajustado, y la tarjeta tiene que juzgar el acierto con el
-  // mismo margen con el que se juzgó el modelo.
-  // Y el TIPO de margen viaja con el número: leer uno sin el otro haría que la
-  // tarjeta dijera «dentro» donde el modelo contó «fuera».
-  const plantillaHoras = prediction ? await templateById("service_hours") : undefined;
-  const hoursTolerance = plantillaHoras?.tolerance || 2;
-  const hoursToleranceKind = plantillaHoras?.toleranceKind;
+  // La estimación del modelo vuelve aquí cuando la capa nueva sepa emitirla.
+  // Se quita entera en vez de dejarla en `null`: una tarjeta que nunca aparece
+  // es código que nadie ejecuta y que la siguiente persona tiene que descifrar.
 
   const tree = await getEquipmentTree(ticket.createdById);
   const commentEquipment = tree.map((eq) => ({
@@ -349,18 +334,6 @@ export default async function TicketDetailPage({
               </div>
             </dl>
           </Card>
-
-          {/* Estimación del modelo, antes que la utilidad: sirve para decidir
-              (cotizar, agendar), mientras que la utilidad describe lo ya hecho. */}
-          {prediction && (
-            <PredictionCard
-              p={{
-                ...prediction,
-                tolerance: hoursTolerance,
-                toleranceKind: hoursToleranceKind,
-              }}
-            />
-          )}
 
           {/* Rentabilidad del servicio (solo staff) */}
           {isStaff && (profit.revenue > 0 || profit.cost > 0) && (

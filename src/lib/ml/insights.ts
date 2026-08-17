@@ -8,7 +8,6 @@ import type {
 } from "./blocks-types";
 import { sql } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
-import { templateById } from "./templates";
 
 /**
  * La capa de análisis del ERP.
@@ -134,9 +133,19 @@ type OpenTicketRow = {
  */
 export async function openTicketsInsights(): Promise<Insight[]> {
   return guarded("tickets.carga", async () => {
-    const template = await templateById("service_hours");
-    if (!template) return [];
-    const tolerance = template.tolerance;
+    /*
+      El margen era el de la plantilla del laboratorio, y el laboratorio se
+      retiró para rehacerlo. Queda una constante hasta que la capa nueva
+      publique el suyo — con el número escrito aquí y no escondido, para que se
+      vea que es provisional.
+
+      Este aviso NO desaparece solo cuando vuelva a haber predicciones: la
+      consulta de abajo seguirá devolviendo vacío mientras nadie escriba en
+      `ml_predictions`, y eso es lo correcto. Un panel que dice «no hay nada
+      que avisar» porque no hay modelo es honesto; uno que inventa un aviso
+      con un margen improvisado, no.
+    */
+    const tolerance = 2;
 
     const db = await tenantDb();
     const rows = (await db.execute(sql`
