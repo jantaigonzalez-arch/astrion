@@ -12,7 +12,6 @@ import {
   Building2,
   CalendarCheck,
   FileSignature,
-  FlaskConical,
   KanbanSquare,
   Package,
   Receipt,
@@ -217,7 +216,10 @@ function navFor(role: MembershipRole): NavGroup[] {
         // El laboratorio va en Análisis y no en Configuración a propósito: no
         // es un ajuste que se deja puesto, es una herramienta que se consulta
         // para decidir, igual que Rentabilidad.
-        { href: "/admin/ml", label: "ML y predicciones", Icon: FlaskConical },
+        // La pantalla del laboratorio se retiró con la capa vieja. El enlace se
+        // quita en vez de dejarse apuntando a una ruta muerta: un menú que
+        // lleva a un 404 enseña que el menú no es de fiar. Vuelve cuando la
+        // capa nueva tenga su pantalla de configuración.
       ],
     },
   ];

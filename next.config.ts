@@ -46,6 +46,19 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: devRoot ? [devRoot, `*.${devRoot}`] : [],
 
   experimental: {
+    /*
+      El 404 de toda la aplicación, con su propio <html>/<body>.
+
+      Hace falta porque el <html> de este proyecto vive en
+      `app/[locale]/layout.tsx` —depende del idioma— y una URL que no coincide
+      con nada no entra por ahí. Sin esto, cualquier dirección inexistente
+      responde «Missing <html> and <body> tags in the root layout», que es un
+      error de ejecución donde debería haber una página de «no existe».
+
+      Ver `src/app/global-not-found.tsx`.
+    */
+    globalNotFound: true,
+
     // La importación masiva de cuentas por pagar sube el archivo por una Server
     // Action, y el tope por omisión es 1 MB. Un CSV de mil facturas cabe de
     // sobra, pero un lote de CFDI no: cada XML pesa entre 5 y 15 KB y una

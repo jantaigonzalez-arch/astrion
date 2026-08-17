@@ -934,7 +934,6 @@ export async function ticketsForecast(
       band: { lower: Math.round(r.bajo), upper: Math.round(r.alto) },
       support: r.soporte,
       model: { template: r.template, version: r.version },
-      href: "/admin/ml",
     },
   ];
 }
@@ -1205,7 +1204,6 @@ export async function payablesNextMonth(conexion?: DbOrTx): Promise<Block[]> {
       band: { lower: Math.round(e.bajo), upper: Math.round(e.alto) },
       support: e.soporte,
       model: { template: e.template, version: e.version },
-      href: "/admin/ml",
     });
   }
 
