@@ -8,6 +8,7 @@ import type {
   ProjectionBlock,
   TrendBlock,
 } from "@/lib/ml/blocks-types";
+import { ForecastChart } from "@/components/portal/forecast-chart";
 import { SERIE, SERIE_ALERTA } from "@/components/portal/purchasing/chart-palette";
 import { Link } from "@/lib/nav";
 import { cn } from "@/lib/utils";
@@ -72,6 +73,7 @@ export function TrendCard({ block }: { block: TrendBlock }) {
 
 export function ForecastCard({ block }: { block: ForecastBlock }) {
   const { lower, upper } = block.band;
+  const serie = block.series ?? [];
   const rango = upper - lower;
   // Dónde cae el valor dentro de su propia banda. Si está descentrado, la
   // estimación es asimétrica y conviene que se vea.
@@ -108,9 +110,32 @@ export function ForecastCard({ block }: { block: ForecastBlock }) {
         </div>
       </div>
 
+      {/* La SERIE, cuando lo que se pronostica son varios periodos.
+          Va debajo de la banda del primero y no en su lugar: la cifra grande es
+          lo que alguien lee de reojo, y la gráfica lo que mira cuando decide. */}
+      {serie.length > 1 && (
+        <div className="mt-4">
+          <ForecastChart
+            history={(block.history ?? []).map((h) => ({
+              period: h.at,
+              value: h.value,
+            }))}
+            forecast={serie.map((p) => ({
+              period: p.at,
+              value: p.value,
+              lower: p.lower,
+              upper: p.upper,
+              actual: null,
+            }))}
+            unit={block.unit}
+          />
+        </div>
+      )}
+
       <p className="mt-2 text-xs text-muted-foreground">
         Sostenido por {block.support}{" "}
-        {block.support === 1 ? "caso histórico" : "casos históricos"}.
+        {block.support === 1 ? "periodo histórico" : "periodos históricos"}
+        {serie.length > 1 ? ` · ${serie.length} periodos estimados` : ""}.
       </p>
     </Marco>
   );

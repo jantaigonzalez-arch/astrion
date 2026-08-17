@@ -4,9 +4,9 @@ import { tenantDb } from "@/lib/tenancy/context";
 import type { DbOrTx } from "@/lib/db";
 import { analysisPlacements } from "@/lib/db/schema";
 import {
-  ANALYSES,
+  analysesAll,
+  analysisByIdAll,
   SCREENS,
-  analysisById,
   placementError,
   screenByPrefix,
   type Analysis,
@@ -85,7 +85,7 @@ export async function placementsFor(
 
   const out: Placement[] = [];
 
-  for (const a of ANALYSES) {
+  for (const a of await analysesAll(conexion)) {
     const row = byId.get(a.id);
     if (row) {
       out.push({
@@ -139,7 +139,11 @@ export async function setPlacement(opts: {
   const error = placementError(opts.analysis, opts.screen);
   if (error) return { ok: false, reason: error };
 
-  const a = analysisById(opts.analysis)!;
+  // `!` no: un análisis del usuario no está en la lista estática, y con la
+  // aserción la colocación de su propio pronóstico reventaba al leer `.needsId`
+  // de `undefined` — justo en la acción que se llama al moverlo de pantalla.
+  const a = await analysisByIdAll(opts.analysis);
+  if (!a) return { ok: false, reason: `No existe el análisis «${opts.analysis}».` };
   const db = opts.conexion ?? (await tenantDb());
 
   await db
@@ -235,7 +239,7 @@ export async function recommendations(conexion?: DbOrTx): Promise<Recommendation
     rows.filter((r) => r.active).map((r) => r.analysis),
   );
   // Los de fábrica cuentan como colocados: ya tienen por dónde salir.
-  for (const a of ANALYSES) {
+  for (const a of await analysesAll(conexion)) {
     if (a.defaultScreen && !rows.some((r) => r.analysis === a.id)) colocado.add(a.id);
   }
 
@@ -243,7 +247,7 @@ export async function recommendations(conexion?: DbOrTx): Promise<Recommendation
 
   for (const m of modelos) {
     // ¿Algún análisis lee este sujeto y está colocado en alguna parte?
-    const lectores = ANALYSES.filter((a) => a.subject === m.subject);
+    const lectores = (await analysesAll(conexion)).filter((a) => a.subject === m.subject);
     if (lectores.length === 0) continue;
     if (lectores.some((a) => colocado.has(a.id))) continue;
 

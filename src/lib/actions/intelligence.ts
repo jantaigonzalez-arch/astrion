@@ -83,6 +83,7 @@ export async function createQuestionAction(
       grain: String(form.get("grain") ?? "month"),
       tolerance,
       toleranceKind: form.get("toleranceKind") === "absolute" ? "absolute" : "relative",
+      unit: String(form.get("unit") ?? "").trim().slice(0, 20),
       // Cadena vacía significa AutoML. Se normaliza a `null` aquí y no en la
       // base para que la columna signifique una sola cosa: «lo eligió el
       // usuario» o «lo elige la búsqueda», nunca «cadena vacía».

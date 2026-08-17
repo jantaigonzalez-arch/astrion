@@ -99,6 +99,30 @@ export type ForecastBlock = {
   /** Qué modelo la produjo, para poder ir a verlo. */
   model: { template: string; version: number };
   href?: string;
+  /**
+   * La estimación completa, periodo a periodo, cuando lo que se pronostica es
+   * una SERIE y no un caso.
+   *
+   * Extiende `forecast` en vez de ser un quinto tipo, y la decisión es
+   * deliberada: los cuatro tipos se dividen por GRADO DE CERTEZA, no por forma.
+   * «Lo que se va a facturar los próximos seis meses» es exactamente la misma
+   * clase de afirmación que «esta visita llevará 5 h» —una estimación de un
+   * modelo, con banda y casos que la sostienen— y meterla en un tipo aparte
+   * habría partido la taxonomía por un motivo de dibujo.
+   *
+   * `value` y `band` siguen siendo obligatorios y siguen significando lo mismo:
+   * el PRIMER periodo, que es el que alguien va a leer si no mira la gráfica. La
+   * serie es el detalle, no el sustituto.
+   */
+  series?: Array<{ at: string; value: number; lower: number; upper: number }>;
+  /**
+   * Lo ya ocurrido, para dibujarlo junto a la estimación.
+   *
+   * Sin esto la gráfica sale sin frontera entre lo que se sabe y lo que se
+   * estima, y una serie continua invita a leer los últimos puntos como datos:
+   * el malentendido más caro que puede producir un pronóstico en pantalla.
+   */
+  history?: Array<{ at: string; value: number }>;
 };
 
 export type Block =

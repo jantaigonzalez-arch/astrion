@@ -166,6 +166,12 @@ export type DataProfile = {
   columns: ColumnProfile[];
   /** Lo que hay que decirle al usuario aunque no lo haya pedido. */
   warnings: string[];
+  /**
+   * Los últimos periodos OBSERVADOS. Viajan con el perfil porque el perfil ya
+   * leyó la serie: pedirlos aparte sería recorrerla dos veces para pintar la
+   * misma pantalla.
+   */
+  tail: Array<{ at: string; value: number }>;
 };
 
 export type Candidate = {

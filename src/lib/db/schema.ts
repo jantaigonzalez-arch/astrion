@@ -2113,6 +2113,20 @@ export const mlTemplates = pgTable(
     horizon: integer("horizon").notNull().default(1),
     grain: varchar("grain", { length: 10 }).notNull().default("month"),
 
+    /**
+     * La unidad de lo que se pregunta: `MXN`, `h`, `piezas`.
+     *
+     * Copiada del catálogo del servicio al crear la pregunta, a propósito. Una
+     * pantalla de operación tiene que dibujar el bloque de pronóstico sin el
+     * motor delante: pedirle la unidad para poner «MXN» al lado de una cifra
+     * colgaría la cola de tickets de una llamada de red al servicio de modelos.
+     *
+     * No se refresca. Si el catálogo cambiara la unidad de una serie, las
+     * preguntas viejas siguen con la suya — el modelo se entrenó sobre esa
+     * magnitud.
+     */
+    unit: varchar("unit", { length: 20 }).notNull().default(""),
+
     /** `absolute` o `relative`. Ver la migración 0013. */
     toleranceKind: varchar("tolerance_kind", { length: 10 })
       .notNull()

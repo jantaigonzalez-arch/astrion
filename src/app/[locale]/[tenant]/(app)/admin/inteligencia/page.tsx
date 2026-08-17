@@ -91,6 +91,13 @@ export default async function InteligenciaPage({
               warnings: perfil.value.warnings,
             }
           : null,
+        // La historia real, para que la gráfica tenga frontera. Sin ella la
+        // leyenda decía «ocurrido» sobre una gráfica que solo enseñaba lo
+        // estimado, y una serie continua invita a leer los primeros puntos como
+        // datos — el malentendido más caro que puede producir esta pantalla.
+        history: perfil.ok
+          ? perfil.value.tail.map((t) => ({ period: t.at, value: t.value }))
+          : [],
         models: modelos.map(toModelView),
         forecast: pron.map((f) => ({
           period: f.period,

@@ -206,6 +206,9 @@ export function IntelligenceNewQuestion({
         <input type="hidden" name="task" value="forecast" />
         <input type="hidden" name="target" value="value" />
         <input type="hidden" name="grain" value={serie?.grain ?? "month"} />
+        {/* La unidad viaja con la pregunta: la pantalla de operación tiene que
+            poder dibujar el bloque sin el motor delante. Ver la migración 0014. */}
+        <input type="hidden" name="unit" value={serie?.unit ?? ""} />
         <input
           type="hidden"
           name="toleranceKind"

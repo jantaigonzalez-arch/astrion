@@ -177,6 +177,19 @@ class DataProfile(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     """Lo que hay que decirle al usuario aunque no lo haya pedido."""
 
+    tail: list[dict] = Field(default_factory=list)
+    """Los últimos periodos OBSERVADOS: `{at, value}`.
+
+    Viajan con el perfil y no en una llamada aparte porque el perfil ya leyó la
+    serie entera: pedirlos por separado sería recorrerla dos veces para pintar la
+    misma pantalla.
+
+    Su razón de ser es la gráfica. Un pronóstico dibujado solo se lee como una
+    serie continua e invita a tomar los primeros puntos por datos; con la
+    historia al lado aparece la frontera entre lo que se sabe y lo que se estima,
+    que es lo único que evita ese malentendido.
+    """
+
 
 class Candidate(BaseModel):
     """Un competidor de la búsqueda AutoML y cómo le fue."""

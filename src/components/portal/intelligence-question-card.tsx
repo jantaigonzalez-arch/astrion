@@ -22,7 +22,11 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ForecastChart, type ForecastRow } from "@/components/portal/forecast-chart";
+import {
+  ForecastChart,
+  type ForecastRow,
+  type HistoryRow,
+} from "@/components/portal/forecast-chart";
 import { cn } from "@/lib/utils";
 
 const inicial: IntelState = { ok: false };
@@ -76,6 +80,8 @@ export type QuestionView = {
   readiness: { rows: number; needs: number; warnings: string[] } | null;
   models: ModelView[];
   forecast: ForecastRow[];
+  /** Lo ya ocurrido, del perfilado en vivo. Ver `HistoryRow`. */
+  history: HistoryRow[];
 };
 
 const ESTADO: Record<ModelView["status"], { label: string; cls: string }> = {
@@ -203,7 +209,7 @@ export function IntelligenceQuestionCard({ q }: { q: QuestionView }) {
           <h4 className="mb-3 flex items-center gap-2 text-sm font-medium">
             <TrendingUp className="size-4 text-primary" /> Lo que estima
           </h4>
-          <ForecastChart history={[]} forecast={q.forecast} unit={q.unit} />
+          <ForecastChart history={q.history} forecast={q.forecast} unit={q.unit} />
           <ul className="mt-3 grid gap-1 text-sm sm:grid-cols-2">
             {q.forecast.slice(0, 6).map((f) => (
               <li key={f.period} className="flex items-baseline justify-between gap-2">

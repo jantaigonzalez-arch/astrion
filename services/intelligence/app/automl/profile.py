@@ -74,6 +74,12 @@ def profile_series(df: pl.DataFrame, serie: Serie) -> DataProfile:
             )
 
     fechas = df["at"].to_list()
+
+    # Dos años de cola: lo suficiente para ver la estacionalidad al lado del
+    # pronóstico sin convertir la gráfica en el histórico completo, que a 119
+    # periodos aplana la parte que interesa.
+    cola = df.tail(24)
+
     return DataProfile(
         rows=df.height,
         from_at=_dt(fechas[0]),
@@ -92,6 +98,10 @@ def profile_series(df: pl.DataFrame, serie: Serie) -> DataProfile:
             )
         ],
         warnings=avisos,
+        tail=[
+            {"at": str(r["at"]), "value": float(r["value"])}
+            for r in cola.iter_rows(named=True)
+        ],
     )
 
 

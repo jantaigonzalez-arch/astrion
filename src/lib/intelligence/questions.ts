@@ -38,6 +38,7 @@ export type QuestionRow = {
   grain: string;
   tolerance: number;
   toleranceKind: "absolute" | "relative";
+  unit: string;
   algorithm: string | null;
   builtin: boolean;
 };
@@ -85,6 +86,7 @@ function toQuestion(r: typeof mlTemplates.$inferSelect): QuestionRow {
     grain: r.grain,
     tolerance: Number(r.tolerance),
     toleranceKind: r.toleranceKind === "absolute" ? "absolute" : "relative",
+    unit: r.unit,
     algorithm: r.algorithm,
     builtin: r.builtin,
   };
@@ -164,6 +166,7 @@ export async function createQuestion(input: {
   grain: string;
   tolerance: number;
   toleranceKind: "absolute" | "relative";
+  unit: string;
   algorithm: string | null;
   createdById: string | null;
 }): Promise<{ ok: true; slug: string } | { ok: false; reason: string }> {
@@ -199,6 +202,7 @@ export async function createQuestion(input: {
     grain: input.grain,
     tolerance: String(input.tolerance),
     toleranceKind: input.toleranceKind,
+    unit: input.unit,
     algorithm: input.algorithm,
     builtin: false,
     createdById: input.createdById,
@@ -413,6 +417,29 @@ export async function issueForecast(
   if (!r.ok) return { ok: false, reason: r.reason };
 
   const db = await tenantDb();
+
+  /*
+    La COLA OBSERVADA se guarda con el modelo, no se recalcula al pintar.
+
+    El bloque de análisis que sale en la pantalla de trabajo necesita la historia
+    para dibujar la frontera entre lo que se sabe y lo que se estima. Pedirla en
+    ese momento significaría cruzar la red al servicio de Python para pintar la
+    cola de tickets, y la regla de la capa de análisis es justo la contraria: se
+    lee lo ya escrito.
+
+    Va dentro de `data_profile` y no en columna propia porque es exactamente eso
+    —el perfil de los datos de ESTE modelo— y porque así viaja y caduca con él:
+    cuando se promueve otra versión, su cola es la que vale.
+  */
+  const cola = r.value.history.map((h) => ({ at: h.at, value: h.value }));
+  if (cola.length > 0) {
+    await db.execute(sql`
+      update ml_models
+         set data_profile = coalesce(data_profile, '{}'::jsonb)
+                            || jsonb_build_object('tail', ${JSON.stringify(cola)}::jsonb)
+       where id = ${m.id}
+    `);
+  }
   const filas = r.value.points.map((p) => ({
     modelId: m.id,
     period: p.at,

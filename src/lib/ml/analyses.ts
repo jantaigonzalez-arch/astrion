@@ -13,6 +13,7 @@ import {
   supplierInsights,
   ticketsForecast,
 } from "@/lib/ml/insights";
+import type { DbOrTx } from "@/lib/db";
 import type { Insight } from "@/lib/ml/insights";
 
 /**
@@ -68,6 +69,10 @@ export const SCREENS: Screen[] = [
   { prefix: "/admin/compras", label: "Compras" },
   { prefix: "/admin/refacciones", label: "Refacciones" },
   { prefix: "/admin/tickets", label: "Cola de servicio" },
+  // Ventas entra con la capa de inteligencia: sin una pantalla que admita
+  // análisis, una pregunta del módulo de ventas no tendría dónde publicarse y el
+  // usuario vería «configurada» un pronóstico que no sale por ningún lado.
+  { prefix: "/admin/crm", label: "Embudo de ventas" },
 ];
 
 export function screenByPrefix(prefix: string): Screen | undefined {
@@ -77,6 +82,22 @@ export function screenByPrefix(prefix: string): Screen | undefined {
 export type AnalysisContext = {
   /** El identificador de la URL, cuando la pantalla lo lleva. */
   id?: string;
+  /**
+   * La conexión al esquema de la empresa, cuando quien llama ya la tiene.
+   *
+   * Opcional porque los resolutores escritos a mano la piden por su cuenta con
+   * `tenantDb()`, y eso funciona: dentro de una petición está memoizada, así que
+   * no cuesta nada. Existe por dos razones concretas:
+   *
+   *   · para poder EJERCITAR un análisis desde un script, contra una base real,
+   *     sin petición HTTP delante. Sin esto, `resolve()` revienta con «headers
+   *     was called outside a request scope» y la única forma de comprobar que un
+   *     análisis produce lo que dice es abrir el navegador.
+   *   · para el día que un análisis haya que resolverlo dentro de una
+   *     transacción, donde `tenantDb()` devolvería otra conexión y no vería lo
+   *     que la transacción escribió.
+   */
+  db?: DbOrTx;
 };
 
 export type Analysis = {
@@ -280,8 +301,38 @@ export const ANALYSES: Analysis[] = [
   },
 ];
 
+/**
+ * TODOS los análisis: los escritos a mano y los que salen de las preguntas del
+ * usuario.
+ *
+ * Es asíncrono porque la segunda mitad se lee de la base, y eso es lo que le
+ * costó al registro dejar de ser una constante. Vale la pena: hasta aquí «qué
+ * puede decir el sistema» era una decisión de producto que solo cambiaba
+ * desplegando, y las preguntas que el usuario configura son exactamente eso —
+ * cosas que el sistema puede decir— creadas sin desplegar nada.
+ *
+ * Las del usuario van DETRÁS: en un empate de posición, los análisis de fábrica
+ * mandan. Son los hallazgos que piden acción hoy, y un pronóstico es contexto.
+ */
+export async function analysesAll(conexion?: DbOrTx): Promise<Analysis[]> {
+  // Importación diferida a propósito: `intelligence/published.ts` importa el
+  // tipo `Analysis` de este archivo, así que un import normal cerraría el ciclo.
+  // El tipo va en una dirección y el valor en la otra.
+  const { questionAnalyses } = await import("@/lib/intelligence/published");
+  return [...ANALYSES, ...(await questionAnalyses(conexion))];
+}
+
+/** Solo los escritos a mano. Búsqueda sincrónica, para validaciones. */
 export function analysisById(id: string): Analysis | undefined {
   return ANALYSES.find((a) => a.id === id);
+}
+
+/** Cualquiera, incluidos los del usuario. */
+export async function analysisByIdAll(
+  id: string,
+  conexion?: DbOrTx,
+): Promise<Analysis | undefined> {
+  return (await analysesAll(conexion)).find((a) => a.id === id);
 }
 
 /**
@@ -293,6 +344,12 @@ export function analysisById(id: string): Analysis | undefined {
  * configura, no nuestra.
  */
 export function placementError(analysisId: string, screenPrefix: string): string | null {
+  // Los del usuario (`q.…`) no están en `ANALYSES` y son legales en cualquier
+  // pantalla: pronostican una serie del negocio entero, no una ficha, así que la
+  // única restricción del sistema —necesitar identificador— no les aplica.
+  if (analysisId.startsWith("q.")) {
+    return screenByPrefix(screenPrefix) ? null : `No existe la pantalla «${screenPrefix}».`;
+  }
   const a = analysisById(analysisId);
   if (!a) return `No existe el análisis «${analysisId}».`;
   const s = screenByPrefix(screenPrefix);
