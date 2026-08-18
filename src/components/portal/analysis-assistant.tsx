@@ -140,7 +140,24 @@ export function AnalysisAssistant() {
   const visibles = ancho
     ? blocks
     : blocks.filter((b) => COMPACT_KINDS.includes(b.kind));
-  const hayMas = blocks.length > visibles.length;
+
+  /*
+    Hay DOS razones distintas para ofrecer «agrandar», y confundirlas escondió
+    el botón justo donde más falta hacía.
+
+    · OCULTOS   — bloques que en compacto no salen (hoy, las tendencias).
+    · ABREVIADOS — bloques que sí salen pero recortados: un pronóstico sin su
+                   serie, una proyección sin sus barras.
+
+    `hayMas` solo contaba los primeros, y funcionaba por casualidad: mientras el
+    pronóstico estuviera excluido del compacto, siempre sobraba algo. Al darle
+    forma compacta dejó de sobrar, y en el Embudo —cuyo único análisis es un
+    pronóstico— el botón desapareció mientras la propia tarjeta decía «agranda
+    para verlos». Prometía una puerta que ya no existía.
+  */
+  const ocultos = blocks.length - visibles.length;
+  const abreviados = visibles.filter(esAbreviado).length;
+  const hayMas = ocultos > 0 || abreviados > 0;
 
   // El encabezado se separa del cuerpo porque en la hoja ancha tiene que
   // quedarse quieto mientras el cuerpo rueda: con una columna larga de gráficas,
@@ -239,16 +256,19 @@ export function AnalysisAssistant() {
             );
           })}
 
-          {/* Sin esto, en compacto no habría forma de saber que hay más:
-              el botón de agrandar por sí solo no dice qué se está perdiendo. */}
+          {/* Sin esto, en compacto no habría forma de saber que hay más: el
+              botón de agrandar por sí solo no dice qué se está perdiendo. Y el
+              texto distingue los dos casos, porque no son lo mismo: uno son
+              análisis que no ves, el otro son gráficas de los que sí ves. */}
           {!ancho && hayMas && (
             <button
               type="button"
               onClick={() => setAncho(true)}
               className="w-full rounded-md border border-dashed border-border py-2 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground"
             >
-              Hay {blocks.length - visibles.length} análisis más con gráficas —
-              agrandar
+              {ocultos > 0
+                ? `Hay ${ocultos} análisis más con gráficas — agrandar`
+                : "Ver las gráficas — agrandar"}
             </button>
           )}
         </div>
@@ -383,6 +403,24 @@ function Bloque({ block, compact }: { block: Block; compact: boolean }) {
 
 function claveDe(b: Block): string {
   return b.kind === "finding" ? b.insight.id : b.id;
+}
+
+/**
+ * ¿Este bloque enseña MENOS en compacto de lo que tiene?
+ *
+ * Es lo que distingue «lo estás viendo entero» de «lo estás viendo resumido», y
+ * de ahí sale si tiene sentido ofrecer el botón de agrandar. Tiene que coincidir
+ * con lo que las tarjetas recortan de verdad —ver `compact` en
+ * `assistant-blocks.tsx`—: si se separan, el botón aparece donde no hay nada más
+ * que ver, o falta donde sí lo hay.
+ */
+function esAbreviado(b: Block): boolean {
+  // Un pronóstico esconde su serie; con un solo periodo no esconde nada.
+  if (b.kind === "forecast") return (b.series?.length ?? 0) > 1;
+  // Una proyección enseña el total en vez del reparto por semana… salvo que no
+  // tenga total, y entonces ya venía dibujando las barras.
+  if (b.kind === "projection") return b.total !== undefined && b.bars.length > 0;
+  return false;
 }
 
 /** El más grave manda: decide el color del botón y si se enciende el punto. */
