@@ -106,6 +106,13 @@
       "when": 1786852307335,
       "tag": "0014_unidad_de_la_pregunta",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786852307336,
+      "tag": "0015_indice_de_pronosticos",
+      "breakpoints": true
     }
   ]
 }

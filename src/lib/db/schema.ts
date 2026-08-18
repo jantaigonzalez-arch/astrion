@@ -2379,7 +2379,28 @@ export const mlForecasts = pgTable(
     /** Por entidad, cuando la serie se abre por pieza o por equipo. */
     subjectKey: varchar("subject_key", { length: 120 }),
   },
-  (t) => [index("ml_forecasts_periodo_idx").on(t.period)],
+  (t) => [
+    /*
+      El índice único va declarado aquí para que se VEA, aunque su definición
+      real vive en la migración 0015 y esta no la reproduce entera.
+
+      El índice de la base lleva `NULLS NOT DISTINCT`, y `uniqueIndex()` de
+      Drizzle no sabe expresarlo —solo lo admite `unique()`, que crea una
+      restricción de tabla y no un índice—. Escribirlo aquí sin esa cláusula
+      sería declarar algo distinto de lo que hay, así que la fuente de verdad es
+      el SQL y esto es el recordatorio de que existe.
+
+      Y existe por algo concreto: sin `NULLS NOT DISTINCT`, dos filas con
+      `subject_key` nulo no chocan —en SQL un nulo no es igual a otro nulo— y
+      cada reemisión del pronóstico duplicaría las seis filas en vez de
+      actualizarlas. La versión anterior lo resolvía con `coalesce(subject_key,
+      '')`, que funcionaba como índice y era inservible para el `ON CONFLICT`:
+      Postgres exige que la inferencia coincida exactamente con la definición, y
+      una expresión no coincide con una columna.
+    */
+    uniqueIndex("ml_forecasts_uq").on(t.modelId, t.period, t.subjectKey),
+    index("ml_forecasts_periodo_idx").on(t.period),
+  ],
 );
 
 /* ------------------------- Tipos ------------------------- */
