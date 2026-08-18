@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { setRequestLocale } from "next-intl/server";
 import { Handshake, Plus, Target, TrendingUp, Trophy } from "lucide-react";
 import { auth } from "@/lib/auth";
@@ -16,6 +17,10 @@ import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { PipelineBoard } from "@/components/portal/crm/pipeline-board";
 import { currentRole } from "@/lib/tenancy/context";
+import {
+  AnalysisSection,
+  AnalysisSectionSkeleton,
+} from "@/components/portal/analysis-section";
 
 export default async function CrmBoardPage({
   params,
@@ -207,6 +212,16 @@ export default async function CrmBoardPage({
           </Card>
         </section>
       )}
+      {/* El pronóstico del embudo, debajo del tablero: primero se ve el trabajo
+          en curso y después lo que se estima que va a cerrar.
+
+          En `Suspense` para que la pantalla se pinte sin esperarlo: el análisis
+          llega por streaming después. Un pronóstico no puede retrasar el trabajo
+          que la gente vino a hacer. */}
+      <Suspense fallback={<AnalysisSectionSkeleton />}>
+        <AnalysisSection route="/admin/crm" />
+      </Suspense>
+
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { setRequestLocale } from "next-intl/server";
 import { AlarmClock, ClipboardPlus, Hourglass } from "lucide-react";
 import {
@@ -12,6 +13,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { StatusBadge, PriorityBadge } from "@/components/portal/badges";
+import {
+  AnalysisSection,
+  AnalysisSectionSkeleton,
+} from "@/components/portal/analysis-section";
 import {
   CATEGORY_LABELS,
   SLA_LABELS,
@@ -211,6 +216,16 @@ export default async function AdminTicketsPage({
           query={{ sla: onlyBreached ? "vencido" : undefined }}
         />
       </Card>
+      {/* Debajo de la cola: primero lo que hay que atender hoy, después lo
+          que el análisis dice del conjunto.
+
+          En `Suspense` para que la tabla se pinte sin esperarlo: el análisis
+          llega por streaming después. Un pronóstico no puede retrasar el trabajo
+          que la gente vino a hacer. */}
+      <Suspense fallback={<AnalysisSectionSkeleton />}>
+        <AnalysisSection route="/admin/tickets" />
+      </Suspense>
+
     </div>
   );
 }

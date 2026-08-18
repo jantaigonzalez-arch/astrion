@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { setRequestLocale } from "next-intl/server";
 import { Plus } from "lucide-react";
 import { isSupport } from "@/lib/roles";
@@ -9,6 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import type { PurchaseOrderStatus } from "@/lib/db/schema";
 import { currentRole } from "@/lib/tenancy/context";
+import {
+  AnalysisSection,
+  AnalysisSectionSkeleton,
+} from "@/components/portal/analysis-section";
 
 export default async function ComprasPage({
   params,
@@ -107,6 +112,15 @@ export default async function ComprasPage({
           </div>
         </Card>
       )}
+      {/* Debajo de las órdenes, que es lo que se viene a atender.
+
+          En `Suspense` para que la pantalla se pinte sin esperarlo: el análisis
+          llega por streaming después. Un pronóstico no puede retrasar el trabajo
+          que la gente vino a hacer. */}
+      <Suspense fallback={<AnalysisSectionSkeleton />}>
+        <AnalysisSection route="/admin/compras" />
+      </Suspense>
+
     </div>
   );
 }

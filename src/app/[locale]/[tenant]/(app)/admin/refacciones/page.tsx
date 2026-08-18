@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { setRequestLocale } from "next-intl/server";
 import { isSupport } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
@@ -6,6 +7,10 @@ import { getIncomingByPart } from "@/lib/data/purchasing";
 import { AddPartForm } from "@/components/portal/part-forms";
 import { PartsInventory } from "@/components/portal/parts-inventory";
 import { currentRole } from "@/lib/tenancy/context";
+import {
+  AnalysisSection,
+  AnalysisSectionSkeleton,
+} from "@/components/portal/analysis-section";
 
 export default async function SparePartsPage({
   params,
@@ -54,6 +59,16 @@ export default async function SparePartsPage({
           incoming: incoming.get(p.id) ?? null,
         }))}
       />
+      {/* Debajo del listado: lo que hay que reponer se decide mirando primero lo
+          que hay.
+
+          En `Suspense` para que la pantalla se pinte sin esperarlo: el análisis
+          llega por streaming después. Un pronóstico no puede retrasar el trabajo
+          que la gente vino a hacer. */}
+      <Suspense fallback={<AnalysisSectionSkeleton />}>
+        <AnalysisSection route="/admin/refacciones" />
+      </Suspense>
+
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { setRequestLocale } from "next-intl/server";
 import {
   AlertTriangle,
@@ -26,6 +27,10 @@ import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { currentRole } from "@/lib/tenancy/context";
 import { cn } from "@/lib/utils";
+import {
+  AnalysisSection,
+  AnalysisSectionSkeleton,
+} from "@/components/portal/analysis-section";
 
 export default async function CuentasPorPagarPage({
   params,
@@ -250,6 +255,16 @@ export default async function CuentasPorPagarPage({
           )}
         </>
       )}
+      {/* Aquí van los avisos, el calendario y el pronóstico del mes que viene: es
+          la pantalla donde se decide si hay que mover una línea de crédito.
+
+          En `Suspense` para que la pantalla se pinte sin esperarlo: el análisis
+          llega por streaming después. Un pronóstico no puede retrasar el trabajo
+          que la gente vino a hacer. */}
+      <Suspense fallback={<AnalysisSectionSkeleton />}>
+        <AnalysisSection route="/admin/compras/cuentas-por-pagar" />
+      </Suspense>
+
     </div>
   );
 }
