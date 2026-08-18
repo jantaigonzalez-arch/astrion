@@ -23,7 +23,26 @@ export function Topbar({
     .toUpperCase();
 
   return (
-    <header className="no-print flex h-16 items-center justify-between gap-4 border-b border-border bg-card/40 px-6 backdrop-blur">
+    /*
+      `relative z-30` no es decoración: es lo que deja que los desplegables de
+      esta barra se vean POR DELANTE del contenido.
+
+      Dos cosas se juntaban para esconderlos. `backdrop-blur` crea un contexto
+      de apilamiento propio, así que el `z-50` del globo del asistente solo
+      competía DENTRO del encabezado y no contra la página. Y el encabezado no
+      tenía `z-index`, con lo que su contexto entero quedaba por debajo de
+      `<main>`, que es su hermano posterior en el DOM y por tanto se pinta
+      después.
+
+      El resultado se veía justo donde más molesta: el globo abierto sobre el
+      tablero del embudo, con las tarjetas de negocios dibujadas encima del
+      texto. En pantallas de listado no se notaba, porque las filas no llegaban
+      tan arriba — que es lo que hizo que pasara desapercibido.
+
+      `z-30` y no más: por debajo del `z-40` con el que la barra lateral asoma
+      al pasar el ratón, que sí debe taparlo.
+    */
+    <header className="no-print relative z-30 flex h-16 items-center justify-between gap-4 border-b border-border bg-card/40 px-6 backdrop-blur">
       {/* En móvil no hay barra lateral, así que la marca de la empresa vive
           aquí. Antes decía "Evoelution" a secas, en el portal de cualquiera. */}
       <div className="min-w-0 lg:hidden">

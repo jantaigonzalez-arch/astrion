@@ -350,6 +350,19 @@ export function AnalysisAssistant() {
         <div
           role="dialog"
           aria-label="Análisis de esta pantalla"
+          /*
+            El globo NO va por portal —es `absolute` y cuelga del botón, que es
+            justo lo que se quiere de un desplegable— pero paga la OTRA mitad
+            del problema del `backdrop-blur` de la barra: además de romper el
+            bloque contenedor de `fixed` (ver la nota de la hoja ancha, abajo),
+            crea un contexto de apilamiento. Este `z-50` compite dentro del
+            encabezado, no contra la página.
+
+            Lo que lo saca por delante es el `relative z-30` del propio
+            encabezado, en `topbar.tsx`. Sin él, el globo quedaba DEBAJO del
+            contenido —se veía con las tarjetas del embudo dibujadas encima del
+            texto— y aquí no había nada que lo delatara.
+          */
           className="absolute right-0 z-50 mt-2 max-h-[min(32rem,80vh)] w-[min(26rem,calc(100vw-2rem))] overflow-auto rounded-lg border border-border bg-card p-4 shadow-lg"
         >
           {encabezado}
