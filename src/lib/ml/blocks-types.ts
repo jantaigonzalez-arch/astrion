@@ -149,8 +149,20 @@ export const BLOCK_LABEL: Record<BlockKind, string> = {
 /**
  * Qué se enseña en el panel compacto.
  *
- * Solo los hallazgos: son lo accionable y lo único que se lee bien en 26 rem.
- * Las gráficas necesitan ancho, y encogerlas hasta que quepan las vuelve
- * adorno — que es peor que no enseñarlas.
+ * La regla de antes era «solo hallazgos», con este razonamiento: las gráficas
+ * necesitan ancho y encogerlas hasta que quepan las vuelve adorno. La primera
+ * mitad sigue siendo cierta; la conclusión estaba mal.
+ *
+ * Lo que no cabe en 26 rem es LA GRÁFICA, no el bloque. Un pronóstico se lee
+ * perfectamente en una línea —«837.348 MXN, entre 743.000 y 932.000»— y de
+ * hecho esa línea es lo que alguien va a mirar; la serie es el detalle. Un
+ * calendario de pagos tiene su total. Excluir el tipo entero por su gráfica
+ * dejaba el panel VACÍO en cualquier pantalla cuyo único análisis fuera un
+ * pronóstico, con el título puesto y nada debajo — y un panel vacío enseña a no
+ * volver a abrirlo, que es la lección que este componente existe para evitar.
+ *
+ * La tendencia sigue fuera, y por un motivo distinto: su contenido ES la forma
+ * de las barras. Un valor suelto no la resume, y no hay línea que la sustituya.
+ * Para eso está el aviso de «hay más» y el botón de agrandar.
  */
-export const COMPACT_KINDS: BlockKind[] = ["finding"];
+export const COMPACT_KINDS: BlockKind[] = ["finding", "forecast", "projection"];

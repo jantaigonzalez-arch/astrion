@@ -32,19 +32,35 @@ const money = (n: number, currency?: string, exacto = false) =>
 
 /* ------------------------- 2 · Proyección ------------------------- */
 
-export function ProjectionCard({ block }: { block: ProjectionBlock }) {
+export function ProjectionCard({
+  block,
+  compact = false,
+}: {
+  block: ProjectionBlock;
+  compact?: boolean;
+}) {
   return (
     <Marco
       title={block.title}
       note={block.note}
       href={block.href}
+      compact={compact}
       right={
         block.total !== undefined
           ? `total ${money(block.total, block.currency)}`
           : undefined
       }
     >
-      <Barras bars={block.bars} currency={block.currency} />
+      {/* En compacto, el TOTAL sustituye a las barras: un calendario de pagos
+          se resume en cuánto vence, y el reparto por semana es el detalle. Sin
+          barras y sin total no queda nada, así que ahí sí se dibujan. */}
+      {compact && block.total !== undefined ? (
+        <p className="text-2xl font-semibold tabular-nums">
+          {money(block.total, block.currency)}
+        </p>
+      ) : (
+        <Barras bars={block.bars} currency={block.currency} />
+      )}
     </Marco>
   );
 }
@@ -71,9 +87,17 @@ export function TrendCard({ block }: { block: TrendBlock }) {
 
 /* ------------------------- 4 · Pronóstico ------------------------- */
 
-export function ForecastCard({ block }: { block: ForecastBlock }) {
+export function ForecastCard({
+  block,
+  compact = false,
+}: {
+  block: ForecastBlock;
+  compact?: boolean;
+}) {
   const { lower, upper } = block.band;
-  const serie = block.series ?? [];
+  // En compacto no se dibuja la serie: es lo único que de verdad no cabe en
+  // 26 rem. La cifra y su banda sí, y son lo que alguien mira.
+  const serie = compact ? [] : (block.series ?? []);
   const rango = upper - lower;
   // Dónde cae el valor dentro de su propia banda. Si está descentrado, la
   // estimación es asimétrica y conviene que se vea.
@@ -84,11 +108,14 @@ export function ForecastCard({ block }: { block: ForecastBlock }) {
       title={block.title}
       note={block.note}
       href={block.href}
-      right={`${block.model.template} v${block.model.version}`}
+      right={compact ? `v${block.model.version}` : `${block.model.template} v${block.model.version}`}
       icon={<FlaskConical className="size-3.5" />}
+      compact={compact}
     >
       <div className="flex items-baseline gap-2">
-        <span className="text-3xl font-semibold tabular-nums">{block.value}</span>
+        <span className={cn("font-semibold tabular-nums", compact ? "text-2xl" : "text-3xl")}>
+          {block.value.toLocaleString("es-MX")}
+        </span>
         <span className="text-sm text-muted-foreground">{block.unit}</span>
       </div>
 
@@ -105,8 +132,8 @@ export function ForecastCard({ block }: { block: ForecastBlock }) {
           />
         </div>
         <div className="mt-1.5 flex justify-between text-xs tabular-nums text-muted-foreground">
-          <span>{lower} {block.unit}</span>
-          <span>{upper} {block.unit}</span>
+          <span>{lower.toLocaleString("es-MX")} {block.unit}</span>
+          <span>{upper.toLocaleString("es-MX")} {block.unit}</span>
         </div>
       </div>
 
@@ -135,7 +162,11 @@ export function ForecastCard({ block }: { block: ForecastBlock }) {
       <p className="mt-2 text-xs text-muted-foreground">
         Sostenido por {block.support}{" "}
         {block.support === 1 ? "periodo histórico" : "periodos históricos"}
-        {serie.length > 1 ? ` · ${serie.length} periodos estimados` : ""}.
+        {serie.length > 1 ? ` · ${serie.length} periodos estimados` : ""}
+        {compact && (block.series?.length ?? 0) > 1
+          ? ` · ${block.series!.length} periodos, agranda para verlos`
+          : ""}
+        .
       </p>
     </Marco>
   );
@@ -149,6 +180,7 @@ function Marco({
   right,
   href,
   icon,
+  compact = false,
   children,
 }: {
   title: string;
@@ -156,10 +188,17 @@ function Marco({
   right?: string;
   href?: string;
   icon?: React.ReactNode;
+  /** En el globo del asistente. Recorta el motivo y aprieta el espaciado. */
+  compact?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-border bg-secondary/25 p-4">
+    <section
+      className={cn(
+        "rounded-lg border border-border bg-secondary/25",
+        compact ? "p-3" : "p-4",
+      )}
+    >
       <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-medium">
           {icon}
@@ -171,7 +210,17 @@ function Marco({
       </div>
       {/* El «porqué» va antes del dibujo: una gráfica sin su motivo se mira, no
           se lee. Es el mismo papel que `because` en un hallazgo. */}
-      <p className="mb-3 text-xs leading-relaxed text-muted-foreground">{note}</p>
+      {/* El motivo se recorta en compacto, no se quita: una gráfica sin su
+          porqué se mira y no se lee, y eso vale igual para una cifra sola. Tres
+          líneas caben; el texto entero empujaría la cifra fuera del globo. */}
+      <p
+        className={cn(
+          "mb-3 text-xs leading-relaxed text-muted-foreground",
+          compact && "line-clamp-3",
+        )}
+      >
+        {note}
+      </p>
       {children}
       {href && (
         <Link

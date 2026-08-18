@@ -127,7 +127,16 @@ export function AnalysisAssistant() {
   // en pantallas donde no pasa nada.
   const worst = peorTono(findings.map((b) => b.insight));
   const alerting = worst === "risk" || worst === "watch";
-  // En compacto solo caben los hallazgos; el resto necesita ancho.
+  /*
+    En compacto entran los tipos que tienen forma de una línea; el resto
+    necesita ancho. Ver `COMPACT_KINDS`.
+
+    Antes se filtraba el pronóstico entero por su gráfica, y el efecto era el
+    contrario del buscado: en una pantalla cuyo único análisis fuera un
+    pronóstico, el globo salía con el título puesto y NADA debajo. Un panel
+    vacío enseña a no volver a abrirlo — la lección exacta que este componente
+    existe para evitar. Lo que no cabe es la gráfica, no el bloque.
+  */
   const visibles = ancho
     ? blocks
     : blocks.filter((b) => COMPACT_KINDS.includes(b.kind));
@@ -223,7 +232,7 @@ export function AnalysisAssistant() {
                 )}
                 <div className="grid gap-3">
                   {grupo.map((b) => (
-                    <Bloque key={claveDe(b)} block={b} />
+                    <Bloque key={claveDe(b)} block={b} compact={!ancho} />
                   ))}
                 </div>
               </section>
@@ -356,16 +365,19 @@ export function AnalysisAssistant() {
 }
 
 /** Cada tipo tiene su forma. La clasificación no sirve si todo se ve igual. */
-function Bloque({ block }: { block: Block }) {
+function Bloque({ block, compact }: { block: Block; compact: boolean }) {
   switch (block.kind) {
     case "finding":
+      // El hallazgo ya es una línea: no tiene forma compacta que valga.
       return <InsightItem insight={block.insight} />;
     case "projection":
-      return <ProjectionCard block={block} />;
+      return <ProjectionCard block={block} compact={compact} />;
     case "trend":
+      // La tendencia no entra en compacto —su contenido es la forma de las
+      // barras— así que aquí siempre llega en la hoja ancha.
       return <TrendCard block={block} />;
     case "forecast":
-      return <ForecastCard block={block} />;
+      return <ForecastCard block={block} compact={compact} />;
   }
 }
 
