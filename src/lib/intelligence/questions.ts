@@ -467,7 +467,56 @@ export async function issueForecast(
       },
     });
 
+  await settleForecasts(slug);
   return { ok: true, points: filas.length };
+}
+
+/**
+ * Escribe QUÉ PASÓ DE VERDAD en los periodos que ya cerraron.
+ *
+ * Es lo que cierra el lazo, y hasta aquí no lo hacía nadie: la columna `actual`
+ * existía desde el primer día y llegaba siempre vacía. Un sistema que promete y
+ * nunca comprueba no es un sistema de pronóstico, es un generador de cifras — y
+ * lo peor es que se ve idéntico a uno bueno hasta que alguien pregunta si acierta.
+ *
+ * El valor observado sale de la COLA que devuelve el perfilado, que ya lee la
+ * serie completa: no hay una segunda consulta ni una segunda definición de lo
+ * que significa «lo que se facturó ese mes». Que la verdad y la promesa salgan
+ * de la misma consulta es lo que hace comparable la comparación.
+ *
+ * Se liquida al REEMITIR, y eso tiene una consecuencia honesta: un pronóstico
+ * que nadie recalcula nunca se liquida. Es aceptable mientras recalcular sea un
+ * botón —el mismo que se pulsa para refrescar el número—, y el día que esto
+ * corra solo, aquí es donde se engancha.
+ *
+ * Nunca sobrescribe un desenlace ya escrito: `actual is null` en el `where`. Una
+ * predicción es un hecho de su momento y su resultado también; reescribirlo
+ * borraría la única evidencia de si el modelo se está degradando.
+ */
+export async function settleForecasts(slug: string): Promise<number> {
+  const q = await questionBySlug(slug);
+  if (!q) return 0;
+
+  const perfil = await intel.perfilar(q.subject);
+  if (!perfil.ok || perfil.value.tail.length === 0) return 0;
+
+  const db = await tenantDb();
+  let escritos = 0;
+
+  for (const observado of perfil.value.tail) {
+    const r = await db.execute(sql`
+      update ml_forecasts f
+         set actual = ${observado.value}, settled_at = now()
+        from ml_models m
+       where m.id = f.model_id
+         and m.template = ${slug}
+         and f.period = ${observado.at}::date
+         and f.actual is null
+    `);
+    escritos += (r as unknown as { count?: number }).count ?? 0;
+  }
+
+  return escritos;
 }
 
 /** Lo pronosticado por el modelo en producción, para la pantalla. */
