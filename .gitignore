@@ -62,3 +62,18 @@ import-report.csv
 services/intelligence/.venv/
 services/intelligence/**/__pycache__/
 services/intelligence/.pytest_cache/
+
+# Andamiaje de medición. Scripts que cronometran y cuentan consultas de la capa
+# de datos contra una base real, con los stubs que les permiten llamarla sin un
+# navegador delante (`tsconfig.probe.json` los enruta).
+#
+# Fuera del repo a propósito: dependen de que la base local tenga volumen —los
+# números no significan nada contra una base vacía— y los stubs sustituyen la
+# sesión y el contexto de inquilino, que es exactamente lo que nadie debería
+# importar por accidente desde la aplicación.
+scripts/_probe-*.ts
+scripts/_stub-*.ts
+tsconfig.probe.json
+probe*.mts
+.probe/
+scripts/_dash.ts
