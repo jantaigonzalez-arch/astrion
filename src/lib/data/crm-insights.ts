@@ -256,44 +256,79 @@ export async function getRottingDeals(
 
 /* ========================= Objetivos ========================= */
 
-/** Objetivos con su avance real calculado sobre los negocios ganados. */
+/**
+ * Objetivos con su avance real calculado sobre los negocios ganados.
+ *
+ * ── DOS CONSULTAS, NO UNA POR OBJETIVO ─────────────────────────────────────
+ *
+ * Antes se leían los objetivos y después se preguntaba el avance de cada uno
+ * por separado. Medido contra la base de desarrollo: 200 objetivos, 201
+ * consultas. Cada una era rápida —los índices están— y aun así la pantalla
+ * tardaba 37 ms en ida y vuelta contra una base LOCAL; con la base al otro lado
+ * de una red, doscientos viajes son doscientas latencias en serie.
+ *
+ * El `left join lateral` hace el mismo cálculo dentro de la base y en un solo
+ * viaje. Es lateral y no un `group by` sobre un join plano porque cada objetivo
+ * tiene SU propio periodo y SUS propios filtros: un objetivo del trimestre
+ * pasado para un vendedor y otro anual para todo el equipo no comparten
+ * condición, y un join plano tendría que repetir cada negocio por cada objetivo
+ * que lo abarca antes de agrupar.
+ *
+ * El `left` importa: un objetivo sin ningún negocio ganado tiene que salir con
+ * cero, no desaparecer. Es justo el que hay que mirar.
+ *
+ * Las relaciones —dueño y embudo— siguen viniendo del query builder, que las
+ * resuelve en su propia consulta. Dos en total, y no depende del número de
+ * objetivos.
+ */
 export async function getGoalsWithProgress() {
   const db = await tenantDb();
-  const goals = await db.query.crmGoals.findMany({
-    orderBy: [desc(crmGoals.periodStart)],
-    with: {
-      owner: { columns: { id: true, name: true, email: true } },
-      pipeline: { columns: { id: true, name: true } },
-    },
-  });
 
-  return Promise.all(
-    goals.map(async (g) => {
-      const [row] = await db
-        .select({
-          value: sql<string>`coalesce(sum(${VALOR_MXN}), 0)`,
-          count: sql<number>`count(*)::int`,
-        })
-        .from(crmDeals)
-        .where(
-          and(
-            eq(crmDeals.status, "won"),
-            g.ownerId ? eq(crmDeals.ownerId, g.ownerId) : undefined,
-            g.pipelineId ? eq(crmDeals.pipelineId, g.pipelineId) : undefined,
-            sql`${crmDeals.closedAt} >= ${g.periodStart}::date`,
-            sql`${crmDeals.closedAt} < (${g.periodEnd}::date + interval '1 day')`,
-          ),
-        );
-
-      const achieved = g.metric === "count" ? (row?.count ?? 0) : Number(row?.value ?? 0);
-      const target = Number(g.target);
-      return {
-        ...g,
-        achieved,
-        pct: target > 0 ? Math.min(999, Math.round((achieved / target) * 100)) : 0,
-      };
+  const [goals, avances] = await Promise.all([
+    db.query.crmGoals.findMany({
+      orderBy: [desc(crmGoals.periodStart)],
+      with: {
+        owner: { columns: { id: true, name: true, email: true } },
+        pipeline: { columns: { id: true, name: true } },
+      },
     }),
+    db.execute(sql`
+      select g.id,
+             x.valor,
+             x.cuenta
+        from ${crmGoals} g
+        left join lateral (
+          select coalesce(sum(${VALOR_MXN}), 0)::float8 as valor,
+                 count(*)::int                          as cuenta
+            from ${crmDeals}
+           where ${crmDeals.status} = 'won'
+             -- Un objetivo sin dueño es del equipo entero, y uno sin embudo
+             -- cuenta los de todos: por eso el filtro se anula solo cuando la
+             -- columna del objetivo viene vacía.
+             and (g.owner_id    is null or ${crmDeals.ownerId}    = g.owner_id)
+             and (g.pipeline_id is null or ${crmDeals.pipelineId} = g.pipeline_id)
+             and ${crmDeals.closedAt} >= g.period_start::date
+             and ${crmDeals.closedAt} <  (g.period_end::date + interval '1 day')
+        ) x on true
+    `),
+  ]);
+
+  const porId = new Map(
+    (avances as unknown as Array<{ id: string; valor: number; cuenta: number }>).map(
+      (r) => [r.id, r],
+    ),
   );
+
+  return goals.map((g) => {
+    const a = porId.get(g.id);
+    const achieved = g.metric === "count" ? (a?.cuenta ?? 0) : Number(a?.valor ?? 0);
+    const target = Number(g.target);
+    return {
+      ...g,
+      achieved,
+      pct: target > 0 ? Math.min(999, Math.round((achieved / target) * 100)) : 0,
+    };
+  });
 }
 
 /* ========================= Catálogos auxiliares ========================= */

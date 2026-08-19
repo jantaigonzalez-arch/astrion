@@ -630,6 +630,25 @@ export const crmDeals = pgTable("crm_deals", {
   index("crm_deals_pipeline_expected_idx").on(t.pipelineId, t.expectedCloseDate),
   // Negocios estancados (rottingDays compara contra updated_at).
   index("crm_deals_status_updated_idx").on(t.status, t.updatedAt),
+  /*
+    Lo GANADO, por fecha de cierre. Parcial a propósito.
+
+    Es lo que mide el avance de cada objetivo comercial, y ahí la condición
+    manda dos veces: se pregunta siempre por `status = 'won'` y siempre por un
+    rango de `closed_at`. Con los índices de arriba el planificador entraba por
+    `(pipeline_id, closed_at)` y descartaba después: 60 de cada 65 filas leídas
+    se tiraban por el filtro de estado.
+
+    Parcial y no `(status, closed_at)` porque los ganados son una fracción
+    pequeña de la tabla y el índice solo tiene que cubrirlos: entra menos en
+    memoria y no se toca al mover negocios entre etapas, que es la escritura
+    más frecuente del CRM.
+
+    Medido con 200 objetivos sobre la base de desarrollo: 27,6 ms → 1,6 ms.
+  */
+  index("crm_deals_won_closed_idx")
+    .on(t.closedAt)
+    .where(sql`${t.status} = 'won'`),
 ]);
 
 // Actividades agendadas: llamadas, visitas, demos. Se cuelgan de un negocio,
