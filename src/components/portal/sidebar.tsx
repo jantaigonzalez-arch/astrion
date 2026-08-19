@@ -35,7 +35,88 @@ import type { MembershipRole } from "@/lib/db/platform";
 import { isAdminRole, ROLE_LABELS } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 
-type NavItem = { href: string; label: string; Icon: LucideIcon };
+type NavItem = {
+  href: string;
+  label: string;
+  Icon: LucideIcon;
+  /** Marca de estado al final del renglón. Hoy solo la usan los tableros. */
+  badge?: string;
+};
+
+/**
+ * Un tablero publicable, tal como lo necesita el menú.
+ *
+ * Llega ya resuelto desde el servidor —qué módulo, cómo se llama, si está
+ * publicado— porque decidirlo aquí exigiría leer la base desde el navegador
+ * para pintar una barra lateral.
+ */
+export type TableroItem = {
+  id: string;
+  label: string;
+  /** La pantalla del módulo. Es lo que decide si este rol lo ve. */
+  home: string;
+  publicado: boolean;
+};
+
+/**
+ * El icono de cada tablero es el DE SU MÓDULO, no uno de tablero.
+ *
+ * Plegada, la barra es una tira de iconos sin texto, y siete tableros con el
+ * mismo icono de rejilla serían siete renglones indistinguibles — el problema
+ * que este menú ya evita a mano entre el levantamiento y la requisición. Con el
+ * icono del módulo, el tablero de Compras se reconoce por lo mismo que Compras.
+ */
+const ICONO_DE_MODULO: Record<string, LucideIcon> = {
+  servicio: Inbox,
+  ventas: KanbanSquare,
+  clientes: Building2,
+  refacciones: Package,
+  compras: ShoppingCart,
+  pagos: Wallet,
+  rentabilidad: TrendingUp,
+};
+
+/**
+ * Añade la sección de tableros al final del menú de un rol.
+ *
+ * Va AL FINAL y no dentro de Análisis por lo mismo que ordena el resto: las
+ * secciones siguen el circuito del trabajo —atiendo, vendo, tengo, compro— y un
+ * tablero no es un paso de ese circuito, es la lectura de todos ellos. Y no
+ * dentro de Análisis porque hay roles que no tienen esa sección y sí tienen
+ * tableros que mirar.
+ *
+ * Qué tableros se ven se deduce del MENÚ QUE YA SE ARMÓ, no de una segunda
+ * tabla de permisos por rol: si la pantalla del módulo no está en el menú de
+ * este rol, su tablero tampoco. Escribir la regla dos veces es garantizar que
+ * algún día digan cosas distintas, y el síntoma sería el peor de todos —un
+ * tablero de cuentas por pagar en el menú de soporte.
+ */
+function conTableros(
+  groups: NavGroup[],
+  tableros: TableroItem[],
+  role: MembershipRole,
+): NavGroup[] {
+  const visibles = new Set(groups.flatMap((g) => g.items.map((i) => i.href)));
+
+  const items = tableros
+    .filter((t) => visibles.has(t.home))
+    // Sin publicar solo lo ve quien puede componerlo, igual que el botón del
+    // módulo: nadie debería encontrarse un tablero a medio ordenar porque
+    // alguien salió a comer.
+    .filter((t) => t.publicado || isAdminRole(role))
+    .map(
+      (t): NavItem => ({
+        href: `/admin/dashboard/${t.id}`,
+        label: t.label,
+        Icon: ICONO_DE_MODULO[t.id] ?? LayoutDashboard,
+        badge: t.publicado ? undefined : "borrador",
+      }),
+    );
+
+  // Sin tableros no hay sección: un encabezado «Tableros» sobre una lista vacía
+  // ocupa sitio para decir que no hay nada.
+  return items.length > 0 ? [...groups, { section: "Tableros", items }] : groups;
+}
 
 /**
  * Un grupo del menú. `section` es opcional a propósito: el Panel va suelto
@@ -67,7 +148,7 @@ type NavGroup = { section?: string; items: NavItem[] };
  * en realidad es de dónde salen todos: el resumen del día, antes de elegir a
  * qué entrar.
  */
-function navFor(role: MembershipRole): NavGroup[] {
+function navFor(role: MembershipRole, tableros: TableroItem[]): NavGroup[] {
   const panel: NavItem = {
     href: "/dashboard",
     label: role === "client" ? "Inicio" : "Panel",
@@ -136,12 +217,16 @@ function navFor(role: MembershipRole): NavGroup[] {
   ];
 
   if (role === "sales") {
-    return [
-      { items: [panel] },
-      { section: "Ventas", items: ventas },
-      { section: "Clientes", items: clientes },
-      { section: "Análisis", items: analisis },
-    ];
+    return conTableros(
+      [
+        { items: [panel] },
+        { section: "Ventas", items: ventas },
+        { section: "Clientes", items: clientes },
+        { section: "Análisis", items: analisis },
+      ],
+      tableros,
+      role,
+    );
   }
 
   // Servicio es atender: la cola, lo que se levanta, lo que se resuelve.
@@ -181,12 +266,16 @@ function navFor(role: MembershipRole): NavGroup[] {
   };
 
   if (role === "agent") {
-    return [
-      { items: [panel] },
-      { section: "Servicio", items: servicio },
-      { section: "Inventario", items: inventario },
-      { section: "Compras", items: compras },
-    ];
+    return conTableros(
+      [
+        { items: [panel] },
+        { section: "Servicio", items: servicio },
+        { section: "Inventario", items: inventario },
+        { section: "Compras", items: compras },
+      ],
+      tableros,
+      role,
+    );
   }
 
   // El orden de las secciones sigue el CIRCUITO, no el organigrama.
@@ -201,29 +290,33 @@ function navFor(role: MembershipRole): NavGroup[] {
   // mover Ventas: son la misma pregunta en dos tiempos —qué hay hoy y qué viene
   // en camino—, y meter Ventas entre ellos habría arreglado una lectura
   // rompiendo otra.
-  return [
-    { items: [panel] },
-    { section: "Servicio", items: servicio },
-    { section: "Ventas", items: ventas },
-    { section: "Clientes", items: clientes },
-    { section: "Inventario", items: inventario },
-    { section: "Compras", items: [...compras, porPagar] },
-    // Rentabilidad solo la ve el administrador: mide el margen del negocio.
-    {
-      section: "Análisis",
-      items: [
-        { href: "/admin/rentabilidad", label: "Rentabilidad", Icon: TrendingUp },
-        ...analisis,
-        // La inteligencia va en Análisis y no en Configuración a propósito: no
-        // es un ajuste que se deja puesto, es una herramienta que se consulta
-        // para decidir, igual que Rentabilidad. Y no en una sección propia:
-        // es donde se configura lo que las otras pantallas van a decir, no un
-        // dominio de negocio aparte. Quien entra aquí viene de preguntarse
-        // «cómo vamos», no «qué modelo entreno».
-        { href: "/admin/inteligencia", label: "Inteligencia", Icon: Brain },
-      ],
-    },
-  ];
+  return conTableros(
+    [
+      { items: [panel] },
+      { section: "Servicio", items: servicio },
+      { section: "Ventas", items: ventas },
+      { section: "Clientes", items: clientes },
+      { section: "Inventario", items: inventario },
+      { section: "Compras", items: [...compras, porPagar] },
+      // Rentabilidad solo la ve el administrador: mide el margen del negocio.
+      {
+        section: "Análisis",
+        items: [
+          { href: "/admin/rentabilidad", label: "Rentabilidad", Icon: TrendingUp },
+          ...analisis,
+          // La inteligencia va en Análisis y no en Configuración a propósito: no
+          // es un ajuste que se deja puesto, es una herramienta que se consulta
+          // para decidir, igual que Rentabilidad. Y no en una sección propia:
+          // es donde se configura lo que las otras pantallas van a decir, no un
+          // dominio de negocio aparte. Quien entra aquí viene de preguntarse
+          // «cómo vamos», no «qué modelo entreno».
+          { href: "/admin/inteligencia", label: "Inteligencia", Icon: Brain },
+        ],
+      },
+    ],
+    tableros,
+    role,
+  );
 }
 
 /** Cookie del estado plegado. La lee el layout para que no haya parpadeo. */
@@ -249,13 +342,15 @@ export function Sidebar({
   role,
   brand,
   defaultCollapsed = false,
+  tableros = [],
 }: {
   role: MembershipRole;
   brand: TenantBrand;
   defaultCollapsed?: boolean;
+  tableros?: TableroItem[];
 }) {
   const pathname = usePathname();
-  const groups = navFor(role);
+  const groups = navFor(role, tableros);
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
 
   /**
@@ -395,8 +490,13 @@ export function Sidebar({
                   </p>
                 ))}
               <ul className="space-y-1">
-                {g.items.map(({ href, label, Icon }) => {
+                {g.items.map(({ href, label, Icon, badge }) => {
                   const active = href === bestMatch;
+                  // La marca entra en el nombre largo porque plegada NO hay
+                  // dónde pintarla, y «borrador» es justo lo que hay que saber
+                  // antes de entrar: es la diferencia entre un tablero que el
+                  // equipo ve y uno que todavía no.
+                  const completo = badge ? `${label} · ${badge}` : label;
                   return (
                     <li key={href}>
                       <Link
@@ -405,11 +505,23 @@ export function Sidebar({
                         // Desplegada el nombre se lee; el `title` solo hace
                         // falta en el riel, y ahí es la red de seguridad de
                         // quien no espera a que asome.
-                        title={wide ? undefined : label}
-                        aria-label={wide ? undefined : label}
+                        title={wide ? undefined : completo}
+                        aria-label={wide ? undefined : completo}
                       >
                         <Icon className="size-4 shrink-0" />
-                        {wide && label}
+                        {wide && <span className="min-w-0 truncate">{label}</span>}
+                        {wide && badge && (
+                          <span
+                            className={cn(
+                              "ml-auto shrink-0 rounded border px-1 py-0.5 text-[10px]",
+                              active
+                                ? "border-primary-foreground/40 text-primary-foreground"
+                                : "border-warning/40 text-warning",
+                            )}
+                          >
+                            {badge}
+                          </span>
+                        )}
                       </Link>
                     </li>
                   );

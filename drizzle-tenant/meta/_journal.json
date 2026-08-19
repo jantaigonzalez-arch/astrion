@@ -113,6 +113,13 @@
       "when": 1786852307336,
       "tag": "0015_indice_de_pronosticos",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786852307337,
+      "tag": "0016_dashboards",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 import "server-only";
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
+import type { DbOrTx } from "@/lib/db";
 import {
   contracts,
   contractEquipment,
@@ -9,17 +10,54 @@ import {
 } from "@/lib/db/schema";
 import { listTenantMembers } from "@/lib/data/people";
 
-export async function getContracts(salesRepId?: string) {
-  const db = await tenantDb();
+/**
+ * Contratos, opcionalmente de un vendedor y opcionalmente una página.
+ *
+ * `page` es OPCIONAL y no obligatorio a propósito: esta función la usan tres
+ * sitios con necesidades distintas. El listado quiere una página; el panel
+ * quiere los del vendedor para contarlos; y «contratos por vencer», en la capa
+ * de análisis, necesita mirarlos TODOS —un contrato que vence en 40 días puede
+ * estar en cualquier página, y paginarlo ahí convertiría el aviso en una
+ * lotería—. Obligar a paginar habría roto justo al que no puede paginar.
+ */
+export async function getContracts(
+  salesRepId?: string,
+  conexion?: DbOrTx,
+  page?: { limit: number; offset: number },
+) {
+  const db = conexion ?? (await tenantDb());
   return db.query.contracts.findMany({
     where: salesRepId ? eq(contracts.salesRepId, salesRepId) : undefined,
     orderBy: [desc(contracts.createdAt)],
+    ...(page ? { limit: page.limit, offset: page.offset } : {}),
     with: {
       client: { columns: { id: true, name: true, email: true, company: true } },
       salesRep: { columns: { id: true, name: true, email: true } },
       equipmentLinks: { with: { equipment: true } },
     },
   });
+}
+
+/**
+ * Cuántos contratos hay, para el paginador.
+ *
+ * Consulta aparte y no una ventana dentro de la anterior: aquella usa el API
+ * relacional —trae equipos y sus enlaces— y ahí no cabe un `count(*) over ()`.
+ * Se lanzan en paralelo, así que cuesta latencia cero; lo que se acepta es que
+ * entre las dos alguien firme un contrato y el recuento quede corto por uno
+ * durante un instante. En un paginador eso es tolerable; en un total de dinero
+ * no lo sería.
+ */
+export async function countContracts(
+  salesRepId?: string,
+  conexion?: DbOrTx,
+): Promise<number> {
+  const db = conexion ?? (await tenantDb());
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(contracts)
+    .where(salesRepId ? eq(contracts.salesRepId, salesRepId) : undefined);
+  return row?.n ?? 0;
 }
 
 /** Detalle completo: equipos amparados con sus módulos y submódulos. */

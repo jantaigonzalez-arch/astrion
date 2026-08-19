@@ -7,6 +7,7 @@ import { getIncomingByPart } from "@/lib/data/purchasing";
 import { AddPartForm } from "@/components/portal/part-forms";
 import { PartsInventory } from "@/components/portal/parts-inventory";
 import { currentRole } from "@/lib/tenancy/context";
+import { DashboardFab } from "@/components/portal/dashboard-fab";
 import {
   AnalysisSection,
   AnalysisSectionSkeleton,
@@ -69,6 +70,17 @@ export default async function SparePartsPage({
         <AnalysisSection route="/admin/refacciones" />
       </Suspense>
 
+
+      {/* La salida al tablero del módulo. Flotante, así que no ocupa
+          sitio en el flujo — y va al FINAL del contenedor justo por eso:
+          puesto arriba, el `space-y` le daría margen al hermano siguiente
+          y la página se movería 24 px cuando el botón llega por streaming.
+
+          En `Suspense` porque decidir si aparece exige leer el estado del
+          tablero, y eso no puede retrasar la pantalla. */}
+      <Suspense fallback={null}>
+        <DashboardFab modulo="refacciones" />
+      </Suspense>
     </div>
   );
 }

@@ -6,9 +6,44 @@ import { auth } from "@/lib/auth";
 import { getTenantContext } from "@/lib/tenancy/context";
 import { getTenantBrand } from "@/lib/data/platform";
 import { tenantBase } from "@/lib/nav-server";
-import { Sidebar, SIDEBAR_COOKIE } from "@/components/portal/sidebar";
+import { Sidebar, SIDEBAR_COOKIE, type TableroItem } from "@/components/portal/sidebar";
 import { Topbar } from "@/components/portal/topbar";
 import { TenantBar } from "@/components/portal/tenant-bar";
+import { dashboardStates } from "@/lib/ml/dashboards";
+
+/**
+ * Los tableros que la barra lateral puede llegar a enseñar.
+ *
+ * Se filtra AQUÍ lo que no tiene nada que enseñar —cero bloques encendidos y sin
+ * publicar— y no en el menú: un tablero vacío no es una opción que alguien
+ * quiera ver, y mandarlo al cliente para que lo descarte es mandar trabajo y
+ * datos de más en cada navegación. Quién ve cuál sí se decide en el menú, que
+ * es donde ya vive el mapa de rol a pantallas.
+ *
+ * Un fallo aquí NO tumba el portal. Es la misma garantía que el tablero se da a
+ * sí mismo resolviendo bloque a bloque con `allSettled`, y aquí pesa más: esto
+ * cuelga del layout, así que una consulta rota —una migración que todavía no
+ * corrió en un despliegue, por ejemplo— dejaría sin portal a todo el mundo para
+ * no poder pintar una sección del menú.
+ */
+async function tablerosDelMenu(): Promise<TableroItem[]> {
+  try {
+    return (await dashboardStates())
+      .filter((s) => s.bloques > 0 || s.publishedAt)
+      .map((s) => ({
+        id: s.modulo.id,
+        // El nombre puesto por alguien, si lo hay; si no, el del módulo. El de
+        // nacimiento —«Dashboard de Compras»— sobra bajo un encabezado que ya
+        // dice «Tableros».
+        label: s.nombre ?? s.modulo.label,
+        home: s.modulo.home,
+        publicado: Boolean(s.publishedAt),
+      }));
+  } catch (e) {
+    console.error("[layout] no se pudieron leer los tableros del menú", e);
+    return [];
+  }
+}
 
 export default async function TenantAppLayout({
   children,
@@ -52,7 +87,15 @@ export default async function TenantAppLayout({
 
   // La marca es de ESTA empresa. Se resuelve una vez aquí y baja a las dos
   // piezas de chrome que la muestran.
-  const brand = (await getTenantBrand(tenant)) ?? {
+  //
+  // Va junto a los tableros y no antes: son dos lecturas independientes y
+  // encadenarlas sumaría sus tiempos en cada navegación del portal.
+  const [marca, tableros] = await Promise.all([
+    getTenantBrand(tenant),
+    tablerosDelMenu(),
+  ]);
+
+  const brand = marca ?? {
     name: ctx!.name,
     brandName: null,
     logoUrl: null,
@@ -66,7 +109,12 @@ export default async function TenantAppLayout({
   return (
     <SessionProvider session={session}>
       <div className="flex min-h-screen">
-        <Sidebar role={ctx!.role} brand={brand} defaultCollapsed={sidebarCollapsed} />
+        <Sidebar
+          role={ctx!.role}
+          brand={brand}
+          defaultCollapsed={sidebarCollapsed}
+          tableros={tableros}
+        />
         <div className="flex min-w-0 flex-1 flex-col">
           {isPlatform && (
             <TenantBar

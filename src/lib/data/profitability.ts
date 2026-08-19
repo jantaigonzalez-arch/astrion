@@ -1,4 +1,5 @@
 import "server-only";
+import type { DbOrTx } from "@/lib/db";
 import { sql, type SQL } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
 
@@ -39,16 +40,52 @@ export type Rates = {
 export type Period = { since: Date | null };
 
 /**
- * Horas y refacciones por ticket.
+ * Horas y refacciones por ticket, DENTRO DEL PERIODO.
  *
- * Se agregan en dos ramas SEPARADAS y no en un join encadenado. Con
+ * ── DOS RAMAS SEPARADAS ────────────────────────────────────────────────────
+ *
+ * Se agregan en dos ramas y no en un join encadenado. Con
  * `tickets ⋈ comentarios ⋈ refacciones` en una sola pasada, un comentario de
  * dos horas con tres refacciones aporta seis horas: el join multiplica las
  * filas y la suma cuenta cada hora tantas veces como refacciones cuelguen de
  * ella. Es el error clásico de este tipo de consulta y no se nota mirando el
  * total —solo sale un poco alto—, así que vale la pena el CTE extra.
+ *
+ * ── Y POR QUÉ EL PERIODO ENTRA AQUÍ Y NO SOLO DESPUÉS ──────────────────────
+ *
+ * Porque si no, no sirve de nada. El periodo se aplicaba únicamente al elegir
+ * los tickets, ya con las dos ramas calculadas sobre el histórico ENTERO: pedir
+ * «este mes» agregaba igualmente los 19 073 comentarios y los 6 216 consumos de
+ * toda la vida de la empresa para después quedarse con los de treinta días.
+ * Medido: 45 369 filas leídas para responder por 1 007 tickets, y 44 362 de
+ * ellas no dependían del periodo pedido.
+ *
+ * `tix` fija el conjunto UNA vez y las dos ramas se cuelgan de él, así que
+ * ahora las tres partes miran lo mismo. La nota de `periodOf` en la pantalla
+ * decía que «este mes de verdad lee un mes»; a partir de aquí es cierto.
+ *
+ * Con el periodo en «Todo» se conserva la forma de antes, y está medido por
+ * qué: ver el comentario dentro de la función. `tix` existe igual en los dos
+ * caminos para que la consulta de arriba no tenga que saber cuál le tocó.
  */
-const BASE = sql`
+function base(period: Period): SQL {
+  /*
+    Sin corte no hay nada que recortar, y entonces `tix` solo estorba: hay que
+    materializar los 14 151 tickets y volver a cruzarlos contra los comentarios
+    en las dos ramas. Medido, ese camino leía 119 745 filas contra las 77 292
+    de recorrer los comentarios directo — casi el doble de trabajo para no
+    descartar nada, y ~2× más lento.
+
+    Así que «Todo» conserva la forma de siempre. No es un caso especial por
+    comodidad: es que la pregunta es literalmente distinta, y la forma barata de
+    contestar «cuánto de esto» no es la misma que la de «cuánto de todo».
+  */
+  if (!period.since) {
+    return sql`
+  tix as (
+    select t.id, t.reference, t.subject, t.created_by_id, t.created_at
+      from tickets t
+  ),
   horas as (
     select ticket_id, coalesce(sum(hours), 0) as h
       from ticket_comments
@@ -63,6 +100,31 @@ const BASE = sql`
      group by c.ticket_id
   )
 `;
+  }
+
+  return sql`
+  tix as (
+    select t.id, t.reference, t.subject, t.created_by_id, t.created_at
+      from tickets t
+      ${desde(period)}
+  ),
+  horas as (
+    select tc.ticket_id, coalesce(sum(tc.hours), 0) as h
+      from ticket_comments tc
+      join tix on tix.id = tc.ticket_id
+     group by tc.ticket_id
+  ),
+  refa as (
+    select c.ticket_id,
+           coalesce(sum(p.quantity * coalesce(p.unit_price_mxn, 0)), 0) as venta,
+           coalesce(sum(p.quantity * coalesce(p.unit_cost_mxn, 0)), 0)  as costo
+      from ticket_comment_parts p
+      join ticket_comments c on c.id = p.comment_id
+      join tix on tix.id = c.ticket_id
+     group by c.ticket_id
+  )
+`;
+}
 
 /**
  * La fórmula, una sola vez.
@@ -211,19 +273,18 @@ export type ProfitOverview = {
 export async function getProfitOverview(
   period: Period,
   r: Rates,
-  { months = 6, top = 6 }: { months?: number; top?: number } = {},
+  { months = 6, top = 6, conexion }: { months?: number; top?: number; conexion?: DbOrTx } = {},
 ): Promise<ProfitOverview> {
-  const db = await tenantDb();
+  const db = conexion ?? (await tenantDb());
 
   const res = await db.execute(sql`
-    with ${BASE},
+    with ${base(period)},
     b as (
       select t.id, t.reference, t.subject, t.created_by_id, t.created_at,
              ${montos(r)}
-        from tickets t
+        from tix t
         left join horas on horas.ticket_id = t.id
         left join refa  on refa.ticket_id  = t.id
-        ${desde(period)}
     ),
     fact as (select * from b ${FACTURABLE}),
     -- now() y no current_date: date_trunc sobre una fecha devuelve timestamp
@@ -330,13 +391,12 @@ export async function getProfitDetail(
 ): Promise<{ rows: ServiceProfit[]; total: number }> {
   const db = await tenantDb();
   const res = await db.execute(sql`
-    with ${BASE},
+    with ${base(period)},
     b as (
       select t.id, t.reference, t.subject, t.created_by_id, t.created_at, ${montos(r)}
-        from tickets t
+        from tix t
         left join horas on horas.ticket_id = t.id
         left join refa  on refa.ticket_id  = t.id
-        ${desde(period)}
     )
     select b.*, count(*) over ()::int as total
       from b ${FACTURABLE}

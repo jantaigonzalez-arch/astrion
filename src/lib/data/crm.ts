@@ -15,6 +15,7 @@ import {
 import { listTenantMembers } from "@/lib/data/people";
 import { VALOR_MXN } from "@/lib/data/crm-insights";
 import { DEFAULT_PIPELINE_NAME, DEFAULT_STAGES, type OrgKind } from "@/lib/crm";
+import type { DbOrTx } from "@/lib/db";
 
 /**
  * Garantiza que exista un embudo con etapas. Es idempotente: la primera vez
@@ -46,8 +47,8 @@ export async function ensureDefaultPipeline() {
   return pipeline.id;
 }
 
-export async function getPipelines() {
-  const db = await tenantDb();
+export async function getPipelines(conexion?: DbOrTx) {
+  const db = conexion ?? (await tenantDb());
   return db.query.crmPipelines.findMany({
     where: eq(crmPipelines.active, true),
     orderBy: [asc(crmPipelines.order)],

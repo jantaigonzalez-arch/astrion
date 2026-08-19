@@ -2403,6 +2403,38 @@ export const mlForecasts = pgTable(
   ],
 );
 
+/**
+ * El dashboard de un módulo: su nombre y si está publicado.
+ *
+ * No guarda sus bloques. Los bloques son filas de `analysis_placements` con
+ * `screen = 'dashboard:<modulo>'`, iguales a los de una pantalla de trabajo, y
+ * por eso heredan toda su maquinaria: la mezcla de fábrica con lo del usuario,
+ * el orden, el encendido y el origen. Una tabla propia de bloques habría
+ * duplicado esa lógica para acabar haciendo lo mismo con otros nombres.
+ *
+ * Publicar no congela una versión: hace visible el tablero para el resto del
+ * equipo. Editar después cambia lo que ven, en el acto. Ver `lib/ml/dashboards.ts`.
+ */
+export const dashboards = pgTable(
+  "dashboards",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** El módulo del ERP: `ventas`, `clientes`, `rentabilidad`… */
+    module: varchar("module", { length: 40 }).notNull(),
+    title: varchar("title", { length: 120 }).notNull(),
+    /** Nulo mientras no se publique. Es todo el estado que hace falta. */
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    publishedById: uuid("published_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  // Uno por módulo: dos obligarían a elegir cuál abre el botón, y esa elección
+  // no la puede tomar nadie con criterio.
+  (t) => [uniqueIndex("dashboards_module_uq").on(t.module)],
+);
+
 /* ------------------------- Tipos ------------------------- */
 /* User y Company se reexportan desde ./platform (arriba): son del plano de control. */
 export type Ticket = typeof tickets.$inferSelect;
@@ -2509,6 +2541,14 @@ export const analysisPlacements = pgTable(
      * responder «¿esto lo puse yo o me lo propuso el sistema?».
      */
     source: varchar("source", { length: 20 }).notNull().default("user"),
+    /**
+     * Cuánto ocupa el bloque en un DASHBOARD: `full` o `half`.
+     *
+     * Solo cuenta ahí. En una pantalla de trabajo los análisis van uno debajo
+     * de otro y a ancho completo, porque compiten con el trabajo por la
+     * atención y media caja los vuelve decoración.
+     */
+    width: varchar("width", { length: 6 }).notNull().default("full"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

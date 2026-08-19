@@ -1,6 +1,11 @@
 import "server-only";
 import type { Block } from "@/lib/ml/blocks-types";
-import { SCREENS, type AnalysisContext, type Screen } from "@/lib/ml/analyses";
+import {
+  SCREENS,
+  resolveAnalysis,
+  type AnalysisContext,
+  type Screen,
+} from "@/lib/ml/analyses";
 import { placementsFor } from "@/lib/ml/placements";
 
 /**
@@ -90,7 +95,7 @@ export async function scopeFor(
       // que la lista la arma el usuario, esa garantía cubre también el caso de
       // haber colocado un análisis que en esta pantalla no encuentra nada.
       const hechos = await Promise.allSettled(
-        visibles.map((p) => p.analysis.resolve(ctx)),
+        visibles.map((p) => resolveAnalysis(p.analysis, ctx)),
       );
       return hechos.flatMap((h, i) => {
         if (h.status === "fulfilled") return h.value;

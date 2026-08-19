@@ -1,4 +1,5 @@
 import "server-only";
+import type { DbOrTx } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
 import { settings } from "@/lib/db/schema";
@@ -22,8 +23,11 @@ const DEFAULTS: AppSettings = {
   usdRate: null,
 };
 
-export async function getSettings(): Promise<AppSettings> {
-  const db = await tenantDb();
+export async function getSettings(conexion?: DbOrTx): Promise<AppSettings> {
+  // La conexión explícita permite leer los ajustes dentro de una transacción o
+  // desde un script, donde `tenantDb()` —que resuelve el inquilino por la
+  // cookie— no puede usarse. Misma convención que `countForIn`.
+  const db = conexion ?? (await tenantDb());
   const [row] = await db
     .select()
     .from(settings)

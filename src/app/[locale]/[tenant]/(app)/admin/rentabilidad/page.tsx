@@ -32,6 +32,7 @@ import {
 } from "@/components/portal/skeletons";
 import { cn } from "@/lib/utils";
 import { currentRole } from "@/lib/tenancy/context";
+import { DashboardFab } from "@/components/portal/dashboard-fab";
 
 const PERIODS = {
   "1m": { label: "Este mes", months: 1 },
@@ -172,6 +173,17 @@ export default async function ProfitabilityPage({
           periodKey={period}
           names={names}
         />
+      </Suspense>
+
+      {/* La salida al tablero del módulo. Flotante, así que no ocupa
+          sitio en el flujo — y va al FINAL del contenedor justo por eso:
+          puesto arriba, el `space-y` le daría margen al hermano siguiente
+          y la página se movería 24 px cuando el botón llega por streaming.
+
+          En `Suspense` porque decidir si aparece exige leer el estado del
+          tablero, y eso no puede retrasar la pantalla. */}
+      <Suspense fallback={null}>
+        <DashboardFab modulo="rentabilidad" />
       </Suspense>
     </div>
   );

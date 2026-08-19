@@ -15,6 +15,7 @@ import {
   spareParts,
 } from "@/lib/db/schema";
 import { users } from "@/lib/db/platform";
+import type { DbOrTx } from "@/lib/db";
 
 /**
  * Valor de un negocio en pesos, venga como venga capturado.
@@ -50,8 +51,12 @@ export const SIN_CONVERTIR = sql<number>`count(*) filter (
 /* ========================= Informes ========================= */
 
 /** Embudo: negocios abiertos por etapa (conteo, valor y valor ponderado). */
-export async function getFunnelByStage(pipelineId: string, ownerId?: string) {
-  const db = await tenantDb();
+export async function getFunnelByStage(
+  pipelineId: string,
+  ownerId?: string,
+  conexion?: DbOrTx,
+) {
+  const db = conexion ?? (await tenantDb());
   const rows = await db
     .select({
       stageId: crmStages.id,
@@ -82,8 +87,12 @@ export async function getFunnelByStage(pipelineId: string, ownerId?: string) {
 }
 
 /** Cerrados por mes (últimos 12): ganados vs perdidos. */
-export async function getMonthlyClosed(pipelineId: string, ownerId?: string) {
-  const db = await tenantDb();
+export async function getMonthlyClosed(
+  pipelineId: string,
+  ownerId?: string,
+  conexion?: DbOrTx,
+) {
+  const db = conexion ?? (await tenantDb());
   return db
     .select({
       month: sql<string>`to_char(date_trunc('month', ${crmDeals.closedAt}), 'YYYY-MM')`,
@@ -214,8 +223,12 @@ export async function getAvgCycleDays(pipelineId: string, ownerId?: string) {
  * Negocios abiertos que superaron el límite de días sin movimiento de su
  * etapa. Equivale al "rotting" de Pipedrive.
  */
-export async function getRottingDeals(pipelineId: string, ownerId?: string) {
-  const db = await tenantDb();
+export async function getRottingDeals(
+  pipelineId: string,
+  ownerId?: string,
+  conexion?: DbOrTx,
+) {
+  const db = conexion ?? (await tenantDb());
   return db
     .select({
       id: crmDeals.id,

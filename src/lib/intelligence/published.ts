@@ -1,7 +1,11 @@
 import "server-only";
 import type { DbOrTx } from "@/lib/db";
 import type { Block, ForecastBlock } from "@/lib/ml/blocks-types";
-import type { Analysis } from "@/lib/ml/analyses";
+// El TIPO viene de `analyses.ts` y los MÓDULOS también, y no cierra ciclo: el
+// camino de vuelta —`analysesAll` pidiendo las preguntas— es una importación
+// diferida dentro de la función, así que al evaluarse este módulo el otro ya
+// está entero. Ver la nota en `analysesAll`.
+import { MODULOS, dashboardScreen, type Analysis } from "@/lib/ml/analyses";
 import type { Insight } from "@/lib/ml/insights";
 import { servedQuestions, tieneCifra, type PreguntaServida } from "./serving";
 
@@ -57,6 +61,32 @@ export const MODULE_SCREEN: Record<string, string> = {
 };
 
 /**
+ * Dónde nace de fábrica la pregunta de un módulo: su pantalla y su tablero.
+ *
+ * El tablero NO se saca de un segundo mapa sino de la pantalla que ya decide
+ * `MODULE_SCREEN`, buscando el módulo cuyo `home` es esa pantalla. Con dos mapas
+ * paralelos, añadir un módulo al catálogo y olvidar el segundo dejaba la
+ * pregunta publicada en la pantalla y ausente del tablero — un fallo mudo, que
+ * solo se nota cuando alguien va a componer y no encuentra su propia pregunta.
+ *
+ * De regalo sale bien el caso raro: `equipos` no es un módulo con tablero
+ * propio y su pantalla es la cola de servicio, así que su pregunta cae en el
+ * tablero de Servicio, que es exactamente donde tiene que estar.
+ */
+function sitiosDeFabrica(modulo: string): Analysis["defaultOn"] {
+  const pantalla = MODULE_SCREEN[modulo];
+  if (!pantalla) return [];
+
+  const conTablero = MODULOS.find((m) => m.home === pantalla);
+  return [
+    { screen: pantalla, position: 50 },
+    ...(conTablero
+      ? [{ screen: dashboardScreen(conTablero.id), position: 50, width: "full" as const }]
+      : []),
+  ];
+}
+
+/**
  * Los análisis que salen de las preguntas del usuario.
  *
  * `id` con prefijo `q.` para que no pueda chocar con uno escrito a mano y para
@@ -79,11 +109,10 @@ export async function questionAnalyses(conexion?: DbOrTx): Promise<Analysis[]> {
       // una estimación, aunque ahora mismo solo salga un aviso de que falta
       // historia — si no, el día que empiece a estimar sería una sorpresa.
       kind: "forecast",
-      defaultScreen: MODULE_SCREEN[q.module] ?? null,
-      // Detrás de los análisis escritos a mano de la pantalla: los hallazgos
-      // piden acción hoy y un pronóstico es contexto. Se puede arrastrar desde
-      // la pantalla de configuración.
-      defaultPosition: 50,
+      // Detrás de los análisis escritos a mano, con la posición 50: los
+      // hallazgos piden acción hoy y un pronóstico es contexto. Se puede
+      // arrastrar desde la pantalla de configuración o desde el compositor.
+      defaultOn: sitiosDeFabrica(q.module),
       // El permiso pertenece al DATO. Lo que sale de Cuentas por pagar son
       // saldos de proveedores, y eso no lo ve soporte viva donde viva el bloque.
       adminOnly: q.module === "pagos",

@@ -33,6 +33,8 @@ export type Placement = {
   analysis: Analysis;
   position: number;
   active: boolean;
+  /** Cuánto ocupa en un dashboard. Ver `analysisPlacements.width`. */
+  width: "full" | "half";
   /** `true` cuando sale del catálogo y no de una fila. */
   factory: boolean;
   source: "user" | "system" | "factory";
@@ -42,6 +44,7 @@ type Row = {
   analysis: string;
   screen: string;
   position: number;
+  width: string;
   active: boolean;
   source: string;
 };
@@ -62,6 +65,7 @@ async function rowsFor(conexion: DbOrTx | undefined, screen?: string): Promise<R
       position: analysisPlacements.position,
       active: analysisPlacements.active,
       source: analysisPlacements.source,
+      width: analysisPlacements.width,
     })
     .from(analysisPlacements);
   return screen ? q.where(eq(analysisPlacements.screen, screen)) : q;
@@ -80,26 +84,79 @@ export async function placementsFor(
   screenPrefix: string,
   conexion?: DbOrTx,
 ): Promise<Placement[]> {
-  const rows = await rowsFor(conexion, screenPrefix);
-  const byId = new Map(rows.map((r) => [r.analysis, r]));
+  return mezclar(
+    await analysesAll(conexion),
+    await rowsFor(conexion, screenPrefix),
+    screenPrefix,
+  );
+}
 
+/**
+ * Lo mismo para VARIAS pantallas, con una sola lectura de cada fuente.
+ *
+ * Existe por una razón medida y no por simetría: `placementsFor` lee las filas
+ * Y el catálogo completo —que a su vez consulta las preguntas del usuario en la
+ * base—. Pedirlo pantalla por pantalla multiplica las dos consultas por el
+ * número de pantallas, y quien necesita el estado de VARIAS a la vez es
+ * precisamente quien lo hace en cada navegación: la barra lateral.
+ *
+ * Devuelve un mapa y no una lista para que quien llama no tenga que volver a
+ * casar prefijos con resultados por posición.
+ */
+export async function placementsForMany(
+  screenPrefixes: string[],
+  conexion?: DbOrTx,
+): Promise<Map<string, Placement[]>> {
+  const [analyses, rows] = await Promise.all([
+    analysesAll(conexion),
+    rowsFor(conexion),
+  ]);
+
+  return new Map(
+    screenPrefixes.map((prefix) => [
+      prefix,
+      mezclar(
+        analyses,
+        rows.filter((r) => r.screen === prefix),
+        prefix,
+      ),
+    ]),
+  );
+}
+
+/**
+ * La mezcla en sí, sobre datos ya leídos.
+ *
+ * Separada de la lectura para que las dos formas de pedirla —una pantalla o
+ * varias— compartan la regla en vez de copiarla. Es la parte que no se puede
+ * duplicar sin que se desincronice: aquí vive lo que significa la ausencia de
+ * fila.
+ */
+function mezclar(analyses: Analysis[], rows: Row[], screenPrefix: string): Placement[] {
+  const byId = new Map(rows.map((r) => [r.analysis, r]));
   const out: Placement[] = [];
 
-  for (const a of await analysesAll(conexion)) {
+  for (const a of analyses) {
     const row = byId.get(a.id);
     if (row) {
       out.push({
         analysis: a,
         position: row.position,
         active: row.active,
+        width: row.width === "half" ? "half" : "full",
         factory: false,
         source: row.source === "system" ? "system" : "user",
       });
-    } else if (a.defaultScreen === screenPrefix) {
+      continue;
+    }
+
+    const fabrica = a.defaultOn.find((d) => d.screen === screenPrefix);
+    if (fabrica) {
       out.push({
         analysis: a,
-        position: a.defaultPosition,
+        position: fabrica.position,
         active: true,
+        width: fabrica.width ?? "full",
         factory: true,
         source: "factory",
       });
@@ -113,12 +170,14 @@ export async function placementsFor(
 export async function placementMap(
   conexion?: DbOrTx,
 ): Promise<Array<{ screen: Screen; placements: Placement[] }>> {
-  return Promise.all(
-    SCREENS.map(async (screen) => ({
-      screen,
-      placements: await placementsFor(screen.prefix, conexion),
-    })),
+  const porPantalla = await placementsForMany(
+    SCREENS.map((s) => s.prefix),
+    conexion,
   );
+  return SCREENS.map((screen) => ({
+    screen,
+    placements: porPantalla.get(screen.prefix) ?? [],
+  }));
 }
 
 /**
@@ -133,6 +192,8 @@ export async function setPlacement(opts: {
   screen: string;
   active: boolean;
   position?: number;
+  /** Solo en dashboards. Ausente conserva el que tuviera. */
+  width?: "full" | "half";
   source?: "user" | "system";
   conexion?: DbOrTx;
 }): Promise<{ ok: boolean; reason?: string }> {
@@ -146,20 +207,32 @@ export async function setPlacement(opts: {
   if (!a) return { ok: false, reason: `No existe el análisis «${opts.analysis}».` };
   const db = opts.conexion ?? (await tenantDb());
 
+  // Lo de fábrica DE ESTA PANTALLA, no lo de fábrica a secas: un análisis puede
+  // nacer en su pantalla de trabajo y en un dashboard con sitio y ancho
+  // distintos, y usar los de la otra al colocarlo aquí lo mandaría a un puesto
+  // que nadie eligió.
+  const fabrica = a.defaultOn.find((d) => d.screen === opts.screen);
+
   await db
     .insert(analysisPlacements)
     .values({
       analysis: opts.analysis,
       screen: opts.screen,
-      position: opts.position ?? a.defaultPosition,
+      position: opts.position ?? fabrica?.position ?? 0,
       active: opts.active,
+      width: opts.width ?? fabrica?.width ?? "full",
       source: opts.source ?? "user",
     })
     .onConflictDoUpdate({
       target: [analysisPlacements.analysis, analysisPlacements.screen],
       set: {
-        position: opts.position ?? a.defaultPosition,
+        position: opts.position ?? fabrica?.position ?? 0,
         active: opts.active,
+        // `sql` y no el valor: sin `width` en la llamada hay que CONSERVAR el
+        // que la fila ya tenía, no volver al de fábrica. Mover un bloque de
+        // sitio no debería devolverle el ancho, y con un valor plano lo haría
+        // en cada arrastre.
+        ...(opts.width ? { width: opts.width } : {}),
         source: opts.source ?? "user",
         updatedAt: new Date(),
       },
@@ -240,7 +313,7 @@ export async function recommendations(conexion?: DbOrTx): Promise<Recommendation
   );
   // Los de fábrica cuentan como colocados: ya tienen por dónde salir.
   for (const a of await analysesAll(conexion)) {
-    if (a.defaultScreen && !rows.some((r) => r.analysis === a.id)) colocado.add(a.id);
+    if (a.defaultOn.length > 0 && !rows.some((r) => r.analysis === a.id)) colocado.add(a.id);
   }
 
   const out: Recommendation[] = [];
@@ -254,8 +327,8 @@ export async function recommendations(conexion?: DbOrTx): Promise<Recommendation
     for (const a of lectores) {
       // Se propone donde el catálogo dice, y si no lo dice, en la pantalla más
       // específica que lo admita. Nunca se coloca solo: se propone.
-      const destino = a.defaultScreen
-        ? screenByPrefix(a.defaultScreen)
+      const destino = a.defaultOn[0]
+        ? screenByPrefix(a.defaultOn[0].screen)
         : SCREENS.find((s) => !placementError(a.id, s.prefix));
       if (!destino) continue;
 

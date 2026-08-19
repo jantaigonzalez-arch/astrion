@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { StatusBadge, PriorityBadge } from "@/components/portal/badges";
+import { DashboardFab } from "@/components/portal/dashboard-fab";
 import {
   AnalysisSection,
   AnalysisSectionSkeleton,
@@ -226,6 +227,17 @@ export default async function AdminTicketsPage({
         <AnalysisSection route="/admin/tickets" />
       </Suspense>
 
+
+      {/* La salida al tablero del módulo. Flotante, así que no ocupa
+          sitio en el flujo — y va al FINAL del contenedor justo por eso:
+          puesto arriba, el `space-y` le daría margen al hermano siguiente
+          y la página se movería 24 px cuando el botón llega por streaming.
+
+          En `Suspense` porque decidir si aparece exige leer el estado del
+          tablero, y eso no puede retrasar la pantalla. */}
+      <Suspense fallback={null}>
+        <DashboardFab modulo="servicio" />
+      </Suspense>
     </div>
   );
 }
