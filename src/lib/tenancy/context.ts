@@ -44,8 +44,64 @@ type TenantPool = { client: TenantClient; sql: ReturnType<typeof postgres> };
  */
 const clients = new Map<string, TenantPool>();
 
-/** Cuántos pools se conservan antes de cerrar el menos usado. */
-const POOL_CACHE_MAX = Number(process.env.DB_TENANT_POOL_CACHE ?? 64);
+/**
+ * Conexiones por inquilino activo.
+ *
+ * Deliberadamente bajo: cada inquilino con actividad mantiene su pool, así que
+ * este número se multiplica por cuántas empresas estén trabajando a la vez.
+ */
+const POOL_MAX = Number(process.env.DB_TENANT_POOL_MAX ?? 2);
+
+/**
+ * El TECHO DE CONEXIONES que esta instancia se permite para inquilinos.
+ *
+ * ── POR QUÉ ES UN PRESUPUESTO Y NO UN NÚMERO DE POOLS ──────────────────────
+ *
+ * Antes se configuraba cuántos pools caben (64) y, por separado, cuántas
+ * conexiones tiene cada uno (3). Nadie multiplica dos ajustes que viven en
+ * líneas distintas, y el producto era 192 más 10 del plano de control: 202
+ * conexiones contra un `max_connections` que por omisión son 100. Es decir, la
+ * configuración por omisión prometía el doble de lo que la base aguanta, y el
+ * síntoma no habría sido lentitud sino «too many clients» —la aplicación entera
+ * caída, para todos los inquilinos a la vez, cuando el trigésimo se conecta.
+ *
+ * Con el presupuesto explícito, el número que hay que comparar contra
+ * `max_connections` está escrito y no hay que deducirlo. El número de pools se
+ * DERIVA de él, así que subir las conexiones por inquilino reduce cuántos caben
+ * en memoria en vez de multiplicar el total en silencio.
+ *
+ * ── CÓMO SE AJUSTA ────────────────────────────────────────────────────────
+ *
+ * El valor por omisión, 60, deja sitio para el plano de control y margen para
+ * migraciones, `psql` y lo que haya conectado, dentro de los 100 de un Postgres
+ * sin tocar. Con un servidor mayor se sube `DB_TENANT_CONN_BUDGET`; la regla es
+ * que el presupuesto más `DB_POOL_MAX` se queden por debajo de
+ * `max_connections` con holgura.
+ *
+ * El techo es el PEOR caso, no el uso normal: `idle_timeout` devuelve las
+ * conexiones de un inquilino a los 20 s sin actividad, así que en operación el
+ * número real es bastante menor. Pero el peor caso es el que tira la base.
+ */
+const CONN_BUDGET = Number(process.env.DB_TENANT_CONN_BUDGET ?? 60);
+
+/**
+ * Cuántos pools se conservan antes de cerrar el menos usado.
+ *
+ * Derivado del presupuesto, no configurado aparte. Cuando hay más inquilinos
+ * activos que pools, el LRU cierra el más viejo y el siguiente que llegue paga
+ * una reconexión: es un costo de milisegundos, y la alternativa —quedarse sin
+ * conexiones— es un error duro que cae sobre todas las empresas a la vez.
+ */
+const POOL_CACHE_MAX = Math.max(1, Math.floor(CONN_BUDGET / Math.max(1, POOL_MAX)));
+
+/** El techo real de esta instancia, para diagnóstico. */
+export const connectionCeiling = () => ({
+  porInquilino: POOL_MAX,
+  poolsEnCache: POOL_CACHE_MAX,
+  techoInquilinos: POOL_CACHE_MAX * POOL_MAX,
+  techoControl: Number(process.env.DB_POOL_MAX ?? 10),
+  techoTotal: POOL_CACHE_MAX * POOL_MAX + Number(process.env.DB_POOL_MAX ?? 10),
+});
 
 /**
  * Cierra el pool menos usado recientemente cuando el mapa se pasa del tope.
@@ -76,9 +132,12 @@ function evictOldestPool(): void {
  *
  * El costo es el número de conexiones: cada inquilino activo mantiene su pool.
  * Por eso `max` es deliberadamente bajo y `idle_timeout` corto: un inquilino que
- * lleva 20 s sin actividad devuelve sus conexiones al sistema. Con decenas de
- * inquilinos concurrentes esto deja de alcanzar, y ese es el punto donde se pasa
- * a un pooler externo o al modelo por transacción. Está medido, no es sorpresa.
+ * lleva 20 s sin actividad devuelve sus conexiones al sistema. Cuánto se permite
+ * gastar en total lo dice `CONN_BUDGET`, y ahí está escrito qué pasa al llegar
+ * al techo: se cierran pools, no se abren conexiones de más.
+ *
+ * Pasado ese punto la respuesta ya no es afinar números sino un pooler externo
+ * o el modelo por transacción.
  */
 function clientFor(schemaName: string): TenantClient {
   const cached = clients.get(schemaName);
@@ -100,7 +159,7 @@ function clientFor(schemaName: string): TenantClient {
 
   const sql = postgres(url, {
     prepare: process.env.DB_PREPARE === "true",
-    max: Number(process.env.DB_TENANT_POOL_MAX ?? 3),
+    max: POOL_MAX,
     idle_timeout: Number(process.env.DB_TENANT_IDLE ?? 20),
     connection: { search_path: `${schemaName}, public` },
   });
