@@ -4,12 +4,15 @@ import { Plus } from "lucide-react";
 import { isSupport } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getPurchaseOrders } from "@/lib/data/purchasing";
+import { parsePage } from "@/lib/pagination";
+import { Pagination } from "@/components/portal/pagination";
 import { PurchaseStatusBadge } from "@/components/portal/purchasing/status-badge";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import type { PurchaseOrderStatus } from "@/lib/db/schema";
 import { currentRole } from "@/lib/tenancy/context";
+import { DashboardFab } from "@/components/portal/dashboard-fab";
 import {
   AnalysisSection,
   AnalysisSectionSkeleton,
@@ -17,8 +20,10 @@ import {
 
 export default async function ComprasPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ page?: string; por?: string }>;
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
@@ -27,7 +32,13 @@ export default async function ComprasPage({
     await redirectInTenant("/dashboard", locale);
   }
 
-  const orders = await getPurchaseOrders();
+  // La página llega por la URL, o sea de fuera: `parsePage` es el único sitio
+  // donde deja de ser texto ajeno y pasa a ser un entero acotado.
+  const pageParams = parsePage(await searchParams);
+  const { rows: orders, total } = await getPurchaseOrders({
+    limit: pageParams.perPage,
+    offset: pageParams.offset,
+  });
 
   return (
     <div className="space-y-6">
@@ -110,6 +121,9 @@ export default async function ComprasPage({
               </tbody>
             </table>
           </div>
+          {/* Dentro de la tarjeta y pegado a la tabla: el recuento («26–50 de
+              2 612») es parte de la tabla, no un control suelto debajo. */}
+          <Pagination {...pageParams} total={total} basePath="/admin/compras" />
         </Card>
       )}
       {/* Debajo de las órdenes, que es lo que se viene a atender.
@@ -121,6 +135,17 @@ export default async function ComprasPage({
         <AnalysisSection route="/admin/compras" />
       </Suspense>
 
+
+      {/* La salida al tablero del módulo. Flotante, así que no ocupa
+          sitio en el flujo — y va al FINAL del contenedor justo por eso:
+          puesto arriba, el `space-y` le daría margen al hermano siguiente
+          y la página se movería 24 px cuando el botón llega por streaming.
+
+          En `Suspense` porque decidir si aparece exige leer el estado del
+          tablero, y eso no puede retrasar la pantalla. */}
+      <Suspense fallback={null}>
+        <DashboardFab modulo="compras" />
+      </Suspense>
     </div>
   );
 }

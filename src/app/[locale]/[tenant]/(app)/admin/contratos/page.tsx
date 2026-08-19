@@ -2,7 +2,9 @@ import { setRequestLocale } from "next-intl/server";
 import { ArrowRight, Boxes, FileSignature, Pencil, UserRound } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { isAdminRole } from "@/lib/roles";
-import { getContracts } from "@/lib/data/contracts";
+import { countContracts, getContracts } from "@/lib/data/contracts";
+import { parsePage } from "@/lib/pagination";
+import { Pagination } from "@/components/portal/pagination";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,8 +24,10 @@ function money(v: string | null, currency: "MXN" | "USD", locale: string) {
 
 export default async function ContractsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ page?: string; por?: string }>;
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
@@ -31,7 +35,18 @@ export default async function ContractsPage({
   const session = await auth();
   const admin = isAdminRole(await currentRole());
   // El vendedor ve solo sus contratos; el admin, todos.
-  const list = await getContracts(admin ? undefined : session!.user.id);
+  const deQuien = admin ? undefined : session!.user.id;
+  const pageParams = parsePage(await searchParams);
+
+  // El total sale de su propia consulta porque el encabezado dice cuántos hay
+  // EN TOTAL, no cuántos caben en la página. Van en paralelo.
+  const [list, total] = await Promise.all([
+    getContracts(deQuien, undefined, {
+      limit: pageParams.perPage,
+      offset: pageParams.offset,
+    }),
+    countContracts(deQuien),
+  ]);
 
   const fmtDate = (d: string | null) =>
     d ? new Date(d + "T00:00:00").toLocaleDateString(locale === "en" ? "en-US" : "es-MX") : "—";
@@ -43,8 +58,8 @@ export default async function ContractsPage({
           <h1 className="text-2xl font-semibold tracking-tight">Contratos</h1>
           <p className="text-sm text-muted-foreground">
             {admin
-              ? `${list.length} contrato(s) registrados.`
-              : `${list.length} contrato(s) a tu cargo.`}
+              ? `${total} contrato(s) registrados.`
+              : `${total} contrato(s) a tu cargo.`}
           </p>
         </div>
         {admin && (
@@ -56,7 +71,7 @@ export default async function ContractsPage({
         )}
       </div>
 
-      {list.length === 0 ? (
+      {total === 0 ? (
         <Card className="flex flex-col items-center gap-3 border-dashed py-14 text-center">
           <FileSignature className="size-10 text-primary" />
           <p className="max-w-sm text-sm text-muted-foreground">
@@ -141,6 +156,15 @@ export default async function ContractsPage({
               </div>
             </Card>
           ))}
+          {/* Estos contratos son tarjetas y no filas de tabla, así que el
+              paginador va suelto al final de la pila con su propio borde
+              superior — el mismo control, sin fingir que hay una tabla. */}
+          <Pagination
+            {...pageParams}
+            total={total}
+            basePath="/admin/contratos"
+            className="rounded-lg border border-border bg-card"
+          />
         </div>
       )}
     </div>

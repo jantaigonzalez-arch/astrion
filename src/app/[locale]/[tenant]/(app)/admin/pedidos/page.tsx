@@ -3,7 +3,13 @@ import { TriangleAlert } from "lucide-react";
 import { isInternal } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { currentRole } from "@/lib/tenancy/context";
-import { getSalesOrders, type SalesOrderRow } from "@/lib/data/crm";
+import {
+  getSalesOrders,
+  getSalesOrdersSummary,
+  type SalesOrderRow,
+} from "@/lib/data/crm";
+import { parsePage } from "@/lib/pagination";
+import { Pagination } from "@/components/portal/pagination";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Link } from "@/lib/nav";
@@ -18,8 +24,10 @@ import { Link } from "@/lib/nav";
  */
 export default async function PedidosPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ page?: string; por?: string }>;
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
@@ -31,8 +39,21 @@ export default async function PedidosPage({
     await redirectInTenant("/dashboard", locale);
   }
 
-  const pedidos = await getSalesOrders();
-  const pendientes = pedidos.filter((p) => p.porComprar > 0).length;
+  const pageParams = parsePage(await searchParams);
+  /*
+    El recuento va POR SEPARADO y no contando las filas traídas.
+
+    «3 pedidos tienen algo por comprar» es una cifra del conjunto entero; sacarla
+    de la página visible la habría convertido en «3 en esta pantalla», que suena
+    igual y dice otra cosa. Es el riesgo silencioso de paginar una lista que
+    también resume: la lista se acorta a la vista y el resumen se acorta sin que
+    nadie lo pida.
+  */
+  const [pedidos, resumen] = await Promise.all([
+    getSalesOrders({ limit: pageParams.perPage, offset: pageParams.offset }),
+    getSalesOrdersSummary(),
+  ]);
+  const pendientes = resumen.pendientes;
 
   return (
     <div className="space-y-6">
@@ -43,7 +64,7 @@ export default async function PedidosPage({
         </p>
       </div>
 
-      {pedidos.length === 0 ? (
+      {resumen.total === 0 ? (
         <Card className="p-8 text-center">
           <p className="font-medium">Todavía no hay pedidos.</p>
           <p className="mx-auto mt-1 max-w-lg text-sm text-muted-foreground">
@@ -123,6 +144,7 @@ export default async function PedidosPage({
                 </tbody>
               </table>
             </div>
+            <Pagination {...pageParams} total={resumen.total} basePath="/admin/pedidos" />
           </Card>
 
           {/* Lo que la columna NO dice, dicho aquí y no en un tooltip que nadie

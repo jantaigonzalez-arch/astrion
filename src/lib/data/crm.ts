@@ -139,10 +139,10 @@ export async function getClosedDeals(pipelineId: string, ownerId?: string) {
  * del negocio, que es donde además se puede actuar sobre ella. Por eso
  * `Sin requisitar` es un aviso de «entra a mirar» y no un «falta comprar».
  */
-export async function getSalesOrders() {
+export async function getSalesOrders(page?: { limit: number; offset: number }) {
   const db = await tenantDb();
 
-  return db
+  const q = db
     .select({
       id: crmDeals.id,
       reference: crmDeals.reference,
@@ -194,6 +194,47 @@ export async function getSalesOrders() {
       desc(crmDeals.closedAt),
       desc(crmDeals.createdAt),
     );
+
+  return page ? q.limit(page.limit).offset(page.offset) : q;
+}
+
+/**
+ * Cuántos pedidos hay y cuántos deben algo, sobre el conjunto COMPLETO.
+ *
+ * Existe porque el encabezado dice «N pedidos · M pendientes» y esas dos cifras
+ * son del total, no de la página que se está viendo. Contarlas sobre las filas
+ * ya traídas —que es lo que hacía la pantalla— dejó de valer en cuanto la lista
+ * se paginó: «3 pendientes» habría significado «3 en esta página», que es una
+ * frase distinta y peor, porque parece una cifra de negocio.
+ *
+ * Una sola consulta para las dos: son la misma pregunta sobre el mismo
+ * conjunto, y separarlas permitiría que se contradijeran.
+ */
+export async function getSalesOrdersSummary(): Promise<{
+  total: number;
+  pendientes: number;
+}> {
+  const db = await tenantDb();
+  const [row] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      // La columna se califica A MANO. Dentro de un `filter (where …)` el
+      // constructor de consultas pierde de vista la tabla y escribe `"id"` a
+      // secas, que dentro de la subconsulta es ambiguo contra las suyas — y
+      // Postgres lo rechaza. Es la misma expresión que la columna `porComprar`
+      // de arriba; si una cambia, la otra también.
+      pendientes: sql<number>`count(*) filter (where (
+        select coalesce(sum(rl.quantity - rl.ordered_quantity), 0)
+          from requisition_lines rl
+          join requisitions r on r.id = rl.requisition_id
+         where r.deal_id = crm_deals.id
+           and r.status in ('draft', 'submitted', 'approved', 'partial')
+      ) > 0)::int`,
+    })
+    .from(crmDeals)
+    .where(eq(crmDeals.status, "won"));
+
+  return { total: row?.total ?? 0, pendientes: row?.pendientes ?? 0 };
 }
 
 export type SalesOrderRow = Awaited<ReturnType<typeof getSalesOrders>>[number];

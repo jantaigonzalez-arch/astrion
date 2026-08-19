@@ -64,16 +64,35 @@ export type OrderRow = {
 };
 
 /**
- * Listado de órdenes con sus totales.
+ * Una página del listado de órdenes, con sus totales.
  *
- * Los agregados se calculan en SQL y no en JavaScript porque el listado no
- * necesita los renglones: traerlos todos para sumarlos sería mover cientos de
- * filas a cambio de cuatro números por orden.
+ * ── LOS AGREGADOS VAN EN SQL ───────────────────────────────────────────────
+ *
+ * El listado no necesita los renglones: traerlos todos para sumarlos sería
+ * mover cientos de filas a cambio de cuatro números por orden.
+ *
+ * ── Y AHORA TAMBIÉN VA PAGINADO ────────────────────────────────────────────
+ *
+ * Devolvía la tabla ENTERA. Con 2 612 órdenes eran 13 ms y parecía gratis, y
+ * ése era el problema: el número de la derecha no tenía tope. Una empresa con
+ * tres años de compras tiene decenas de miles de órdenes, y la pantalla las
+ * traía todas —consulta, red y HTML— para enseñar las veinticinco de arriba.
+ *
+ * `count(*) over ()` da el total en la MISMA consulta y no en una segunda: son
+ * dos preguntas sobre el mismo conjunto, y separarlas abre la ventana para que
+ * el conteo y la página se contradigan si alguien registra una orden en medio.
+ * Es lo mismo que ya hace `getProfitDetail`.
+ *
+ * Se cuenta DESPUÉS de agrupar —y por eso la ventana va sobre el resultado
+ * agrupado—: lo que se pagina son órdenes, no renglones de orden.
  */
-export async function getPurchaseOrders(): Promise<OrderRow[]> {
+export async function getPurchaseOrders(
+  page?: { limit: number; offset: number },
+): Promise<{ rows: OrderRow[]; total: number }> {
   const db = await tenantDb();
-  const rows = (await db
+  const q = db
     .select({
+      total_count: sql<number>`count(*) over ()::int`,
       id: purchaseOrders.id,
       reference: purchaseOrders.reference,
       supplierName: suppliers.name,
@@ -101,9 +120,17 @@ export async function getPurchaseOrders(): Promise<OrderRow[]> {
       purchaseOrders.expectedAt,
       purchaseOrders.createdAt,
     )
-    .orderBy(desc(purchaseOrders.createdAt))) as OrderRow[];
+    .orderBy(desc(purchaseOrders.createdAt));
 
-  return rows;
+  const rows = (await (page ? q.limit(page.limit).offset(page.offset) : q)) as Array<
+    OrderRow & { total_count: number }
+  >;
+
+  return {
+    rows: rows as OrderRow[],
+    // Sin filas no hay ventana de dónde leer el total, y cero es la respuesta.
+    total: rows[0]?.total_count ?? 0,
+  };
 }
 
 /** Una orden con todo lo necesario para su pantalla de detalle. */
