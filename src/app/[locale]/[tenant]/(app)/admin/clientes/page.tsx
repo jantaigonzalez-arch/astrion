@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { setRequestLocale } from "next-intl/server";
 import { Building2 } from "lucide-react";
 import { isSalesRole } from "@/lib/roles";
@@ -5,6 +6,9 @@ import { redirectInTenant } from "@/lib/nav-server";
 import { getClients } from "@/lib/data/crm";
 import { currentRole } from "@/lib/tenancy/context";
 import { ClientsList, type ClientListRow } from "@/components/portal/clients-list";
+import { DashboardFab } from "@/components/portal/dashboard-fab";
+import { Skeleton, TableSkeleton } from "@/components/portal/skeletons";
+import type { ClientRow } from "@/lib/data/crm";
 
 /**
  * Clientes: el módulo de la post-venta.
@@ -32,11 +36,89 @@ export default async function ClientesPage({
     await redirectInTenant("/dashboard", locale);
   }
 
-  const clients = await getClients();
+  /*
+    Sin `await`: la promesa se crea aquí y la esperan los dos bloques que la
+    necesitan, cada uno dentro de su propio `Suspense`.
 
-  // Se aplana a lo que la tabla necesita: el componente es de cliente, así que
-  // todo lo que se le pase cruza el límite servidor→cliente serializado.
-  const rows: ClientListRow[] = clients.map((c) => ({
+    `getClients` es la lectura más cara del portal —una consulta con cinco
+    subconsultas correlacionadas por cliente, 38 ms medidos— y esperarla aquí
+    dejaba la pantalla en blanco todo ese tiempo, encabezado incluido. Ahora el
+    título sale de inmediato y la tabla llega por streaming.
+
+    La MISMA promesa a los dos, y no una llamada por bloque: se lee una vez y
+    los dos reciben el resultado. Es la forma que ya usa Rentabilidad para
+    repartir su resumen entre cinco bloques.
+  */
+  const clientes = getClients();
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+            <Building2 className="size-5 text-primary" />
+            Clientes
+          </h1>
+          <Suspense fallback={<Skeleton className="h-5 w-72" />}>
+            <Resumen p={clientes} />
+          </Suspense>
+        </div>
+      </div>
+
+      <Suspense fallback={<TableSkeleton rows={8} cols={6} />}>
+        <Lista p={clientes} locale={locale} />
+      </Suspense>
+
+      <p className="text-xs text-muted-foreground">
+        Es cliente quien tiene un negocio ganado, un contrato firmado o una cuenta
+        de portal enlazada. Un lead pasa a esta lista solo cuando compra — no hay
+        que moverlo a mano.
+      </p>
+
+      {/* La salida al tablero del módulo. Flotante, así que no ocupa
+          sitio en el flujo — y va al FINAL del contenedor justo por eso:
+          puesto arriba, el `space-y` le daría margen al hermano siguiente
+          y la página se movería 24 px cuando el botón llega por streaming.
+
+          En `Suspense` porque decidir si aparece exige leer el estado del
+          tablero, y eso no puede retrasar la pantalla. */}
+      <Suspense fallback={null}>
+        <DashboardFab modulo="clientes" />
+      </Suspense>
+    </div>
+  );
+}
+
+/** El recuento del encabezado. Espera los mismos datos que la tabla. */
+async function Resumen({ p }: { p: Promise<ClientRow[]> }) {
+  const clientes = await p;
+  const conAbiertos = clientes.filter((c) => c.openTickets > 0).length;
+
+  return (
+    <p className="text-sm text-muted-foreground">
+      {clientes.length} laboratorio(s) y empresa(s) que ya compraron
+      {conAbiertos > 0 && (
+        <>
+          {" "}
+          · <span className="font-medium text-warning">{conAbiertos}</span> con tickets
+          abiertos
+        </>
+      )}
+      .
+    </p>
+  );
+}
+
+/**
+ * La tabla.
+ *
+ * Aplana a lo que la tabla necesita: el componente es de cliente, así que todo
+ * lo que se le pase cruza el límite servidor→cliente serializado.
+ */
+async function Lista({ p, locale }: { p: Promise<ClientRow[]>; locale: string }) {
+  const clientes = await p;
+
+  const rows: ClientListRow[] = clientes.map((c) => ({
     id: c.id,
     name: c.name,
     taxId: c.taxId,
@@ -54,37 +136,5 @@ export default async function ClientesPage({
     wonValue: c.wonValue,
   }));
 
-  const conAbiertos = rows.filter((r) => r.openTickets > 0).length;
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            <Building2 className="size-5 text-primary" />
-            Clientes
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {rows.length} laboratorio(s) y empresa(s) que ya compraron
-            {conAbiertos > 0 && (
-              <>
-                {" "}
-                · <span className="font-medium text-warning">{conAbiertos}</span> con
-                tickets abiertos
-              </>
-            )}
-            .
-          </p>
-        </div>
-      </div>
-
-      <ClientsList clients={rows} locale={locale} />
-
-      <p className="text-xs text-muted-foreground">
-        Es cliente quien tiene un negocio ganado, un contrato firmado o una cuenta
-        de portal enlazada. Un lead pasa a esta lista solo cuando compra — no hay
-        que moverlo a mano.
-      </p>
-    </div>
-  );
+  return <ClientsList clients={rows} locale={locale} />;
 }
