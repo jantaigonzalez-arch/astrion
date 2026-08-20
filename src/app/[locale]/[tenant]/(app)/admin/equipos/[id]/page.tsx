@@ -63,15 +63,23 @@ export default async function LabEquipmentPage({
   // —lo consulta un agente antes de ir a sitio y un vendedor desde el contrato
   // que los ampara—, así que vive fuera de Configuración y admite a todo el
   // personal de soporte, no solo al administrador.
-  if (!isSupport(await currentRole()) && !isSalesRole(await currentRole())) {
+  // Una sola vez: estaba pedido dos veces en la misma condición. Está memoizado
+  // por petición, así que no costaba una consulta de más — pero leer dos veces
+  // lo mismo en una línea invita a que un día sean dos valores distintos.
+  const role = await currentRole();
+  if (!isSupport(role) && !isSalesRole(role)) {
     await redirectInTenant("/dashboard", locale);
   }
   setRequestLocale(locale);
 
-  const owner = await getOwner(id);
+  // Las tres dependen solo del cliente, no una de otra: iban en cascada y son
+  // una tanda.
+  const [owner, tree, contracts] = await Promise.all([
+    getOwner(id),
+    getEquipmentTree(id),
+    getContractsForClient(id),
+  ]);
   if (!owner) notFound();
-  const tree = await getEquipmentTree(id);
-  const contracts = await getContractsForClient(id);
 
   // Historial de tickets por equipo (servicios previos).
   const historyByEquipment = new Map(

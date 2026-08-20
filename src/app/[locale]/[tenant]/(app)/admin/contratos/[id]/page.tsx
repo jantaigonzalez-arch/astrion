@@ -54,10 +54,14 @@ export default async function ContractDetailPage({
   const { locale, id } = await params;
   setRequestLocale(locale);
 
-  const session = await auth();
-  const admin = isAdminRole(await currentRole());
+  const [session, role] = await Promise.all([auth(), currentRole()]);
+  const admin = isAdminRole(role);
 
-  const contract = await getContractById(id);
+  // Los ajustes no dependen del contrato, así que se piden con él y no después.
+  const [contract, appSettings] = await Promise.all([
+    getContractById(id),
+    getSettings(),
+  ]);
   if (!contract) notFound();
   // El vendedor solo puede abrir sus propios contratos.
   if (!admin && contract.salesRepId !== session!.user.id) notFound();
@@ -88,7 +92,8 @@ export default async function ContractDetailPage({
   const serviceTickets = await getTicketsForEquipmentIds(equipmentIds);
 
   // Rentabilidad consolidada: utilidad de cada servicio + consumo del contrato.
-  const appSettings = await getSettings();
+  // Esta sí encadena de verdad: hay que saber QUÉ servicios antes de pedir sus
+  // horas y refacciones.
   const inputs = await getProfitInputsForTickets(serviceTickets.map((t) => t.id));
   const perTicket = new Map(
     inputs.map((i) => [
