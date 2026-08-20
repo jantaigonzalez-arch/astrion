@@ -3,19 +3,17 @@
 import { useActionState, useMemo, useState } from "react";
 import {
   Check,
-  Eye,
   EyeOff,
   GripVertical,
   Loader2,
   Rows3,
   Columns2,
-  Plus,
+  LayoutDashboard,
   Send,
   Undo2,
   XCircle,
 } from "lucide-react";
 import {
-  addToDashboardAction,
   setDashboardModulesAction,
   publishDashboardAction,
   renameDashboardAction,
@@ -26,6 +24,14 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DashboardToolbox } from "@/components/portal/dashboard-toolbox";
+import { InsightItem } from "@/components/portal/insight-strip";
+import {
+  ForecastCard,
+  ProjectionCard,
+  TrendCard,
+} from "@/components/portal/assistant-blocks";
+import type { Block } from "@/lib/ml/blocks-types";
 import { cn } from "@/lib/utils";
 
 const inicial: DashState = { ok: false };
@@ -38,14 +44,25 @@ export type BloqueView = {
   active: boolean;
   width: "full" | "half";
   source: "user" | "system" | "factory";
+  /**
+   * Lo que este análisis enseña HOY, ya resuelto en el servidor.
+   *
+   * Viaja con el bloque para que soltarlo en el tablero lo pinte en el acto.
+   * Pedirlo al servidor al soltar habría dejado un hueco cargando justo en el
+   * momento en que la persona quiere ver si el bloque encaja — que es el
+   * momento entero de esta pantalla.
+   */
+  preview: Block[];
 };
 
-const KIND_LABEL: Record<string, string> = {
-  finding: "Requiere atención",
-  projection: "Lo que viene",
-  trend: "Cómo viene",
-  forecast: "Lo que estima un modelo",
+export type DisponibleView = {
+  id: string;
+  label: string;
+  kind: string;
+  watching: string[];
+  preview: Block[];
 };
+
 
 /**
  * El compositor de un tablero.
@@ -109,12 +126,23 @@ export function DashboardBuilder({
   catalogo: Array<{ id: string; label: string }>;
   publicado: string | null;
   bloques: BloqueView[];
-  disponibles: Array<{ id: string; label: string; kind: string; watching: string[] }>;
+  disponibles: DisponibleView[];
 }) {
   const [lista, setLista] = useState(bloques);
   const [nombre, setNombre] = useState(titulo);
   const [donde, setDonde] = useState<string[]>(modulos);
-  const [arrastrado, setArrastrado] = useState<string | null>(null);
+  /**
+   * Qué se está arrastrando y DE DÓNDE.
+   *
+   * El origen importa tanto como la identidad: soltar algo que viene del
+   * tablero lo reordena, y soltar algo que viene de la caja lo inserta. Sin
+   * guardar el origen habría que deducirlo de la lista en cada `dragover`, y
+   * `dataTransfer` no se puede leer durante el arrastre — solo al soltar.
+   */
+  const [arrastrando, setArrastrando] = useState<{
+    id: string;
+    desde: "tablero" | "disponible" | "quitado";
+  } | null>(null);
   const [sobre, setSobre] = useState<string | null>(null);
 
   const [guardado, guardar, guardando] = useActionState(reorderDashboardAction, inicial);
@@ -137,6 +165,29 @@ export function DashboardBuilder({
   );
   const encendidos = lista.filter((b) => b.active).length;
 
+  /*
+    Tres vistas de un mismo estado.
+
+    `lista` guarda TODO lo colocado alguna vez, encendido o no, porque eso es lo
+    que se manda al guardar: una fila apagada es una decisión —«esto no lo
+    quiero»— y borrarla haría que el análisis volviera solo de fábrica en la
+    siguiente carga. Ver `placements.ts`.
+  */
+  const enTablero = lista.filter((b) => b.active);
+  const quitados = lista.filter((b) => !b.active);
+  const caja = disponibles.filter((d) => !lista.some((b) => b.analysis === d.id));
+
+  const comoBloque = (d: DisponibleView): BloqueView => ({
+    analysis: d.id,
+    label: d.label,
+    kind: d.kind,
+    watching: d.watching,
+    active: true,
+    width: "full",
+    source: "user",
+    preview: d.preview,
+  });
+
   // Se compara ya recortado: el servidor guarda `trim()`, así que un espacio al
   // final no es un cambio y el botón no debería encenderse por él.
   const nombreSucio = nombre.trim().length > 0 && nombre.trim() !== titulo;
@@ -148,21 +199,59 @@ export function DashboardBuilder({
   const alternar = (id: string) =>
     setDonde((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]));
 
-  function mover(desde: string, hasta: string) {
-    if (desde === hasta) return;
-    setLista((xs) => {
-      const i = xs.findIndex((x) => x.analysis === desde);
-      const j = xs.findIndex((x) => x.analysis === hasta);
-      if (i < 0 || j < 0) return xs;
-      const copia = [...xs];
-      const [x] = copia.splice(i, 1);
-      copia.splice(j, 0, x);
-      return copia;
-    });
-  }
+
 
   const cambiar = (id: string, parche: Partial<BloqueView>) =>
     setLista((xs) => xs.map((x) => (x.analysis === id ? { ...x, ...parche } : x)));
+
+  /** Lo pone al final del tablero, encendido, venga de donde venga. */
+  function alFinal(id: string) {
+    setLista((xs) => {
+      const ya = xs.find((x) => x.analysis === id);
+      if (ya) return [...xs.filter((x) => x.analysis !== id), { ...ya, active: true }];
+      const nuevo = disponibles.find((d) => d.id === id);
+      return nuevo ? [...xs, comoBloque(nuevo)] : xs;
+    });
+    setArrastrando(null);
+    setSobre(null);
+  }
+
+  /**
+   * Suelta lo que se arrastra EN el sitio de `hasta`.
+   *
+   * Reordenar e insertar son la misma operación desde el punto de vista de
+   * quien arrastra —«esto va aquí»— y por eso salen del mismo sitio: la
+   * diferencia es solo si el bloque ya estaba en la lista.
+   */
+  function soltarEn(hasta: string) {
+    const a = arrastrando;
+    setArrastrando(null);
+    setSobre(null);
+    if (!a || a.id === hasta) return;
+
+    setLista((xs) => {
+      const j = xs.findIndex((x) => x.analysis === hasta);
+      if (j < 0) return xs;
+
+      const ya = xs.find((x) => x.analysis === a.id);
+      const copia = ya
+        ? xs.filter((x) => x.analysis !== a.id)
+        : [...xs];
+      const pieza = ya
+        ? { ...ya, active: true }
+        : (() => {
+            const d = disponibles.find((x) => x.id === a.id);
+            return d ? comoBloque(d) : null;
+          })();
+      if (!pieza) return xs;
+
+      // El destino se vuelve a buscar sobre la copia: si lo que se movía estaba
+      // ANTES, quitarlo corrió todos los índices una posición.
+      const k = copia.findIndex((x) => x.analysis === hasta);
+      copia.splice(k < 0 ? copia.length : k, 0, pieza);
+      return copia;
+    });
+  }
 
   return (
     <div className="space-y-4">
@@ -248,7 +337,7 @@ export function DashboardBuilder({
               ) : (
                 <Check className="size-3.5" />
               )}
-              Guardar orden
+              Guardar tablero
             </Button>
           </form>
 
@@ -261,7 +350,7 @@ export function DashboardBuilder({
               disabled={publicando || despublicando || sucio}
               title={
                 sucio
-                  ? "Guarda el orden antes de publicar: si no, se publicaría lo anterior."
+                  ? "Guarda el tablero antes de publicar: si no, se publicaría lo anterior."
                   : undefined
               }
             >
@@ -364,189 +453,297 @@ export function DashboardBuilder({
         </div>
       </Card>
 
-      {lista.length === 0 && (
-        <Card className="border-dashed p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            Este módulo todavía no tiene análisis que colocar. Aparecerán aquí en
-            cuanto configures una pregunta en Inteligencia o el sistema los
-            proponga.
-          </p>
-        </Card>
-      )}
+      {/*
+        EL TABLERO, VIVO, Y LA CAJA AL COSTADO.
 
-      <ul className="space-y-2">
-        {lista.map((b) => (
-          <li
-            key={b.analysis}
-            draggable
-            onDragStart={(e) => {
-              setArrastrado(b.analysis);
-              e.dataTransfer.effectAllowed = "move";
-              // Algunos navegadores no inician el arrastre sin datos puestos.
-              e.dataTransfer.setData("text/plain", b.analysis);
-            }}
-            onDragEnd={() => {
-              setArrastrado(null);
-              setSobre(null);
-            }}
-            onDragOver={(e) => {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "move";
-              if (sobre !== b.analysis) setSobre(b.analysis);
-            }}
-            onDragLeave={() => setSobre((s) => (s === b.analysis ? null : s))}
-            onDrop={(e) => {
-              e.preventDefault();
-              const desde = e.dataTransfer.getData("text/plain") || arrastrado;
-              if (desde) mover(desde, b.analysis);
-              setArrastrado(null);
-              setSobre(null);
-            }}
+        La vista principal son los bloques resueltos —sus cifras, sus gráficas—
+        y no una lista de nombres. Componer mirando el resultado es la
+        diferencia entre decidir si «Clientes más rentables» merece media fila y
+        tener que imaginárselo.
+
+        Dos columnas y no una superposición: de la caja se ARRASTRA hacia el
+        tablero, así que las dos tienen que verse a la vez. Ver `DashboardToolbox`.
+      */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div>
+          {enTablero.length === 0 ? (
+            <ZonaVacia
+              activa={Boolean(arrastrando) && arrastrando?.desde !== "tablero"}
+              onSoltar={() => arrastrando && alFinal(arrastrando.id)}
+            />
+          ) : (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {enTablero.map((b) => (
+                <BloqueEditable
+                  key={b.analysis}
+                  b={b}
+                  arrastrado={arrastrando?.id === b.analysis}
+                  sobre={sobre === b.analysis}
+                  onArrastrar={(id) =>
+                    setArrastrando(id ? { id, desde: "tablero" } : null)
+                  }
+                  onSobre={setSobre}
+                  onSoltar={() => soltarEn(b.analysis)}
+                  onAncho={(w) => cambiar(b.analysis, { width: w })}
+                  onQuitar={() => cambiar(b.analysis, { active: false })}
+                />
+              ))}
+
+              {/* Cola del tablero: soltar aquí lo pone al final. Sin esta zona,
+                  el último puesto solo se alcanzaría soltando sobre el último
+                  bloque, que lo insertaría ANTES. */}
+              <ZonaFinal
+                activa={Boolean(arrastrando)}
+                onSoltar={() => arrastrando && alFinal(arrastrando.id)}
+              />
+            </div>
+          )}
+
+          {enTablero.length > 1 && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Arrastra por el asa para reordenar. Nada se guarda hasta que pulses
+              «Guardar tablero».
+            </p>
+          )}
+        </div>
+
+        <DashboardToolbox
+          // Se aplana a lo que la caja necesita —y `piezas` es lo que ella
+          // añade: cuántos bloques trae hoy, para poder decir «hoy sin datos»
+          // sin que la caja tenga que saber qué es un `Block`.
+          disponibles={caja.map((d) => ({
+            id: d.id,
+            label: d.label,
+            kind: d.kind,
+            watching: d.watching,
+            piezas: d.preview.length,
+          }))}
+          quitados={quitados.map((b) => ({
+            id: b.analysis,
+            label: b.label,
+            kind: b.kind,
+            watching: b.watching,
+            piezas: b.preview.length,
+          }))}
+          arrastrando={arrastrando}
+          onAgregar={(id) => alFinal(id)}
+          onArrastrar={(id, desde) => setArrastrando(desde ? { id, desde } : null)}
+          onSoltarFuera={(id) => {
+            cambiar(id, { active: false });
+            setArrastrando(null);
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Un bloque del tablero, tal como se ve, con sus controles encima.
+ *
+ * Los controles aparecen al acercar el cursor y no siempre: si estuvieran fijos
+ * competirían con el contenido en cada bloque, y el contenido es justo lo que
+ * esta pantalla existe para enseñar. El asa de arrastre sí se insinúa, porque
+ * es lo único que no se adivina.
+ */
+function BloqueEditable({
+  b,
+  arrastrado,
+  sobre,
+  onArrastrar,
+  onSobre,
+  onSoltar,
+  onAncho,
+  onQuitar,
+}: {
+  b: BloqueView;
+  arrastrado: boolean;
+  sobre: boolean;
+  onArrastrar: (id: string | null) => void;
+  onSobre: (id: string | null) => void;
+  onSoltar: () => void;
+  onAncho: (w: "full" | "half") => void;
+  onQuitar: () => void;
+}) {
+  return (
+    <div
+      draggable
+      onDragStart={(e) => {
+        onArrastrar(b.analysis);
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", b.analysis);
+      }}
+      onDragEnd={() => {
+        onArrastrar(null);
+        onSobre(null);
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        if (!sobre) onSobre(b.analysis);
+      }}
+      onDragLeave={() => onSobre(null)}
+      onDrop={(e) => {
+        e.preventDefault();
+        onSoltar();
+      }}
+      className={cn(
+        "group relative rounded-xl border transition-all",
+        b.width === "full" && "lg:col-span-2",
+        arrastrado && "opacity-40",
+        sobre && !arrastrado
+          ? "border-primary ring-2 ring-primary/30"
+          : "border-transparent",
+      )}
+    >
+      {/* La barra de controles flota encima del bloque en vez de empujarlo:
+          así el bloque se ve del tamaño que va a tener de verdad. */}
+      <div
+        className={cn(
+          "absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg border border-border",
+          "bg-card/95 p-1 shadow-sm backdrop-blur transition-opacity",
+          "opacity-0 group-hover:opacity-100 focus-within:opacity-100",
+        )}
+      >
+        {(["full", "half"] as const).map((w) => (
+          <button
+            key={w}
+            type="button"
+            onClick={() => onAncho(w)}
+            title={w === "full" ? "Fila completa" : "Media fila"}
+            aria-pressed={b.width === w}
             className={cn(
-              "flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3 transition-colors",
-              arrastrado === b.analysis && "opacity-40",
-              sobre === b.analysis && arrastrado !== b.analysis
-                ? "border-primary bg-primary/5"
-                : "border-border",
-              !b.active && "opacity-60",
+              "rounded p-1 transition-colors",
+              b.width === w
+                ? "bg-secondary text-foreground"
+                : "text-muted-foreground hover:bg-secondary/60",
             )}
           >
-            <GripVertical className="size-4 shrink-0 cursor-grab text-muted-foreground active:cursor-grabbing" />
-
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={cn(
-                    "text-sm font-medium",
-                    !b.active && "text-muted-foreground line-through",
-                  )}
-                >
-                  {b.label}
-                </span>
-                <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                  {KIND_LABEL[b.kind] ?? b.kind}
-                </span>
-                {b.source === "system" && (
-                  <span className="text-[10px] text-primary">propuesto por el sistema</span>
-                )}
-              </div>
-              {/* Qué vigila, no solo su nombre: apagar «Avisos de cuentas por
-                  pagar» sin saber que ahí van los anticipos sin imputar es
-                  apagar algo a ciegas. */}
-              <ul className="mt-1 text-xs text-muted-foreground">
-                {b.watching.slice(0, 2).map((w) => (
-                  <li key={w}>· {w}</li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="flex shrink-0 items-center gap-1">
-              {/* El ancho solo cuenta en un dashboard, y por eso vive aquí y no
-                  en la configuración general de análisis. */}
-              <div className="flex overflow-hidden rounded-md border border-border">
-                {(["full", "half"] as const).map((w) => (
-                  <button
-                    key={w}
-                    type="button"
-                    onClick={() => cambiar(b.analysis, { width: w })}
-                    title={w === "full" ? "Fila completa" : "Media fila"}
-                    aria-pressed={b.width === w}
-                    className={cn(
-                      "px-2 py-1.5 transition-colors",
-                      b.width === w
-                        ? "bg-secondary text-foreground"
-                        : "text-muted-foreground hover:bg-secondary/60",
-                    )}
-                  >
-                    {w === "full" ? (
-                      <Rows3 className="size-3.5" />
-                    ) : (
-                      <Columns2 className="size-3.5" />
-                    )}
-                  </button>
-                ))}
-              </div>
-
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => cambiar(b.analysis, { active: !b.active })}
-                title={b.active ? "Quitar del tablero" : "Poner en el tablero"}
-              >
-                {b.active ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-              </Button>
-            </div>
-          </li>
+            {w === "full" ? <Rows3 className="size-3.5" /> : <Columns2 className="size-3.5" />}
+          </button>
         ))}
-      </ul>
+        <button
+          type="button"
+          onClick={onQuitar}
+          title="Quitar del tablero"
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        >
+          <EyeOff className="size-3.5" />
+        </button>
+      </div>
 
-      {lista.length > 1 && (
-        <p className="text-xs text-muted-foreground">
-          Arrastra por el asa para reordenar. Los cambios no se guardan hasta que
-          pulses «Guardar orden».
-        </p>
-      )}
+      <div className="absolute left-2 top-2 z-10 cursor-grab rounded p-1 text-muted-foreground opacity-40 transition-opacity group-hover:opacity-100 active:cursor-grabbing">
+        <GripVertical className="size-4" />
+      </div>
 
-      {/* Lo que se puede añadir. Va DESPUÉS del tablero y no antes: quien entra
-          viene a acomodar lo que ya tiene, y una lista de opciones arriba
-          empujaría eso fuera de la pantalla. */}
-      {disponibles.length > 0 && (
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold">Agregar al tablero</h3>
+      {/* Lo que este bloque enseña HOY. Vacío no es un fallo: el análisis está
+          vigilando y hoy no encontró nada. Se dice, en vez de dejar un hueco
+          que parece un error de carga. */}
+      {b.preview.length > 0 ? (
+        <div className="space-y-3">
+          {b.preview.map((x) => (
+            <Pieza key={llave(x)} block={x} />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-border p-5">
+          <p className="text-sm font-medium">{b.label}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Análisis que existen y todavía no están aquí. Se agregan al final y
-            luego se acomodan.
+            Hoy no encontró nada que reportar. Sigue vigilando:
           </p>
-          <div className="mt-3 grid gap-2">
-            {disponibles.map((a) => (
-              <Disponible key={a.id} slug={slug} a={a} />
+          <ul className="mt-1.5 text-xs text-muted-foreground">
+            {b.watching.slice(0, 2).map((w) => (
+              <li key={w}>· {w}</li>
             ))}
-          </div>
-        </Card>
+          </ul>
+        </div>
       )}
     </div>
   );
 }
 
-
-/**
- * Un análisis que se puede añadir.
- *
- * Con su `watching` a la vista: agregar algo llamado «Avisos de compras» sin
- * saber que ahí van las refacciones en falta y las órdenes atrasadas es agregar
- * a ciegas, y luego nadie sabe por qué el tablero enseña lo que enseña.
- */
-function Disponible({
-  slug,
-  a,
-}: {
-  slug: string;
-  a: { id: string; label: string; kind: string; watching: string[] };
-}) {
-  const [state, agregar, agregando] = useActionState(addToDashboardAction, inicial);
-
+/** La cola del tablero: acepta lo que se suelte y lo pone al final. */
+function ZonaFinal({ activa, onSoltar }: { activa: boolean; onSoltar: () => void }) {
+  const [sobre, setSobre] = useState(false);
+  if (!activa) return null;
   return (
-    <form action={agregar} className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
-      <input type="hidden" name="slug" value={slug} />
-      <input type="hidden" name="analysis" value={a.id} />
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium">{a.label}</span>
-          <span className="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-            {KIND_LABEL[a.kind] ?? a.kind}
-          </span>
-        </div>
-        <ul className="mt-1 text-xs text-muted-foreground">
-          {a.watching.slice(0, 2).map((w) => (
-            <li key={w}>· {w}</li>
-          ))}
-        </ul>
-        {state.error && <p className="mt-1 text-xs text-destructive">{state.error}</p>}
-      </div>
-      <Button type="submit" variant="outline" size="sm" disabled={agregando}>
-        {agregando ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
-        Agregar
-      </Button>
-    </form>
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setSobre(true);
+      }}
+      onDragLeave={() => setSobre(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setSobre(false);
+        onSoltar();
+      }}
+      className={cn(
+        "flex min-h-24 items-center justify-center rounded-xl border-2 border-dashed text-xs",
+        sobre
+          ? "border-primary bg-primary/5 text-primary"
+          : "border-border text-muted-foreground",
+      )}
+    >
+      Soltar al final
+    </div>
   );
+}
+
+/** El tablero sin nada encendido. */
+function ZonaVacia({
+  activa,
+  onSoltar,
+}: {
+  activa: boolean;
+  onSoltar: () => void;
+}) {
+  const [sobre, setSobre] = useState(false);
+  return (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setSobre(true);
+      }}
+      onDragLeave={() => setSobre(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setSobre(false);
+        onSoltar();
+      }}
+      className={cn(
+        "flex min-h-64 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-8 text-center",
+        sobre || activa
+          ? "border-primary bg-primary/5"
+          : "border-border",
+      )}
+    >
+      <LayoutDashboard className="size-8 text-muted-foreground" />
+      <p className="text-sm font-medium">Este tablero está vacío</p>
+      <p className="max-w-sm text-xs text-muted-foreground">
+        Arrastra un análisis de la caja de herramientas, a la derecha. Lo verás
+        aquí tal como lo verá el equipo.
+      </p>
+    </div>
+  );
+}
+
+function Pieza({ block }: { block: Block }) {
+  switch (block.kind) {
+    case "finding":
+      return <InsightItem insight={block.insight} />;
+    case "projection":
+      return <ProjectionCard block={block} />;
+    case "trend":
+      return <TrendCard block={block} />;
+    case "forecast":
+      return <ForecastCard block={block} />;
+  }
+}
+
+/** Los hallazgos llevan su id dentro del `insight`; el resto, suelto. */
+function llave(b: Block): string {
+  return b.kind === "finding" ? b.insight.id : b.id;
 }

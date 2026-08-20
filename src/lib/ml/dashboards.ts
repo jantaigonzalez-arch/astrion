@@ -343,7 +343,12 @@ function slugify(s: string): string {
 }
 
 /**
- * Guarda el ORDEN completo tras un arrastre.
+ * Guarda la COMPOSICIÓN completa: qué lleva, en qué orden y con qué ancho.
+ *
+ * Es el único camino de escritura de la composición. Hubo también un «agregar
+ * este análisis», y sobraba desde que el compositor edita la lista entera y la
+ * guarda de una vez: dos maneras de meter un bloque son dos maneras de que un
+ * día metan cosas distintas.
  *
  * Recibe la lista entera y no «mueve el bloque N a la posición M», y es
  * deliberado: con un solo movimiento habría que recalcular en el servidor las
@@ -377,35 +382,6 @@ export async function reorderDashboard(
     await tocar(slug, tx);
     return { ok: true };
   });
-}
-
-/**
- * Añade un análisis al tablero, al final y encendido.
- *
- * Al final y no al principio: quien añade algo nuevo no está diciendo que sea
- * lo más importante del tablero, solo que lo quiere ahí. Moverlo arriba es un
- * arrastre; adivinar que quería el primer puesto no se puede deshacer sin uno.
- */
-export async function addToDashboard(
-  slug: string,
-  analysis: string,
-): Promise<{ ok: boolean; reason?: string }> {
-  const db = await tenantDb();
-  if (!(await filaDe(slug, db))) return { ok: false, reason: "Ese tablero no existe." };
-
-  const screen = dashboardScreen(slug);
-  const actuales = await placementsFor(screen);
-
-  const r = await setPlacement({
-    analysis,
-    screen,
-    active: true,
-    position: actuales.length,
-  });
-  if (!r.ok) return r;
-
-  await tocar(slug, db);
-  return { ok: true };
 }
 
 /** Publica el tablero: lo hace visible para el resto del equipo. */

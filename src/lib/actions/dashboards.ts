@@ -5,7 +5,6 @@ import { isAdminRole } from "@/lib/roles";
 import { currentRole } from "@/lib/tenancy/context";
 import { revalidateDashboards } from "@/lib/revalidate";
 import {
-  addToDashboard,
   createDashboard,
   setDashboardModules,
   publishDashboard,
@@ -71,24 +70,6 @@ export async function reorderDashboardAction(
 
   await revalidateDashboards();
   return { ok: true, message: "Guardado." };
-}
-
-/** Añade un análisis al tablero. Ver `addToDashboard`. */
-export async function addToDashboardAction(
-  _prev: DashState,
-  form: FormData,
-): Promise<DashState> {
-  const no = await soloAdmin();
-  if (no) return { ok: false, error: no };
-
-  const r = await addToDashboard(
-    String(form.get("slug") ?? ""),
-    String(form.get("analysis") ?? ""),
-  );
-  if (!r.ok) return { ok: false, error: r.reason };
-
-  await revalidateDashboards();
-  return { ok: true, message: "Agregado al final del tablero." };
 }
 
 export async function publishDashboardAction(

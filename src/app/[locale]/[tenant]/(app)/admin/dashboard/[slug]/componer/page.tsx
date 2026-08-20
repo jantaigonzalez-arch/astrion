@@ -6,7 +6,8 @@ import { currentRole } from "@/lib/tenancy/context";
 import { redirectInTenant } from "@/lib/nav-server";
 import { Link } from "@/lib/nav";
 import { dashboardFor } from "@/lib/ml/dashboards";
-import { MODULOS } from "@/lib/ml/analyses";
+import { MODULOS, resolveAnalysis } from "@/lib/ml/analyses";
+import type { Block } from "@/lib/ml/blocks-types";
 import { Button } from "@/components/ui/button";
 import {
   DashboardBuilder,
@@ -14,13 +15,28 @@ import {
 } from "@/components/portal/dashboard-builder";
 
 /**
- * Componer el dashboard de un módulo.
+ * Componer un tablero, sobre el tablero de verdad.
  *
- * Separado de la vista y no un modo de edición dentro de ella, a propósito: el
- * tablero enseña resultados y el compositor enseña CONFIGURACIÓN —qué vigila
- * cada bloque, de dónde salió, qué está apagado—. Son dos lecturas distintas, y
- * meterlas en la misma pantalla con un interruptor obliga a que cada bloque
- * sepa dibujarse de dos maneras.
+ * ── SE COMPONE VIENDO EL RESULTADO ─────────────────────────────────────────
+ *
+ * La vista principal son los bloques RESUELTOS, con sus cifras y sus gráficas,
+ * no una lista de nombres. Antes esta pantalla enseñaba configuración —qué
+ * vigila cada bloque, de dónde salió— y el resultado había que ir a verlo a
+ * otra pantalla; así, decidir si «Clientes más rentables» merece media fila
+ * exigía imaginárselo.
+ *
+ * Eso obliga a resolver aquí TODO lo que se puede colocar, no solo lo colocado,
+ * y es el precio de que arrastrar algo a la vista lo enseñe en el acto en vez
+ * de dejar un hueco mientras se pide al servidor. Cada resolución corre aislada
+ * y con presupuesto de tiempo (`resolveAnalysis`), así que uno lento o roto se
+ * queda fuera y el resto aparece.
+ *
+ * ── LO QUE NO SE MEZCLÓ ────────────────────────────────────────────────────
+ *
+ * Sigue siendo una pantalla aparte de la vista del tablero, y no un modo de
+ * edición dentro de ella. La vista es para leer y ésta para decidir: aquí hay
+ * una caja de herramientas al costado, asas de arrastre y controles de ancho
+ * que en la vista serían ruido permanente para quien solo viene a mirar.
  */
 export default async function ComponerPage({
   params,
@@ -42,6 +58,26 @@ export default async function ComponerPage({
   const { modulo } = await searchParams;
   const sugerido = MODULOS.find((m) => m.id === modulo)?.id ?? null;
 
+  /*
+    Todo resuelto de una vez: lo colocado y lo que se puede colocar.
+
+    En paralelo y con `allSettled` porque son veinte consultas y basta una rota
+    para que no hubiera pantalla. La que falle se queda sin vista previa —el
+    bloque sigue siendo colocable— en vez de tumbar el compositor.
+  */
+  const resueltos = await Promise.allSettled(
+    [...d.bloques.map((b) => b.analysis), ...d.disponibles].map(async (a) => ({
+      id: a.id,
+      preview: await resolveAnalysis(a, {}),
+    })),
+  );
+
+  const vista = new Map<string, Block[]>();
+  for (const r of resueltos) {
+    if (r.status === "fulfilled") vista.set(r.value.id, r.value.preview);
+    else console.error("[componer] no se pudo resolver un bloque", r.reason);
+  }
+
   const bloques: BloqueView[] = d.bloques.map((b) => ({
     analysis: b.analysis.id,
     label: b.analysis.label,
@@ -50,6 +86,7 @@ export default async function ComponerPage({
     active: b.active,
     width: b.width,
     source: b.source,
+    preview: vista.get(b.analysis.id) ?? [],
   }));
 
   return (
@@ -88,6 +125,7 @@ export default async function ComponerPage({
           label: a.label,
           kind: a.kind,
           watching: a.watching,
+          preview: vista.get(a.id) ?? [],
         }))}
       />
     </div>
