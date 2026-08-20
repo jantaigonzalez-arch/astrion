@@ -127,6 +127,13 @@
       "when": 1786852307338,
       "tag": "0017_indice_ganados",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786852307339,
+      "tag": "0018_tableros_libres",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,7 @@ import { LayoutDashboard, Pencil, Plus } from "lucide-react";
 import { isAdminRole } from "@/lib/roles";
 import { MODULOS } from "@/lib/ml/analyses";
 import { currentRole } from "@/lib/tenancy/context";
-import { tablerosDelMenu } from "@/lib/ml/dashboards";
+import { tablerosDelModulo, tablerosDelMenu } from "@/lib/ml/dashboards";
 import { Link } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +37,23 @@ import { cn } from "@/lib/utils";
  * Sin publicar        → solo para quien puede componerlo, y lleva al compositor.
  * Sin nada compuesto  → para nadie, salvo administración, con «Crear tablero».
  *
+ * ── Y CUÁL ABRE, CUANDO HAY VARIOS ────────────────────────────────────────
+ *
+ * Desde que un tablero puede publicarse en varios módulos, un módulo puede
+ * tener varios tableros. El botón abre, en este orden: el primero PUBLICADO, y
+ * entre los publicados el que tiene a este módulo como principal. Si ninguno
+ * está publicado, el principal. Dice en su `title` cuántos más hay.
+ *
+ * Publicado manda sobre principal a propósito: el equipo solo puede ver lo
+ * publicado, así que un botón que abriera el borrador principal llevaría a la
+ * mayoría de la gente a una pantalla que no tiene permiso de ver.
+ *
+ * Un botón que despliega una lista sería la otra opción y es peor aquí: la
+ * gracia del flotante es que es UN gesto para salir a mirar cómo va el módulo.
+ * Convertirlo en un menú lo devuelve a ser un control más de la pantalla, que
+ * es justo de lo que se lo sacó. La lista completa vive en la barra lateral,
+ * que es donde se elige entre cosas.
+ *
  * La regla de fondo: un botón que lleva a una pantalla vacía es peor que no
  * tener botón. Se pulsa una vez, no hay nada, y no se vuelve a pulsar nunca —
  * ni el día que sí tenga algo. Y flotando, esa regla pesa más: lo que está
@@ -66,7 +83,7 @@ export async function DashboardFab({ modulo }: { modulo: string }) {
   //
   // Y la lista ya codifica los tres estados: quien no aparece en ella es
   // exactamente quien no tiene nada compuesto. Ver `tablerosDelMenu`.
-  const [admin, tableros] = await Promise.all([
+  const [admin, todos] = await Promise.all([
     currentRole().then(isAdminRole),
     tablerosDelMenu(),
   ]);
@@ -74,11 +91,18 @@ export async function DashboardFab({ modulo }: { modulo: string }) {
   const info = MODULOS.find((m) => m.id === modulo);
   if (!info) return null;
 
-  const d = tableros.find((t) => t.id === modulo);
+  // Ya vienen con el principal delante (ver `tablerosDelModulo`), así que
+  // buscar el primero publicado da «el publicado más principal» de una vez.
+  const aqui = tablerosDelModulo(todos, modulo);
+  const d = aqui.find((t) => t.publicado) ?? aqui[0];
   const publicado = Boolean(d?.publicado);
 
   // Sin publicar, el tablero no existe para el equipo. Ver la cabecera.
   if (!publicado && !admin) return null;
+
+  // Cuántos MÁS hay, para decirlo en el `title` en vez de callarlo: quien ve el
+  // botón tiene que poder enterarse de que en el menú hay otros dos.
+  const otros = aqui.length - 1;
 
   const { Icon, texto, titulo, href } = publicado
     ? {
@@ -88,21 +112,24 @@ export async function DashboardFab({ modulo }: { modulo: string }) {
         // largo —ése es justo el punto de poder cambiarlo— y un flotante que
         // crece con él acabaría tapando media pantalla en algún módulo.
         // `d` existe si está publicado: `publicado` sale de él.
-        titulo: d!.title,
-        href: `/admin/dashboard/${modulo}`,
+        titulo:
+          otros > 0
+            ? `${d!.title} · hay ${otros} tablero${otros === 1 ? "" : "s"} más en el menú`
+            : d!.title,
+        href: `/admin/dashboard/${d!.slug}`,
       }
     : d
       ? {
           Icon: Pencil,
           texto: "Terminar tablero",
           titulo: `${d.title} · sin publicar, solo lo ves tú`,
-          href: `/admin/dashboard/${modulo}/componer`,
+          href: `/admin/dashboard/${d.slug}/componer`,
         }
       : {
           Icon: Plus,
           texto: "Crear tablero",
           titulo: `${info.label} todavía no tiene tablero`,
-          href: `/admin/dashboard/${modulo}/componer`,
+          href: `/admin/dashboard/nuevo?modulo=${modulo}`,
         };
 
   return (

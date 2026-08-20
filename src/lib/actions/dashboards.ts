@@ -6,6 +6,8 @@ import { currentRole } from "@/lib/tenancy/context";
 import { revalidateDashboards } from "@/lib/revalidate";
 import {
   addToDashboard,
+  createDashboard,
+  setDashboardModules,
   publishDashboard,
   renameDashboard,
   reorderDashboard,
@@ -13,12 +15,12 @@ import {
 } from "@/lib/ml/dashboards";
 
 /**
- * Acciones del compositor de dashboards.
+ * Acciones del compositor de tableros.
  *
- * Solo administrador. Componer un dashboard decide qué mira el equipo entero al
- * entrar a un módulo, y publicarlo decide cuándo empieza a mirarlo. No es una
- * restricción de comodidad: es que la decisión se toma una vez y la ve todo el
- * mundo.
+ * Solo administrador. Componer un tablero decide qué mira el equipo entero al
+ * entrar a un módulo, publicarlo decide cuándo empieza a mirarlo, y dónde sale
+ * decide por dónde llega. No es una restricción de comodidad: es que la
+ * decisión se toma una vez y la ve todo el mundo.
  */
 
 export type DashState = { ok: boolean; message?: string; error?: string };
@@ -26,7 +28,7 @@ export type DashState = { ok: boolean; message?: string; error?: string };
 async function soloAdmin(): Promise<string | null> {
   return isAdminRole(await currentRole())
     ? null
-    : "Solo un administrador compone los dashboards.";
+    : "Solo un administrador compone los tableros.";
 }
 
 
@@ -45,7 +47,7 @@ export async function reorderDashboardAction(
   const no = await soloAdmin();
   if (no) return { ok: false, error: no };
 
-  const modulo = String(form.get("modulo") ?? "");
+  const slug = String(form.get("slug") ?? "");
   let orden: Array<{ analysis: string; width: "full" | "half"; active: boolean }>;
 
   try {
@@ -64,7 +66,7 @@ export async function reorderDashboardAction(
     return { ok: false, error: "El orden llegó con una forma que no se entiende." };
   }
 
-  const r = await reorderDashboard(modulo, orden);
+  const r = await reorderDashboard(slug, orden);
   if (!r.ok) return { ok: false, error: r.reason };
 
   await revalidateDashboards();
@@ -80,7 +82,7 @@ export async function addToDashboardAction(
   if (no) return { ok: false, error: no };
 
   const r = await addToDashboard(
-    String(form.get("modulo") ?? ""),
+    String(form.get("slug") ?? ""),
     String(form.get("analysis") ?? ""),
   );
   if (!r.ok) return { ok: false, error: r.reason };
@@ -98,7 +100,7 @@ export async function publishDashboardAction(
 
   const session = await auth();
   const r = await publishDashboard(
-    String(form.get("modulo") ?? ""),
+    String(form.get("slug") ?? ""),
     session?.user?.id ?? null,
   );
   if (!r.ok) return { ok: false, error: r.reason };
@@ -114,7 +116,7 @@ export async function unpublishDashboardAction(
   const no = await soloAdmin();
   if (no) return { ok: false, error: no };
 
-  await unpublishDashboard(String(form.get("modulo") ?? ""));
+  await unpublishDashboard(String(form.get("slug") ?? ""));
   await revalidateDashboards();
   // Se dice que NO se borró nada: el miedo razonable al despublicar es perder
   // el trabajo de acomodarlo.
@@ -129,11 +131,65 @@ export async function renameDashboardAction(
   if (no) return { ok: false, error: no };
 
   const r = await renameDashboard(
-    String(form.get("modulo") ?? ""),
+    String(form.get("slug") ?? ""),
     String(form.get("title") ?? ""),
   );
   if (!r.ok) return { ok: false, error: r.reason };
 
   await revalidateDashboards();
   return { ok: true, message: "Nombre actualizado." };
+}
+
+/**
+ * Crea un tablero vacío con el nombre que le den.
+ *
+ * Devuelve el slug para que la pantalla sepa a dónde ir. No redirige desde
+ * aquí: quien llama es un formulario de una página, y esa página decide qué
+ * hacer con el resultado —hoy, mandar al compositor—.
+ */
+export async function createDashboardAction(
+  _prev: DashState & { slug?: string },
+  form: FormData,
+): Promise<DashState & { slug?: string }> {
+  const no = await soloAdmin();
+  if (no) return { ok: false, error: no };
+
+  const r = await createDashboard(String(form.get("title") ?? ""));
+  if (!r.ok) return { ok: false, error: r.reason };
+
+  await revalidateDashboards();
+  return { ok: true, slug: r.slug, message: "Tablero creado." };
+}
+
+/**
+ * Decide en qué módulos sale el tablero.
+ *
+ * La lista llega separada por comas en un campo oculto, no como casillas con el
+ * mismo nombre: el ORDEN importa —el primero es el que abre el botón flotante—
+ * y `FormData.getAll` devuelve las casillas en el orden del DOM, no en el que
+ * la persona las fue eligiendo.
+ */
+export async function setDashboardModulesAction(
+  _prev: DashState,
+  form: FormData,
+): Promise<DashState> {
+  const no = await soloAdmin();
+  if (no) return { ok: false, error: no };
+
+  const modulos = String(form.get("modulos") ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+  const r = await setDashboardModules(String(form.get("slug") ?? ""), modulos);
+  if (!r.ok) return { ok: false, error: r.reason };
+
+  await revalidateDashboards();
+  return {
+    ok: true,
+    message:
+      modulos.length === 0
+        ? "Ya no sale en ningún módulo; se llega por el menú."
+        : `Sale en ${modulos.length} módulo${modulos.length === 1 ? "" : "s"}.`,
+  };
 }

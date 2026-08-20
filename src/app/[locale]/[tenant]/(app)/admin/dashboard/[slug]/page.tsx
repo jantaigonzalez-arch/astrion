@@ -5,7 +5,7 @@ import { isAdminRole } from "@/lib/roles";
 import { currentRole } from "@/lib/tenancy/context";
 import { Link } from "@/lib/nav";
 import { dashboardFor } from "@/lib/ml/dashboards";
-import { resolveAnalysis } from "@/lib/ml/analyses";
+import { moduloById, resolveAnalysis } from "@/lib/ml/analyses";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,15 +33,20 @@ import { cn } from "@/lib/utils";
 export default async function DashboardPage({
   params,
 }: {
-  params: Promise<{ locale: string; modulo: string }>;
+  params: Promise<{ locale: string; slug: string }>;
 }) {
-  const { locale, modulo } = await params;
+  const { locale, slug } = await params;
   setRequestLocale(locale);
 
   const admin = isAdminRole(await currentRole());
-  const d = await dashboardFor(modulo);
+  const d = await dashboardFor(slug);
   if (!d) notFound();
   if (!d.publishedAt && !admin) notFound();
+
+  const primero = d.modules.map((m) => moduloById(m)).find(Boolean);
+  const vuelta = primero
+    ? { href: primero.home, label: primero.label }
+    : { href: "/dashboard", label: "el panel" };
 
   const encendidos = d.bloques.filter((b) => b.active);
   const visibles = encendidos.filter((b) => admin || !b.analysis.adminOnly);
@@ -80,14 +85,18 @@ export default async function DashboardPage({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Vuelve al PRIMER módulo donde está publicado, que es el que su
+              botón flotante abre. Un tablero puede estar en varios o en
+              ninguno; sin ninguno, la salida es el panel — un tablero al que
+              solo se llega por el menú no tiene «de dónde veniste». */}
           <Button asChild variant="outline" size="sm">
-            <Link href={d.modulo.home}>
-              <Undo2 className="size-4" /> Volver a {d.modulo.label}
+            <Link href={vuelta.href}>
+              <Undo2 className="size-4" /> Volver a {vuelta.label}
             </Link>
           </Button>
           {admin && (
             <Button asChild size="sm">
-              <Link href={`/admin/dashboard/${modulo}/componer`}>
+              <Link href={`/admin/dashboard/${slug}/componer`}>
                 <Pencil className="size-4" /> Componer
               </Link>
             </Button>

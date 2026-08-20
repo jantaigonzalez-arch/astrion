@@ -6,6 +6,7 @@ import { currentRole } from "@/lib/tenancy/context";
 import { redirectInTenant } from "@/lib/nav-server";
 import { Link } from "@/lib/nav";
 import { dashboardFor } from "@/lib/ml/dashboards";
+import { MODULOS } from "@/lib/ml/analyses";
 import { Button } from "@/components/ui/button";
 import {
   DashboardBuilder,
@@ -23,18 +24,23 @@ import {
  */
 export default async function ComponerPage({
   params,
+  searchParams,
 }: {
-  params: Promise<{ locale: string; modulo: string }>;
+  params: Promise<{ locale: string; slug: string }>;
+  searchParams: Promise<{ modulo?: string }>;
 }) {
-  const { locale, modulo } = await params;
+  const { locale, slug } = await params;
   setRequestLocale(locale);
 
   if (!isAdminRole(await currentRole())) {
-    await redirectInTenant(`/admin/dashboard/${modulo}`, locale);
+    await redirectInTenant(`/admin/dashboard/${slug}`, locale);
   }
 
-  const d = await dashboardFor(modulo);
+  const d = await dashboardFor(slug);
   if (!d) notFound();
+
+  const { modulo } = await searchParams;
+  const sugerido = MODULOS.find((m) => m.id === modulo)?.id ?? null;
 
   const bloques: BloqueView[] = d.bloques.map((b) => ({
     analysis: b.analysis.id,
@@ -59,16 +65,22 @@ export default async function ComponerPage({
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
-          <Link href={`/admin/dashboard/${modulo}`}>
+          <Link href={`/admin/dashboard/${slug}`}>
             <Eye className="size-4" /> Ver el tablero
           </Link>
         </Button>
       </div>
 
       <DashboardBuilder
-        modulo={modulo}
-        moduloLabel={d.modulo.label}
+        slug={slug}
         titulo={d.title}
+        // El módulo sugerido solo cuenta si el tablero todavía no sale en
+        // ninguno: viene de haber entrado desde una pantalla sin tablero, y
+        // pisar una elección ya hecha sería lo contrario de sugerir.
+        modulos={
+          d.modules.length === 0 && sugerido ? [sugerido] : d.modules
+        }
+        catalogo={MODULOS.map((m) => ({ id: m.id, label: m.label }))}
         publicado={d.publishedAt ? d.publishedAt.toISOString() : null}
         bloques={bloques}
         disponibles={d.disponibles.map((a) => ({

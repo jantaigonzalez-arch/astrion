@@ -108,15 +108,22 @@ export const MODULOS: Modulo[] = [
   { id: "rentabilidad", label: "Rentabilidad", home: "/admin/rentabilidad" },
 ];
 
-/** El prefijo de pantalla de un dashboard. Ver la migración 0016. */
-export const dashboardScreen = (modulo: string) => `dashboard:${modulo}`;
+/**
+ * El prefijo de pantalla de un tablero, a partir de su SLUG.
+ *
+ * Recibía el id del módulo, y la firma no cambió porque el slug de los siete
+ * tableros de siempre ES el id de su módulo — ver la migración 0018. Lo que
+ * cambió es el significado: `dashboard:ventas` ya no es «el tablero del módulo
+ * ventas» sino «el tablero que se llama ventas», y ese tablero puede
+ * publicarse en varios módulos o en ninguno.
+ */
+export const dashboardScreen = (slug: string) => `dashboard:${slug}`;
 
 export const moduloById = (id: string) => MODULOS.find((m) => m.id === id);
 
-/** El módulo de un prefijo `dashboard:…`, o `null` si no lo es. */
-export function moduloDeScreen(prefix: string): Modulo | null {
-  if (!prefix.startsWith("dashboard:")) return null;
-  return moduloById(prefix.slice("dashboard:".length)) ?? null;
+/** El slug de un prefijo `dashboard:…`, o `null` si no es de un tablero. */
+export function slugDeScreen(prefix: string): string | null {
+  return prefix.startsWith("dashboard:") ? prefix.slice("dashboard:".length) : null;
 }
 
 export const SCREENS: Screen[] = [
@@ -132,23 +139,36 @@ export const SCREENS: Screen[] = [
 ];
 
 /**
- * Todas las superficies que admiten análisis: las de trabajo y los dashboards.
+ * La pantalla de un prefijo: de trabajo o de tablero.
  *
- * Se derivan de `MODULOS` en vez de escribirse a mano por el mismo motivo que
- * los rasgos derivados se derivan de su lista: dos listas paralelas se
- * desincronizan, y aquí el síntoma sería un módulo con botón de dashboard cuyo
- * dashboard no admite colocar nada.
+ * ── POR QUÉ LOS TABLEROS YA NO SON UNA LISTA ───────────────────────────────
+ *
+ * Había una constante `DASHBOARDS` derivada de `MODULOS`: siete tableros fijos,
+ * uno por módulo. Desde que un tablero tiene nombre propio y se crea cuando
+ * alguien quiere, esa lista no puede existir en código — los tableros son filas,
+ * no constantes, y validar contra una lista estática habría rechazado colocar
+ * un análisis en cualquier tablero nuevo.
+ *
+ * Así que un prefijo `dashboard:*` se acepta por su FORMA. Que ese tablero
+ * exista de verdad lo comprueba quien lo abre, contra la tabla; aquí solo se
+ * responde si el prefijo designa una superficie que admite análisis, que es la
+ * pregunta que hace `placementError`.
+ *
+ * La etiqueta sale de `MODULOS` cuando el slug coincide con un módulo —los siete
+ * de siempre— para que los mensajes sigan diciendo «Tablero de Ventas» y no
+ * «Tablero «ventas»».
  */
-export const DASHBOARDS: Screen[] = MODULOS.map((m) => ({
-  prefix: dashboardScreen(m.id),
-  label: `Dashboard de ${m.label}`,
-  kind: "dashboard" as const,
-}));
-
-export const ALL_SCREENS: Screen[] = [...SCREENS, ...DASHBOARDS];
-
 export function screenByPrefix(prefix: string): Screen | undefined {
-  return ALL_SCREENS.find((s) => s.prefix === prefix);
+  const slug = slugDeScreen(prefix);
+  if (slug !== null) {
+    const m = moduloById(slug);
+    return {
+      prefix,
+      label: m ? `Tablero de ${m.label}` : `Tablero «${slug}»`,
+      kind: "dashboard",
+    };
+  }
+  return SCREENS.find((s) => s.prefix === prefix);
 }
 
 export type AnalysisContext = {

@@ -2438,8 +2438,19 @@ export const dashboards = pgTable(
   "dashboards",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    /** El módulo del ERP: `ventas`, `clientes`, `rentabilidad`… */
-    module: varchar("module", { length: 40 }).notNull(),
+    /*
+      La identidad del tablero: lo que va en la URL y en el prefijo de pantalla
+      de sus bloques (`dashboard:<slug>`).
+
+      Los siete de siempre tienen por slug el id de su módulo —`ventas`,
+      `pagos`…— y eso no es casualidad: es lo que hizo que soltar el tablero del
+      módulo no costara una migración de datos. Las colocaciones existentes
+      apuntan a `dashboard:ventas` y siguen valiendo; lo que cambió es qué
+      significa esa cadena — antes «el módulo ventas», ahora «el tablero que se
+      llama ventas».
+    */
+    slug: varchar("slug", { length: 60 }).notNull(),
+    /** El nombre que le pone quien lo compone. */
     title: varchar("title", { length: 120 }).notNull(),
     /** Nulo mientras no se publique. Es todo el estado que hace falta. */
     publishedAt: timestamp("published_at", { withTimezone: true }),
@@ -2449,9 +2460,49 @@ export const dashboards = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  // Uno por módulo: dos obligarían a elegir cuál abre el botón, y esa elección
-  // no la puede tomar nadie con criterio.
-  (t) => [uniqueIndex("dashboards_module_uq").on(t.module)],
+  (t) => [uniqueIndex("dashboards_slug_uq").on(t.slug)],
+);
+
+/**
+ * Dónde se publica cada tablero. Cero, uno o varios módulos.
+ *
+ * Tabla de relación y no una columna en `dashboards`, porque la respuesta
+ * honesta a «¿en qué módulo va este tablero?» es «en los que decidas». Un
+ * tablero de cierre de mes interesa en Ventas y en Rentabilidad, y obligar a
+ * elegir uno llevaba a duplicarlo — dos tableros que hay que mantener iguales a
+ * mano y que se separan al primer cambio.
+ */
+export const dashboardModules = pgTable(
+  "dashboard_modules",
+  {
+    dashboardId: uuid("dashboard_id")
+      .notNull()
+      .references(() => dashboards.id, { onDelete: "cascade" }),
+    /** El módulo del ERP: `ventas`, `clientes`, `rentabilidad`… */
+    module: varchar("module", { length: 40 }).notNull(),
+    /**
+     * El orden de los módulos DE ESTE TABLERO. Cero es su módulo principal.
+     *
+     * Ordena los módulos de un tablero y no los tableros de un módulo, que es
+     * la confusión fácil. De ahí sale igualmente la regla que hacía falta: el
+     * botón flotante de una pantalla abre el tablero que tiene a ESE módulo
+     * como principal. Un tablero de cierre de mes puesto primero en Ventas y
+     * después en Rentabilidad manda en Ventas, y en Rentabilidad se llega por
+     * el menú.
+     *
+     * Sin este campo habría que inventar un criterio —el más nuevo, el primero
+     * alfabéticamente— y ninguno es una decisión que el sistema pueda tomar en
+     * lugar de quien compone.
+     */
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.dashboardId, t.module] }),
+    // «Qué tableros salen en este módulo» es la consulta de cada navegación: la
+    // hacen el menú lateral y el botón de cada pantalla.
+    index("dashboard_modules_module_idx").on(t.module, t.position),
+  ],
 );
 
 /* ------------------------- Tipos ------------------------- */

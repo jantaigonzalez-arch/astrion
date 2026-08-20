@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import {
   addToDashboardAction,
+  setDashboardModulesAction,
   publishDashboardAction,
   renameDashboardAction,
   reorderDashboardAction,
@@ -47,7 +48,7 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 /**
- * El compositor del dashboard de un módulo.
+ * El compositor de un tablero.
  *
  * ── EL ARRASTRE ES NATIVO ──────────────────────────────────────────────────
  *
@@ -73,13 +74,13 @@ const KIND_LABEL: Record<string, string> = {
  *
  * Un bloque apagado se queda en la lista, en gris. Es lo que permite quitarlo
  * del tablero sin perder dónde estaba, y lo que hace que el compositor enseñe
- * TODO lo que ese módulo podría mostrar — que es la mitad de la información:
+ * TODO lo que el tablero podría mostrar — que es la mitad de la información:
  * quien compone tiene que ver lo que está dejando fuera.
  *
  * ── EL NOMBRE SE EDITA AQUÍ Y NO EN UN DIÁLOGO ─────────────────────────────
  *
- * Un tablero nace llamándose «Dashboard de Compras», que es una descripción, no
- * un nombre. El que acaba sirviendo —«Lo que hay que pagar esta semana»— dice
+ * Los siete de fábrica nacen llamándose «Dashboard de Compras», que es una
+ * descripción, no un nombre. El que acaba sirviendo —«Lo que hay que pagar esta semana»— dice
  * para qué se abre, y esa frase solo la sabe quien lo compuso, en el momento en
  * que termina de componerlo. Por eso el campo vive en la cabecera del
  * compositor, editable en el sitio: mandarlo a un diálogo aparte lo convierte
@@ -92,27 +93,36 @@ const KIND_LABEL: Record<string, string> = {
  * cosa de esta pantalla que cambia la base sin que nadie lo pida.
  */
 export function DashboardBuilder({
-  modulo,
-  moduloLabel,
+  slug,
   titulo,
+  modulos,
+  catalogo,
   publicado,
   bloques,
   disponibles,
 }: {
-  modulo: string;
-  moduloLabel: string;
+  slug: string;
   titulo: string;
+  /** Los módulos donde sale hoy. Puede estar vacío. */
+  modulos: string[];
+  /** Todos los módulos del ERP, para elegir. */
+  catalogo: Array<{ id: string; label: string }>;
   publicado: string | null;
   bloques: BloqueView[];
   disponibles: Array<{ id: string; label: string; kind: string; watching: string[] }>;
 }) {
   const [lista, setLista] = useState(bloques);
   const [nombre, setNombre] = useState(titulo);
+  const [donde, setDonde] = useState<string[]>(modulos);
   const [arrastrado, setArrastrado] = useState<string | null>(null);
   const [sobre, setSobre] = useState<string | null>(null);
 
   const [guardado, guardar, guardando] = useActionState(reorderDashboardAction, inicial);
   const [ren, renombrar, renombrando] = useActionState(renameDashboardAction, inicial);
+  const [mods, guardarModulos, guardandoModulos] = useActionState(
+    setDashboardModulesAction,
+    inicial,
+  );
   const [pub, publicar, publicando] = useActionState(publishDashboardAction, inicial);
   const [despub, despublicar, despublicando] = useActionState(
     unpublishDashboardAction,
@@ -130,6 +140,13 @@ export function DashboardBuilder({
   // Se compara ya recortado: el servidor guarda `trim()`, así que un espacio al
   // final no es un cambio y el botón no debería encenderse por él.
   const nombreSucio = nombre.trim().length > 0 && nombre.trim() !== titulo;
+
+  // El ORDEN importa: el primero es el que abre el botón flotante del módulo.
+  // Por eso se compara la lista tal cual y no como conjunto.
+  const dondeSucio = JSON.stringify(donde) !== JSON.stringify(modulos);
+
+  const alternar = (id: string) =>
+    setDonde((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]));
 
   function mover(desde: string, hasta: string) {
     if (desde === hasta) return;
@@ -157,7 +174,7 @@ export function DashboardBuilder({
                 convierte en campo al hacer clic — eso último esconde que se
                 puede editar justo a quien no sabe que se puede. */}
             <form action={renombrar} className="flex min-w-0 flex-1 items-center gap-1">
-              <input type="hidden" name="modulo" value={modulo} />
+              <input type="hidden" name="slug" value={slug} />
               <input
                 name="title"
                 value={nombre}
@@ -192,12 +209,9 @@ export function DashboardBuilder({
             )}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            {/* El módulo baja aquí al ceder el encabezado al nombre. Sigue
-                haciendo falta: el nombre puede acabar sin decir de qué módulo
-                es, y esta pantalla se abre desde siete sitios distintos. */}
-            {moduloLabel} · {encendidos} de {lista.length} análisis encendidos.{" "}
+            {encendidos} de {lista.length} análisis encendidos.{" "}
             {publicado
-              ? "El equipo lo ve desde el botón «Dashboard» del módulo."
+              ? "El equipo ya lo ve."
               : "Solo tú lo ves hasta que lo publiques."}
           </p>
         </div>
@@ -215,7 +229,7 @@ export function DashboardBuilder({
           )}
 
           <form action={guardar}>
-            <input type="hidden" name="modulo" value={modulo} />
+            <input type="hidden" name="slug" value={slug} />
             {/* La lista entera viaja serializada. Ver la cabecera. */}
             <input
               type="hidden"
@@ -239,7 +253,7 @@ export function DashboardBuilder({
           </form>
 
           <form action={publicado ? despublicar : publicar}>
-            <input type="hidden" name="modulo" value={modulo} />
+            <input type="hidden" name="slug" value={slug} />
             <Button
               type="submit"
               size="sm"
@@ -267,7 +281,7 @@ export function DashboardBuilder({
           </form>
         </div>
 
-        {[guardado, ren, pub, despub].map((s, i) =>
+        {[guardado, ren, mods, pub, despub].map((s, i) =>
           s.error ? (
             <p key={i} className="flex w-full items-start gap-1.5 text-xs text-destructive">
               <XCircle className="mt-0.5 size-3.5 shrink-0" />
@@ -279,6 +293,75 @@ export function DashboardBuilder({
             </p>
           ) : null,
         )}
+      </Card>
+
+      {/*
+        DÓNDE SALE ESTE TABLERO.
+
+        Su propia tarjeta y no un renglón de la cabecera, porque es una decisión
+        distinta de las otras dos que se toman aquí. Componer es «qué dice»;
+        publicar es «el equipo puede verlo»; esto es «por dónde se llega». Un
+        tablero puede estar publicado y no salir en ningún módulo —se llega por
+        el menú— o estar en tres y seguir siendo borrador.
+
+        Se eligen varios a propósito: un cierre de mes interesa en Ventas y en
+        Rentabilidad, y obligar a elegir uno llevaba a duplicar el tablero.
+      */}
+      <Card className="p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold">Dónde sale</h3>
+            <p className="mt-1 max-w-xl text-xs text-muted-foreground">
+              Los módulos donde aparece su botón. El primero que elijas es su
+              módulo principal: en esa pantalla, el botón abre este tablero. En
+              los demás también sale, y se llega por el menú lateral. Sin
+              ninguno, el tablero solo vive en el menú.
+            </p>
+          </div>
+          {dondeSucio && (
+            <form action={guardarModulos}>
+              <input type="hidden" name="slug" value={slug} />
+              <input type="hidden" name="modulos" value={donde.join(",")} />
+              <Button type="submit" size="sm" disabled={guardandoModulos}>
+                {guardandoModulos ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Check className="size-3.5" />
+                )}
+                Guardar dónde sale
+              </Button>
+            </form>
+          )}
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          {catalogo.map((m) => {
+            const puesto = donde.indexOf(m.id);
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => alternar(m.id)}
+                aria-pressed={puesto >= 0}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs",
+                  "transition-colors",
+                  puesto >= 0
+                    ? "border-primary bg-primary/10 text-foreground"
+                    : "border-border text-muted-foreground hover:bg-secondary",
+                )}
+              >
+                {/* El número dice el orden, que es lo que decide cuál abre el
+                    botón cuando un módulo tiene varios tableros. Sin él, «el
+                    primero» sería una regla invisible. */}
+                {puesto >= 0 && (
+                  <span className="font-mono text-[10px] text-primary">{puesto + 1}</span>
+                )}
+                {m.label}
+              </button>
+            );
+          })}
+        </div>
       </Card>
 
       {lista.length === 0 && (
@@ -416,7 +499,7 @@ export function DashboardBuilder({
           </p>
           <div className="mt-3 grid gap-2">
             {disponibles.map((a) => (
-              <Disponible key={a.id} modulo={modulo} a={a} />
+              <Disponible key={a.id} slug={slug} a={a} />
             ))}
           </div>
         </Card>
@@ -434,17 +517,17 @@ export function DashboardBuilder({
  * a ciegas, y luego nadie sabe por qué el tablero enseña lo que enseña.
  */
 function Disponible({
-  modulo,
+  slug,
   a,
 }: {
-  modulo: string;
+  slug: string;
   a: { id: string; label: string; kind: string; watching: string[] };
 }) {
   const [state, agregar, agregando] = useActionState(addToDashboardAction, inicial);
 
   return (
     <form action={agregar} className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
-      <input type="hidden" name="modulo" value={modulo} />
+      <input type="hidden" name="slug" value={slug} />
       <input type="hidden" name="analysis" value={a.id} />
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">

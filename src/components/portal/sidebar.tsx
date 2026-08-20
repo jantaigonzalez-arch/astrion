@@ -51,20 +51,32 @@ type NavItem = {
  * para pintar una barra lateral.
  */
 export type TableroItem = {
-  id: string;
-  label: string;
-  /** La pantalla del módulo. Es lo que decide si este rol lo ve. */
-  home: string;
+  slug: string;
+  /** El nombre que le puso quien lo compuso. */
+  title: string;
+  /**
+   * Las pantallas de los módulos donde sale. Es lo que decide si este rol lo ve.
+   *
+   * En plural desde que un tablero puede publicarse en varios: basta con que UNA
+   * de esas pantallas esté en el menú de este rol. Un tablero de cierre de mes
+   * puesto en Ventas y en Rentabilidad tiene que verlo el vendedor —que tiene
+   * Ventas— aunque Rentabilidad sea solo del administrador.
+   */
+  homes: string[];
   publicado: boolean;
 };
 
 /**
- * El icono de cada tablero es el DE SU MÓDULO, no uno de tablero.
+ * El icono de los siete de fábrica es el DE SU MÓDULO, no uno de tablero.
  *
  * Plegada, la barra es una tira de iconos sin texto, y siete tableros con el
  * mismo icono de rejilla serían siete renglones indistinguibles — el problema
  * que este menú ya evita a mano entre el levantamiento y la requisición. Con el
  * icono del módulo, el tablero de Compras se reconoce por lo mismo que Compras.
+ *
+ * Se busca por SLUG, que en los siete de siempre es el id de su módulo. Un
+ * tablero creado a mano no está en este mapa y cae en la rejilla genérica, que
+ * es lo correcto: no es de ningún módulo en particular.
  */
 const ICONO_DE_MODULO: Record<string, LucideIcon> = {
   servicio: Inbox,
@@ -99,22 +111,39 @@ function conTableros(
   const visibles = new Set(groups.flatMap((g) => g.items.map((i) => i.href)));
 
   const items = tableros
-    .filter((t) => visibles.has(t.home))
+    // Basta con que salga en UN módulo que este rol ve. Un tablero sin módulos
+    // no se filtra por rol —no hay pantalla contra la que comprobar— así que se
+    // reserva para administración, que es quien lo compuso.
+    .filter((t) =>
+      t.homes.length > 0 ? t.homes.some((h) => visibles.has(h)) : isAdminRole(role),
+    )
     // Sin publicar solo lo ve quien puede componerlo, igual que el botón del
     // módulo: nadie debería encontrarse un tablero a medio ordenar porque
     // alguien salió a comer.
     .filter((t) => t.publicado || isAdminRole(role))
     .map(
       (t): NavItem => ({
-        href: `/admin/dashboard/${t.id}`,
-        label: t.label,
-        Icon: ICONO_DE_MODULO[t.id] ?? LayoutDashboard,
+        href: `/admin/dashboard/${t.slug}`,
+        label: t.title,
+        Icon: ICONO_DE_MODULO[t.slug] ?? LayoutDashboard,
         badge: t.publicado ? undefined : "borrador",
       }),
     );
 
-  // Sin tableros no hay sección: un encabezado «Tableros» sobre una lista vacía
-  // ocupa sitio para decir que no hay nada.
+  // Administración siempre puede crear uno, y por eso su sección existe aunque
+  // no haya ninguno todavía: sin este renglón, crear un tablero desde cero solo
+  // se podría desde el botón de una pantalla que no tenga — un camino que hay
+  // que descubrir por accidente.
+  if (isAdminRole(role)) {
+    items.push({
+      href: "/admin/dashboard/nuevo",
+      label: "Nuevo tablero",
+      Icon: PlusCircle,
+    });
+  }
+
+  // Sin tableros ni permiso para crearlos no hay sección: un encabezado
+  // «Tableros» sobre una lista vacía ocupa sitio para decir que no hay nada.
   return items.length > 0 ? [...groups, { section: "Tableros", items }] : groups;
 }
 
