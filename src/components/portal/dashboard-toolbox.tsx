@@ -1,6 +1,7 @@
 "use client";
 
-import { GripVertical, Plus, Undo2 } from "lucide-react";
+import { useState } from "react";
+import { GripVertical, Plus, Search, Undo2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type HerramientaItem = {
@@ -63,41 +64,117 @@ export function DashboardToolbox({
   onAgregar: (id: string, desde: "disponible" | "quitado") => void;
   onArrastrar: (id: string, desde: "disponible" | "quitado" | null) => void;
 }) {
+  const [q, setQ] = useState("");
+
+  /*
+    Busca en el nombre Y en lo que vigila.
+
+    Solo por nombre no serviría para lo que la gente pregunta: quien escribe
+    «anticipos» no busca un análisis llamado así —se llama «Avisos de cuentas
+    por pagar»— sino el que los vigila. Esa frase está en `watching`, que es
+    justo lo que hace la búsqueda útil en vez de decorativa.
+
+    Sin acentos a los dos lados: nadie escribe «rentabilidad» con tilde en un
+    campo de búsqueda, y hacer que «utilidad» no encuentre «Utilidad por mes»
+    sería una trampa.
+  */
+  const term = normalizar(q);
+  const filtrar = (xs: HerramientaItem[]) =>
+    term
+      ? xs.filter((a) =>
+          normalizar([a.label, ...a.watching].join(" ")).includes(term),
+        )
+      : xs;
+
+  // Sin memoizar a mano: son listas de veintitantos y el compilador de React ya
+  // se encarga. Envolverlo en `useMemo` además le impedía optimizar el
+  // componente entero, porque no puede preservar la memoización de una función
+  // que devuelve otra función.
+  const dispFiltrados = filtrar(disponibles);
+  const quitFiltrados = filtrar(quitados);
+  const buscando = q.trim().length > 0;
+  const nada = buscando && dispFiltrados.length === 0 && quitFiltrados.length === 0;
+
   return (
     // `min-h-0` con `flex-1`: sin él, un elemento flexible no se deja encoger
     // por debajo de su contenido y la lista desborda el panel en vez de
-    // desplazarse dentro. Es la parte que scrollea; el nombre y los módulos se
-    // quedan fijos arriba.
-    <div className="min-h-0 flex-1 overflow-y-auto p-3">
-      <p className="px-1 pb-2 text-[11px] leading-snug text-muted-foreground">
-        {quitando
-          ? "Suelta aquí para quitarlo del tablero."
-          : "Arrastra al tablero, o pulsa + para ponerlo al final."}
-      </p>
-
-      <div className="space-y-4">
-        <Seccion
-          titulo="Disponibles"
-          vacio="Ya está todo en el tablero."
-          items={disponibles}
-          desde="disponible"
-          onAgregar={onAgregar}
-          onArrastrar={onArrastrar}
-        />
-        {quitados.length > 0 && (
-          <Seccion
-            titulo="Quitados de este tablero"
-            ayuda="Siguen existiendo: apagar no es borrar."
-            vacio=""
-            items={quitados}
-            desde="quitado"
-            onAgregar={onAgregar}
-            onArrastrar={onArrastrar}
+    // desplazarse dentro.
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* El buscador se queda fijo mientras la lista se desplaza: buscar y
+          seguir viendo el campo es lo que permite corregir el término sin
+          volver arriba. */}
+      <div className="shrink-0 px-3 pb-2 pt-3">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Buscar análisis…"
+            aria-label="Buscar entre los análisis disponibles"
+            className="h-8 w-full rounded-lg border border-input bg-background pl-8 pr-7 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
           />
+          {buscando && (
+            <button
+              type="button"
+              onClick={() => setQ("")}
+              aria-label="Limpiar la búsqueda"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
+            >
+              <X className="size-3" />
+            </button>
+          )}
+        </div>
+
+        <p className="px-1 pt-2 text-[11px] leading-snug text-muted-foreground">
+          {quitando
+            ? "Suelta aquí para quitarlo del tablero."
+            : "Arrastra al tablero, o pulsa + para ponerlo al final."}
+        </p>
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 pb-3">
+        {nada ? (
+          <p className="px-1 text-xs text-muted-foreground">
+            Nada coincide con «{q.trim()}». Se busca en el nombre y en lo que
+            vigila cada análisis.
+          </p>
+        ) : (
+          <>
+            <Seccion
+              titulo="Disponibles"
+              vacio={
+                buscando ? "" : "Ya está todo en el tablero."
+              }
+              items={dispFiltrados}
+              desde="disponible"
+              onAgregar={onAgregar}
+              onArrastrar={onArrastrar}
+            />
+            {quitFiltrados.length > 0 && (
+              <Seccion
+                titulo="Quitados de este tablero"
+                ayuda="Siguen existiendo: apagar no es borrar."
+                vacio=""
+                items={quitFiltrados}
+                desde="quitado"
+                onAgregar={onAgregar}
+                onArrastrar={onArrastrar}
+              />
+            )}
+          </>
         )}
       </div>
     </div>
   );
+}
+
+/** Minúsculas y sin acentos, a los dos lados de la comparación. */
+function normalizar(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 }
 
 function Seccion({
@@ -117,6 +194,8 @@ function Seccion({
   onAgregar: (id: string, desde: "disponible" | "quitado") => void;
   onArrastrar: (id: string, desde: "disponible" | "quitado" | null) => void;
 }) {
+  if (items.length === 0 && !vacio) return null;
+
   return (
     <div>
       <p className="px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -125,7 +204,10 @@ function Seccion({
       {ayuda && <p className="px-1 pt-0.5 text-[11px] text-muted-foreground">{ayuda}</p>}
 
       {items.length === 0 ? (
-        <p className="px-1 pt-2 text-xs text-muted-foreground">{vacio}</p>
+        // Sin texto que poner, la sección entera desaparece: un encabezado
+        // «Disponibles» sobre nada es peor que no estar, y al buscar pasa
+        // seguido —lo que coincide suele estar en una sola de las dos.
+        vacio ? <p className="px-1 pt-2 text-xs text-muted-foreground">{vacio}</p> : null
       ) : (
         <ul className="mt-2 space-y-1.5">
           {items.map((a) => (

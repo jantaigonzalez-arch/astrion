@@ -6,6 +6,8 @@ import {
   EyeOff,
   GripVertical,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
   Rows3,
   Columns2,
   LayoutDashboard,
@@ -34,6 +36,17 @@ import type { Block } from "@/lib/ml/blocks-types";
 import { cn } from "@/lib/utils";
 
 const inicial: DashState = { ok: false };
+
+/**
+ * Cookie del panel plegado.
+ *
+ * La misma idea que `SIDEBAR_COOKIE`: es una preferencia de cómo se trabaja, no
+ * un dato de sesión, así que dura un año. A diferencia de aquélla NO la lee el
+ * servidor —esta pantalla no tiene el salto de la barra lateral, porque el
+ * panel no cambia el ancho de lo que ya está pintado— y leerla en el cliente
+ * evita pasarla por props desde la página.
+ */
+const PANEL_COOKIE = "evo_composer_panel";
 
 export type BloqueView = {
   analysis: string;
@@ -143,6 +156,28 @@ export function DashboardBuilder({
     desde: "tablero" | "disponible" | "quitado";
   } | null>(null);
   const [sobre, setSobre] = useState<string | null>(null);
+
+  /*
+    El panel plegado, para trabajar a pantalla completa.
+
+    La preferencia se lee UNA vez al crear el estado y no en un efecto: en un
+    efecto sería `setState` durante el montaje, o sea un segundo render y un
+    parpadeo del panel abriéndose para cerrarse. El inicializador perezoso de
+    `useState` corre antes del primer pintado.
+
+    Se lee en el cliente y no en el servidor —al revés que la barra lateral—
+    porque aquí no hay salto que evitar: plegar el panel no cambia el ancho de
+    nada que ya esté pintado. Y leerlo en el servidor habría obligado a pasar la
+    preferencia por props a través de dos pantallas.
+  */
+  const [plegado, setPlegado] = useState(
+    () => typeof document !== "undefined" && document.cookie.includes(`${PANEL_COOKIE}=1`),
+  );
+
+  function plegar(next: boolean) {
+    setPlegado(next);
+    document.cookie = `${PANEL_COOKIE}=${next ? "1" : "0"}; path=/; max-age=31536000; samesite=lax`;
+  }
 
   const [guardado, guardar, guardando] = useActionState(reorderDashboardAction, inicial);
   const [ren, renombrar, renombrando] = useActionState(renameDashboardAction, inicial);
@@ -265,7 +300,12 @@ export function DashboardBuilder({
       Al costado se leen igual de bien y no le quitan sitio a nada. Es el mismo
       reparto que la barra lateral del portal, del otro lado.
     */
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+    <div
+      className={cn(
+        "grid gap-4",
+        plegado ? "lg:grid-cols-1" : "lg:grid-cols-[minmax(0,1fr)_340px]",
+      )}
+    >
       {/* ───────────────── ESPACIO DE TRABAJO ───────────────── */}
       <div>
         {enTablero.length === 0 ? (
@@ -310,6 +350,24 @@ export function DashboardBuilder({
       </div>
 
       {/* ───────────────── EL PANEL ───────────────── */}
+      {/* Plegado, el panel se va del todo y deja una pestaña en el borde. No se
+          encoge a un riel de iconos como la barra lateral: de aquí se ARRASTRA,
+          y una tira sin nombres no diría de qué se está tirando. */}
+      {plegado ? (
+        <button
+          type="button"
+          onClick={() => plegar(false)}
+          title="Abrir el panel"
+          className={cn(
+            "fixed right-0 top-1/2 z-30 hidden -translate-y-1/2 items-center gap-1.5 rounded-l-lg",
+            "border border-r-0 border-border bg-card px-2 py-3 text-xs text-muted-foreground",
+            "shadow-lg transition-colors hover:text-foreground lg:flex",
+          )}
+        >
+          <ChevronLeft className="size-4" />
+          <span className="[writing-mode:vertical-rl]">Panel</span>
+        </button>
+      ) : (
       <aside
         onDragOver={(e) => {
           if (arrastrando?.desde !== "tablero") return;
@@ -339,6 +397,15 @@ export function DashboardBuilder({
             <label htmlFor="titulo" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               Nombre del tablero
             </label>
+            <button
+              type="button"
+              onClick={() => plegar(true)}
+              title="Plegar el panel"
+              aria-label="Plegar el panel"
+              className="ml-auto hidden rounded p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground lg:block"
+            >
+              <ChevronRight className="size-4" />
+            </button>
             {publicado ? (
               <Badge className="border-success/30 bg-success/15 text-success">
                 Publicado
@@ -540,6 +607,7 @@ export function DashboardBuilder({
           onArrastrar={(id, desde) => setArrastrando(desde ? { id, desde } : null)}
         />
       </aside>
+      )}
     </div>
   );
 }
