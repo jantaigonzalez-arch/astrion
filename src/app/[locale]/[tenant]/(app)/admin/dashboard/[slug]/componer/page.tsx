@@ -90,17 +90,20 @@ export default async function ComponerPage({
   }));
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            <LayoutDashboard className="size-6 text-primary" /> Componer tablero
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Arrastra para ordenar, elige el ancho de cada bloque y enciende o
-            apaga lo que quieras. Nada cambia para el equipo hasta que publiques.
-          </p>
-        </div>
+    /*
+      Franja fina y no un encabezado con título y párrafo.
+
+      El nombre del tablero se edita en el panel de la derecha, así que un <h1>
+      que dijera «Componer tablero» sería un segundo título compitiendo con el
+      de verdad — y el párrafo de instrucciones se deja de leer después del
+      primer minuto mientras sigue robándole alto al espacio de trabajo, que es
+      lo único que hay que mirar aquí.
+    */
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-4">
+        <p className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+          <LayoutDashboard className="size-4 text-primary" /> Componer tablero
+        </p>
         <Button asChild variant="outline" size="sm">
           <Link href={`/admin/dashboard/${slug}`}>
             <Eye className="size-4" /> Ver el tablero

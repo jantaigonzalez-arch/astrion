@@ -21,7 +21,6 @@ import {
   unpublishDashboardAction,
   type DashState,
 } from "@/lib/actions/dashboards";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DashboardToolbox } from "@/components/portal/dashboard-toolbox";
@@ -254,263 +253,274 @@ export function DashboardBuilder({
   }
 
   return (
-    <div className="space-y-4">
-      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            {/* El campo ES el encabezado: se ve como el título del tablero y se
-                escribe encima. Un <input> disfrazado y no un texto que se
-                convierte en campo al hacer clic — eso último esconde que se
-                puede editar justo a quien no sabe que se puede. */}
-            <form action={renombrar} className="flex min-w-0 flex-1 items-center gap-1">
-              <input type="hidden" name="slug" value={slug} />
-              <input
-                name="title"
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value)}
-                maxLength={120}
-                aria-label="Nombre del tablero"
-                className={cn(
-                  "min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-0.5",
-                  "text-base font-semibold outline-none transition-colors",
-                  "hover:border-border focus:border-primary focus:bg-background",
-                )}
+    /*
+      DOS ZONAS: el espacio de trabajo y el panel.
+
+      Todo lo que se DECIDE —cómo se llama, dónde sale, qué lleva— vive en el
+      panel de la derecha, y la izquierda queda entera para el tablero. Antes el
+      nombre y los módulos ocupaban dos tarjetas a lo ancho, encima del tablero:
+      empujaban hacia abajo justo lo que hay que mirar para decidir, y eran lo
+      primero que se dejaba de leer después del primer minuto.
+
+      Al costado se leen igual de bien y no le quitan sitio a nada. Es el mismo
+      reparto que la barra lateral del portal, del otro lado.
+    */
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+      {/* ───────────────── ESPACIO DE TRABAJO ───────────────── */}
+      <div>
+        {enTablero.length === 0 ? (
+          <ZonaVacia
+            activa={Boolean(arrastrando) && arrastrando?.desde !== "tablero"}
+            onSoltar={() => arrastrando && alFinal(arrastrando.id)}
+          />
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {enTablero.map((b) => (
+              <BloqueEditable
+                key={b.analysis}
+                b={b}
+                arrastrado={arrastrando?.id === b.analysis}
+                sobre={sobre === b.analysis}
+                onArrastrar={(id) =>
+                  setArrastrando(id ? { id, desde: "tablero" } : null)
+                }
+                onSobre={setSobre}
+                onSoltar={() => soltarEn(b.analysis)}
+                onAncho={(w) => cambiar(b.analysis, { width: w })}
+                onQuitar={() => cambiar(b.analysis, { active: false })}
               />
-              {nombreSucio && (
-                <Button type="submit" variant="ghost" size="sm" disabled={renombrando}>
-                  {renombrando ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Check className="size-3.5" />
-                  )}
-                  Guardar nombre
-                </Button>
-              )}
-            </form>
+            ))}
+
+            {/* Cola del tablero: soltar aquí lo pone al final. Sin esta zona el
+                último puesto solo se alcanzaría soltando sobre el último
+                bloque, que lo insertaría ANTES. */}
+            <ZonaFinal
+              activa={Boolean(arrastrando)}
+              onSoltar={() => arrastrando && alFinal(arrastrando.id)}
+            />
+          </div>
+        )}
+
+        {enTablero.length > 1 && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Arrastra por el asa para reordenar. Nada se guarda hasta que pulses
+            «Guardar tablero».
+          </p>
+        )}
+      </div>
+
+      {/* ───────────────── EL PANEL ───────────────── */}
+      <aside
+        onDragOver={(e) => {
+          if (arrastrando?.desde !== "tablero") return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+        }}
+        onDrop={(e) => {
+          if (arrastrando?.desde !== "tablero") return;
+          e.preventDefault();
+          cambiar(arrastrando.id, { active: false });
+          setArrastrando(null);
+        }}
+        className={cn(
+          // Pegajoso y de alto completo: acomodar un tablero largo es
+          // desplazarse por él, y un panel que se va hacia arriba obliga a
+          // volver por cada bloque que se agrega.
+          "lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)]",
+          "flex flex-col overflow-hidden rounded-xl border bg-card transition-colors",
+          arrastrando?.desde === "tablero"
+            ? "border-destructive/50 bg-destructive/5"
+            : "border-border",
+        )}
+      >
+        {/* ── El nombre ── */}
+        <div className="shrink-0 border-b border-border p-4">
+          <div className="flex items-center justify-between gap-2">
+            <label htmlFor="titulo" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Nombre del tablero
+            </label>
             {publicado ? (
               <Badge className="border-success/30 bg-success/15 text-success">
                 Publicado
               </Badge>
             ) : (
               <Badge className="border-border bg-secondary text-muted-foreground">
-                Sin publicar
+                Borrador
               </Badge>
             )}
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {encendidos} de {lista.length} análisis encendidos.{" "}
-            {publicado
-              ? "El equipo ya lo ve."
-              : "Solo tú lo ves hasta que lo publiques."}
-          </p>
-        </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {sucio && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setLista(bloques)}
-              disabled={guardando}
-            >
-              <Undo2 className="size-3.5" /> Descartar
-            </Button>
-          )}
-
-          <form action={guardar}>
+          {/* El campo se ve como el título y se escribe encima. Un <input>
+              disfrazado y no un texto que se convierte en campo al hacer clic —
+              eso último esconde que se puede editar justo a quien no lo sabe. */}
+          <form action={renombrar} className="mt-1.5 flex items-center gap-1">
             <input type="hidden" name="slug" value={slug} />
-            {/* La lista entera viaja serializada. Ver la cabecera. */}
             <input
-              type="hidden"
-              name="orden"
-              value={JSON.stringify(
-                lista.map((b) => ({
-                  analysis: b.analysis,
-                  width: b.width,
-                  active: b.active,
-                })),
+              id="titulo"
+              name="title"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              maxLength={120}
+              className={cn(
+                "min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 py-1",
+                "text-base font-semibold outline-none transition-colors",
+                "hover:border-border focus:border-primary focus:bg-background",
               )}
             />
-            <Button type="submit" size="sm" disabled={!sucio || guardando}>
-              {guardando ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Check className="size-3.5" />
-              )}
-              Guardar tablero
-            </Button>
-          </form>
-
-          <form action={publicado ? despublicar : publicar}>
-            <input type="hidden" name="slug" value={slug} />
-            <Button
-              type="submit"
-              size="sm"
-              variant={publicado ? "outline" : "accent"}
-              disabled={publicando || despublicando || sucio}
-              title={
-                sucio
-                  ? "Guarda el tablero antes de publicar: si no, se publicaría lo anterior."
-                  : undefined
-              }
-            >
-              {(publicando || despublicando) && (
-                <Loader2 className="size-3.5 animate-spin" />
-              )}
-              {publicado ? (
-                <>
-                  <EyeOff className="size-3.5" /> Retirar
-                </>
-              ) : (
-                <>
-                  <Send className="size-3.5" /> Publicar
-                </>
-              )}
-            </Button>
-          </form>
-        </div>
-
-        {[guardado, ren, mods, pub, despub].map((s, i) =>
-          s.error ? (
-            <p key={i} className="flex w-full items-start gap-1.5 text-xs text-destructive">
-              <XCircle className="mt-0.5 size-3.5 shrink-0" />
-              {s.error}
-            </p>
-          ) : s.message ? (
-            <p key={i} className="w-full text-xs text-muted-foreground">
-              {s.message}
-            </p>
-          ) : null,
-        )}
-      </Card>
-
-      {/*
-        DÓNDE SALE ESTE TABLERO.
-
-        Su propia tarjeta y no un renglón de la cabecera, porque es una decisión
-        distinta de las otras dos que se toman aquí. Componer es «qué dice»;
-        publicar es «el equipo puede verlo»; esto es «por dónde se llega». Un
-        tablero puede estar publicado y no salir en ningún módulo —se llega por
-        el menú— o estar en tres y seguir siendo borrador.
-
-        Se eligen varios a propósito: un cierre de mes interesa en Ventas y en
-        Rentabilidad, y obligar a elegir uno llevaba a duplicar el tablero.
-      */}
-      <Card className="p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-semibold">Dónde sale</h3>
-            <p className="mt-1 max-w-xl text-xs text-muted-foreground">
-              Los módulos donde aparece su botón. El primero que elijas es su
-              módulo principal: en esa pantalla, el botón abre este tablero. En
-              los demás también sale, y se llega por el menú lateral. Sin
-              ninguno, el tablero solo vive en el menú.
-            </p>
-          </div>
-          {dondeSucio && (
-            <form action={guardarModulos}>
-              <input type="hidden" name="slug" value={slug} />
-              <input type="hidden" name="modulos" value={donde.join(",")} />
-              <Button type="submit" size="sm" disabled={guardandoModulos}>
-                {guardandoModulos ? (
+            {nombreSucio && (
+              <Button type="submit" variant="ghost" size="sm" disabled={renombrando}>
+                {renombrando ? (
                   <Loader2 className="size-3.5 animate-spin" />
                 ) : (
                   <Check className="size-3.5" />
                 )}
-                Guardar dónde sale
+              </Button>
+            )}
+          </form>
+
+          <p className="mt-1 px-1.5 text-xs text-muted-foreground">
+            {encendidos} análisis en el tablero.{" "}
+            {publicado ? "El equipo ya lo ve." : "Solo tú lo ves."}
+          </p>
+
+          {/* ── Lo que se guarda ── */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <form action={guardar} className="flex-1">
+              <input type="hidden" name="slug" value={slug} />
+              {/* La composición entera viaja serializada. Ver la cabecera. */}
+              <input
+                type="hidden"
+                name="orden"
+                value={JSON.stringify(
+                  lista.map((b) => ({
+                    analysis: b.analysis,
+                    width: b.width,
+                    active: b.active,
+                  })),
+                )}
+              />
+              <Button type="submit" size="sm" className="w-full" disabled={!sucio || guardando}>
+                {guardando ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Check className="size-3.5" />
+                )}
+                Guardar tablero
               </Button>
             </form>
-          )}
-        </div>
 
-        <div className="mt-3 flex flex-wrap gap-2">
-          {catalogo.map((m) => {
-            const puesto = donde.indexOf(m.id);
-            return (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => alternar(m.id)}
-                aria-pressed={puesto >= 0}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs",
-                  "transition-colors",
-                  puesto >= 0
-                    ? "border-primary bg-primary/10 text-foreground"
-                    : "border-border text-muted-foreground hover:bg-secondary",
-                )}
+            <form action={publicado ? despublicar : publicar}>
+              <input type="hidden" name="slug" value={slug} />
+              <Button
+                type="submit"
+                size="sm"
+                variant={publicado ? "outline" : "accent"}
+                disabled={publicando || despublicando || sucio}
+                title={
+                  sucio
+                    ? "Guarda el tablero antes de publicar: si no, se publicaría lo anterior."
+                    : undefined
+                }
               >
-                {/* El número dice el orden, que es lo que decide cuál abre el
-                    botón cuando un módulo tiene varios tableros. Sin él, «el
-                    primero» sería una regla invisible. */}
-                {puesto >= 0 && (
-                  <span className="font-mono text-[10px] text-primary">{puesto + 1}</span>
+                {(publicando || despublicando) && (
+                  <Loader2 className="size-3.5 animate-spin" />
                 )}
-                {m.label}
-              </button>
-            );
-          })}
-        </div>
-      </Card>
+                {publicado ? (
+                  <>
+                    <EyeOff className="size-3.5" /> Retirar
+                  </>
+                ) : (
+                  <>
+                    <Send className="size-3.5" /> Publicar
+                  </>
+                )}
+              </Button>
+            </form>
 
-      {/*
-        EL TABLERO, VIVO, Y LA CAJA AL COSTADO.
+            {sucio && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setLista(bloques)}
+                disabled={guardando}
+              >
+                <Undo2 className="size-3.5" /> Descartar
+              </Button>
+            )}
+          </div>
 
-        La vista principal son los bloques resueltos —sus cifras, sus gráficas—
-        y no una lista de nombres. Componer mirando el resultado es la
-        diferencia entre decidir si «Clientes más rentables» merece media fila y
-        tener que imaginárselo.
-
-        Dos columnas y no una superposición: de la caja se ARRASTRA hacia el
-        tablero, así que las dos tienen que verse a la vez. Ver `DashboardToolbox`.
-      */}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div>
-          {enTablero.length === 0 ? (
-            <ZonaVacia
-              activa={Boolean(arrastrando) && arrastrando?.desde !== "tablero"}
-              onSoltar={() => arrastrando && alFinal(arrastrando.id)}
-            />
-          ) : (
-            <div className="grid gap-3 lg:grid-cols-2">
-              {enTablero.map((b) => (
-                <BloqueEditable
-                  key={b.analysis}
-                  b={b}
-                  arrastrado={arrastrando?.id === b.analysis}
-                  sobre={sobre === b.analysis}
-                  onArrastrar={(id) =>
-                    setArrastrando(id ? { id, desde: "tablero" } : null)
-                  }
-                  onSobre={setSobre}
-                  onSoltar={() => soltarEn(b.analysis)}
-                  onAncho={(w) => cambiar(b.analysis, { width: w })}
-                  onQuitar={() => cambiar(b.analysis, { active: false })}
-                />
-              ))}
-
-              {/* Cola del tablero: soltar aquí lo pone al final. Sin esta zona,
-                  el último puesto solo se alcanzaría soltando sobre el último
-                  bloque, que lo insertaría ANTES. */}
-              <ZonaFinal
-                activa={Boolean(arrastrando)}
-                onSoltar={() => arrastrando && alFinal(arrastrando.id)}
-              />
-            </div>
-          )}
-
-          {enTablero.length > 1 && (
-            <p className="mt-3 text-xs text-muted-foreground">
-              Arrastra por el asa para reordenar. Nada se guarda hasta que pulses
-              «Guardar tablero».
-            </p>
+          {[guardado, ren, mods, pub, despub].map((s, i) =>
+            s.error ? (
+              <p key={i} className="mt-2 flex items-start gap-1.5 text-xs text-destructive">
+                <XCircle className="mt-0.5 size-3.5 shrink-0" />
+                {s.error}
+              </p>
+            ) : s.message ? (
+              <p key={i} className="mt-2 text-xs text-muted-foreground">
+                {s.message}
+              </p>
+            ) : null,
           )}
         </div>
 
+        {/* ── Dónde sale ── */}
+        <div className="shrink-0 border-b border-border p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Publicar en
+            </h3>
+            {dondeSucio && (
+              <form action={guardarModulos}>
+                <input type="hidden" name="slug" value={slug} />
+                <input type="hidden" name="modulos" value={donde.join(",")} />
+                <Button type="submit" variant="ghost" size="sm" disabled={guardandoModulos}>
+                  {guardandoModulos ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Check className="size-3.5" />
+                  )}
+                  Guardar
+                </Button>
+              </form>
+            )}
+          </div>
+
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {catalogo.map((m) => {
+              const puesto = donde.indexOf(m.id);
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => alternar(m.id)}
+                  aria-pressed={puesto >= 0}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px]",
+                    "transition-colors",
+                    puesto >= 0
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border text-muted-foreground hover:bg-secondary",
+                  )}
+                >
+                  {/* El número dice el orden, y el orden decide cuál abre el
+                      botón de esa pantalla. Sin él sería una regla invisible. */}
+                  {puesto >= 0 && (
+                    <span className="font-mono text-[10px] text-primary">{puesto + 1}</span>
+                  )}
+                  {m.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+            El primero es su módulo principal: ahí el botón de la pantalla abre
+            este tablero. Sin ninguno, solo se llega por el menú.
+          </p>
+        </div>
+
+        {/* ── Lo que se puede poner ── */}
         <DashboardToolbox
-          // Se aplana a lo que la caja necesita —y `piezas` es lo que ella
-          // añade: cuántos bloques trae hoy, para poder decir «hoy sin datos»
-          // sin que la caja tenga que saber qué es un `Block`.
           disponibles={caja.map((d) => ({
             id: d.id,
             label: d.label,
@@ -525,15 +535,11 @@ export function DashboardBuilder({
             watching: b.watching,
             piezas: b.preview.length,
           }))}
-          arrastrando={arrastrando}
+          quitando={arrastrando?.desde === "tablero"}
           onAgregar={(id) => alFinal(id)}
           onArrastrar={(id, desde) => setArrastrando(desde ? { id, desde } : null)}
-          onSoltarFuera={(id) => {
-            cambiar(id, { active: false });
-            setArrastrando(null);
-          }}
         />
-      </div>
+      </aside>
     </div>
   );
 }

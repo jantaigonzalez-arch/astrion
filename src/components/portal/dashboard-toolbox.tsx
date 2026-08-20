@@ -1,6 +1,6 @@
 "use client";
 
-import { GripVertical, Plus, Sparkles, Undo2 } from "lucide-react";
+import { GripVertical, Plus, Undo2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type HerramientaItem = {
@@ -20,7 +20,7 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 /**
- * La caja de herramientas del compositor: lo que se puede poner en el tablero.
+ * Lo que se puede poner en el tablero: la última sección del panel.
  *
  * ── ACOPLADA AL COSTADO, NO ENCIMA ─────────────────────────────────────────
  *
@@ -30,10 +30,10 @@ const KIND_LABEL: Record<string, string> = {
  * superposición obligaría a cerrarla para soltar, que es justo el gesto que se
  * quiere evitar.
  *
- * Por eso es una columna angosta y pegajosa —320 px— y no media pantalla: lo
- * que importa es el tablero, y la caja es de donde se saca. En pantallas
- * estrechas baja debajo, porque a ese ancho dos columnas dejan las dos
- * inservibles.
+ * Vive dentro del panel del compositor, debajo del nombre y de los módulos, y
+ * es la única parte que se desplaza: lo de arriba se decide una vez y esto se
+ * recorre. Quien la envuelve es también quien recibe lo que se suelta para
+ * quitarlo, porque el destino de ese gesto es el panel entero y no esta lista.
  *
  * ── ESTABA ABAJO Y ESO ERA EL PROBLEMA ─────────────────────────────────────
  *
@@ -51,54 +51,31 @@ const KIND_LABEL: Record<string, string> = {
 export function DashboardToolbox({
   disponibles,
   quitados,
+  quitando,
   onAgregar,
   onArrastrar,
-  onSoltarFuera,
-  arrastrando,
 }: {
   disponibles: HerramientaItem[];
   quitados: HerramientaItem[];
+  /** Se está arrastrando algo DESDE el tablero: soltarlo aquí lo quita. */
+  quitando: boolean;
   /** Al pulsar «+»: entra al final del tablero, encendido. */
   onAgregar: (id: string, desde: "disponible" | "quitado") => void;
   onArrastrar: (id: string, desde: "disponible" | "quitado" | null) => void;
-  /** Soltar un bloque del tablero AQUÍ lo quita, sin borrarlo. */
-  onSoltarFuera: (id: string) => void;
-  arrastrando: { id: string; desde: "tablero" | "disponible" | "quitado" } | null;
 }) {
-  const recibeDelTablero = arrastrando?.desde === "tablero";
-
   return (
-    <aside
-      onDragOver={(e) => {
-        if (!recibeDelTablero) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-      }}
-      onDrop={(e) => {
-        if (!recibeDelTablero) return;
-        e.preventDefault();
-        onSoltarFuera(arrastrando.id);
-      }}
-      className={cn(
-        // Pegajosa: acomodar un tablero largo es desplazarse por él, y una caja
-        // que se va hacia arriba obliga a volver por cada bloque que se agrega.
-        "lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)]",
-        "flex flex-col overflow-hidden rounded-xl border bg-card transition-colors",
-        recibeDelTablero ? "border-destructive/50 bg-destructive/5" : "border-border",
-      )}
-    >
-      <div className="border-b border-border px-4 py-3">
-        <h3 className="flex items-center gap-2 text-sm font-semibold">
-          <Sparkles className="size-4 text-primary" /> Caja de herramientas
-        </h3>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {recibeDelTablero
-            ? "Suelta aquí para quitarlo del tablero."
-            : "Arrastra al tablero, o pulsa + para ponerlo al final."}
-        </p>
-      </div>
+    // `min-h-0` con `flex-1`: sin él, un elemento flexible no se deja encoger
+    // por debajo de su contenido y la lista desborda el panel en vez de
+    // desplazarse dentro. Es la parte que scrollea; el nombre y los módulos se
+    // quedan fijos arriba.
+    <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <p className="px-1 pb-2 text-[11px] leading-snug text-muted-foreground">
+        {quitando
+          ? "Suelta aquí para quitarlo del tablero."
+          : "Arrastra al tablero, o pulsa + para ponerlo al final."}
+      </p>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
+      <div className="space-y-4">
         <Seccion
           titulo="Disponibles"
           vacio="Ya está todo en el tablero."
@@ -119,7 +96,7 @@ export function DashboardToolbox({
           />
         )}
       </div>
-    </aside>
+    </div>
   );
 }
 
