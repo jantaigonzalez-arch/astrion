@@ -1,7 +1,8 @@
 import { LayoutDashboard, Pencil, Plus } from "lucide-react";
 import { isAdminRole } from "@/lib/roles";
+import { MODULOS } from "@/lib/ml/analyses";
 import { currentRole } from "@/lib/tenancy/context";
-import { dashboardStates } from "@/lib/ml/dashboards";
+import { tablerosDelMenu } from "@/lib/ml/dashboards";
 import { Link } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
@@ -57,25 +58,24 @@ import { cn } from "@/lib/utils";
  * y como es `fixed`, llegar tarde no mueve ni un píxel de la página.
  */
 export async function DashboardFab({ modulo }: { modulo: string }) {
-  // `dashboardStates` y no `dashboardFor`, que es la versión completa: aquella
-  // resuelve además QUÉ SE PODRÍA AGREGAR al tablero —un filtro sobre el
-  // catálogo entero— y devuelve cada bloque con su análisis resuelto. Para
-  // dibujar un botón hacen falta tres datos: si está publicado, cuántos bloques
-  // tiene encendidos y cómo se llama.
+  // La MISMA lectura que la barra lateral, y en la misma caché por empresa: el
+  // botón no añade ni una consulta. Fue una regresión medida y no una idea:
+  // cuando el menú pasó a caché de datos, este botón —que antes compartía la
+  // lectura memoizada por petición— volvió a consultar en cada pantalla de
+  // módulo. Una sola fuente lo cierra.
   //
-  // Y hay una segunda razón, la que de verdad lo hace gratis: esta es la misma
-  // lectura que la barra lateral ya hizo para pintar su sección de tableros, y
-  // está memoizada por petición. El botón no añade ni una consulta.
-  const [admin, estados] = await Promise.all([
+  // Y la lista ya codifica los tres estados: quien no aparece en ella es
+  // exactamente quien no tiene nada compuesto. Ver `tablerosDelMenu`.
+  const [admin, tableros] = await Promise.all([
     currentRole().then(isAdminRole),
-    dashboardStates(),
+    tablerosDelMenu(),
   ]);
 
-  const d = estados.find((s) => s.modulo.id === modulo);
-  if (!d) return null;
+  const info = MODULOS.find((m) => m.id === modulo);
+  if (!info) return null;
 
-  const publicado = Boolean(d.publishedAt);
-  const encendidos = d.bloques;
+  const d = tableros.find((t) => t.id === modulo);
+  const publicado = Boolean(d?.publicado);
 
   // Sin publicar, el tablero no existe para el equipo. Ver la cabecera.
   if (!publicado && !admin) return null;
@@ -87,10 +87,11 @@ export async function DashboardFab({ modulo }: { modulo: string }) {
         // El nombre va en el `title` y no en el botón: el nombre puede ser
         // largo —ése es justo el punto de poder cambiarlo— y un flotante que
         // crece con él acabaría tapando media pantalla en algún módulo.
-        titulo: d.title,
+        // `d` existe si está publicado: `publicado` sale de él.
+        titulo: d!.title,
         href: `/admin/dashboard/${modulo}`,
       }
-    : encendidos > 0
+    : d
       ? {
           Icon: Pencil,
           texto: "Terminar tablero",
@@ -100,7 +101,7 @@ export async function DashboardFab({ modulo }: { modulo: string }) {
       : {
           Icon: Plus,
           texto: "Crear tablero",
-          titulo: `${d.modulo.label} todavía no tiene tablero`,
+          titulo: `${info.label} todavía no tiene tablero`,
           href: `/admin/dashboard/${modulo}/componer`,
         };
 

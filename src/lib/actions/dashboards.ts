@@ -3,7 +3,7 @@
 import { auth } from "@/lib/auth";
 import { isAdminRole } from "@/lib/roles";
 import { currentRole } from "@/lib/tenancy/context";
-import { revalidateTenant } from "@/lib/revalidate";
+import { revalidateDashboards } from "@/lib/revalidate";
 import {
   addToDashboard,
   publishDashboard,
@@ -28,6 +28,7 @@ async function soloAdmin(): Promise<string | null> {
     ? null
     : "Solo un administrador compone los dashboards.";
 }
+
 
 /**
  * Guarda el orden completo tras un arrastre.
@@ -66,7 +67,7 @@ export async function reorderDashboardAction(
   const r = await reorderDashboard(modulo, orden);
   if (!r.ok) return { ok: false, error: r.reason };
 
-  revalidateTenant();
+  await revalidateDashboards();
   return { ok: true, message: "Guardado." };
 }
 
@@ -84,7 +85,7 @@ export async function addToDashboardAction(
   );
   if (!r.ok) return { ok: false, error: r.reason };
 
-  revalidateTenant();
+  await revalidateDashboards();
   return { ok: true, message: "Agregado al final del tablero." };
 }
 
@@ -102,7 +103,7 @@ export async function publishDashboardAction(
   );
   if (!r.ok) return { ok: false, error: r.reason };
 
-  revalidateTenant();
+  await revalidateDashboards();
   return { ok: true, message: "Publicado. Ya le aparece al equipo." };
 }
 
@@ -114,7 +115,7 @@ export async function unpublishDashboardAction(
   if (no) return { ok: false, error: no };
 
   await unpublishDashboard(String(form.get("modulo") ?? ""));
-  revalidateTenant();
+  await revalidateDashboards();
   // Se dice que NO se borró nada: el miedo razonable al despublicar es perder
   // el trabajo de acomodarlo.
   return { ok: true, message: "Retirado de la vista del equipo. Lo compuesto sigue ahí." };
@@ -133,6 +134,6 @@ export async function renameDashboardAction(
   );
   if (!r.ok) return { ok: false, error: r.reason };
 
-  revalidateTenant();
+  await revalidateDashboards();
   return { ok: true, message: "Nombre actualizado." };
 }

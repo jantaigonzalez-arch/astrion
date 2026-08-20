@@ -3,6 +3,7 @@ import { cache } from "react";
 import { asc, eq, sql } from "drizzle-orm";
 import type { DbOrTx } from "@/lib/db";
 import { tenantDb } from "@/lib/tenancy/context";
+import { tenantCache } from "@/lib/tenant-cache";
 import { dashboards } from "@/lib/db/schema";
 import {
   MODULOS,
@@ -110,6 +111,16 @@ export async function dashboardFor(
   };
 }
 
+/**
+ * El nombre del cacheado del menú de tableros.
+ *
+ * Una constante y no la cadena suelta en dos archivos: la escriben el layout
+ * —al declarar la caché— y las acciones del compositor —al invalidarla—, y si
+ * las dos se desviaran una letra el menú se quedaría con el tablero viejo sin
+ * que nada falle. Ver `tenantCache`.
+ */
+export const TABLEROS_CACHE = "tableros";
+
 export type DashboardState = {
   modulo: Modulo;
   /** Cómo se llama hoy, bautizado o no. */
@@ -133,14 +144,10 @@ export type DashboardState = {
  *
  * ── Y MEMOIZADA POR PETICIÓN ───────────────────────────────────────────────
  *
- * Porque la piden DOS superficies de la misma pantalla: el menú lateral, que la
- * necesita para los siete módulos, y el botón flotante del módulo, que necesita
- * uno. Sin memoizar, el botón repetía entera la lectura del menú para quedarse
- * con una fila de siete.
- *
- * Es lo que permite que el botón salga gratis: cuando lo pregunta, el menú ya
- * pagó. Y al revés también —quien llame primero paga—, así que ninguna de las
- * dos depende de que la otra se haya dibujado antes.
+ * Quien la lee en una pantalla es `tablerosDelMenu`, que ya la guarda en caché
+ * entre peticiones; la memoización de aquí cubre el resto de llamadas —la
+ * pantalla de administración, un script— para que ninguna pague dos veces la
+ * misma lectura dentro de una petición.
  *
  * Se memoiza esta y NO `placementsFor`, aunque tenga la misma pinta. La
  * diferencia es quién escribe: las colocaciones las cambia el compositor dentro
@@ -181,6 +188,83 @@ export const dashboardStates = cache(async (conexion?: DbOrTx): Promise<Dashboar
     };
   });
 });
+
+/* ------------------------- El menú, en caché ------------------------- */
+
+/**
+ * Un tablero tal como lo necesitan el menú lateral Y el botón del módulo.
+ *
+ * Solo cadenas y booleanos: es lo que sobrevive bien a una caché serializada, y
+ * es todo lo que las dos superficies necesitan.
+ */
+export type TableroMenu = {
+  id: string;
+  /** Cómo anunciarlo: el nombre puesto por alguien, o el del módulo. */
+  label: string;
+  /** El nombre completo del tablero, para el `title` del botón. */
+  title: string;
+  /** La pantalla del módulo. Es lo que decide si este rol lo ve. */
+  home: string;
+  publicado: boolean;
+};
+
+/**
+ * Los tableros que tienen algo que enseñar, en caché por empresa.
+ *
+ * ── LA LISTA YA CODIFICA LOS TRES ESTADOS ──────────────────────────────────
+ *
+ * Se filtra aquí lo que no tiene nada —cero bloques encendidos y sin publicar—,
+ * y esa sola decisión deja la lista diciendo todo lo que hay que saber:
+ *
+ *   está y publicado      → hay tablero y el equipo lo ve
+ *   está y sin publicar   → hay bloques compuestos, falta publicar
+ *   NO está               → no hay nada compuesto
+ *
+ * Por eso el botón del módulo no necesita su propia lectura: la ausencia en
+ * esta lista ES el tercer estado. Lo comprobé midiendo, y de la peor manera:
+ * al cachear el menú, el botón dejó de compartir la lectura que antes reusaba y
+ * volvió a consultar en cada pantalla de módulo. Una sola fuente lo cierra.
+ *
+ * ── POR QUÉ EN CACHÉ Y NO SOLO MEMOIZADO ───────────────────────────────────
+ *
+ * Cuelga del layout, así que se pagaba en las 68 pantallas del portal: medido,
+ * 4 consultas y ~15 ms por navegación para pintar una sección que solo cambia
+ * cuando alguien compone o publica un tablero. Memoizar por petición evita
+ * pedirlo dos veces en la misma pantalla y no evita nada entre navegaciones.
+ *
+ * Lo invalida `revalidateDashboards()` desde las acciones que lo cambian.
+ */
+const leerMenu = tenantCache(TABLEROS_CACHE, async (db): Promise<TableroMenu[]> =>
+  (await dashboardStates(db))
+    .filter((s) => s.bloques > 0 || s.publishedAt)
+    .map((s) => ({
+      id: s.modulo.id,
+      // El nombre de nacimiento —«Dashboard de Compras»— sobra bajo un
+      // encabezado que ya dice «Tableros»; ahí se anuncia con el del módulo.
+      label: s.nombre ?? s.modulo.label,
+      title: s.title,
+      home: s.modulo.home,
+      publicado: Boolean(s.publishedAt),
+    })),
+);
+
+/**
+ * Lo anterior sin poder tumbar la pantalla que lo pide.
+ *
+ * Es la misma garantía que el tablero se da a sí mismo resolviendo bloque a
+ * bloque con `allSettled`, y aquí pesa más: esto cuelga del layout, así que una
+ * consulta rota —una migración que todavía no corrió en un despliegue, por
+ * ejemplo— dejaría sin portal a todo el mundo por no poder pintar una sección
+ * del menú.
+ */
+export async function tablerosDelMenu(): Promise<TableroMenu[]> {
+  try {
+    return await leerMenu();
+  } catch (e) {
+    console.error("[tableros] no se pudo leer el menú de tableros", e);
+    return [];
+  }
+}
 
 /* ------------------------- Escritura ------------------------- */
 

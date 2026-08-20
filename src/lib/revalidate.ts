@@ -1,5 +1,8 @@
 import "server-only";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
+import { requireTenant } from "@/lib/tenancy/context";
+import { tenantTag } from "@/lib/tenant-cache";
+import { TABLEROS_CACHE } from "@/lib/ml/dashboards";
 
 /**
  * Invalida el subárbol de la empresa activa.
@@ -20,4 +23,30 @@ import { revalidatePath } from "next/cache";
  */
 export function revalidateTenant() {
   revalidatePath("/[locale]/[tenant]", "layout");
+}
+
+/**
+ * Lo mismo, y además la sección de tableros del menú lateral.
+ *
+ * Existe porque `revalidateTenant()` NO alcanza a la caché de datos: refresca
+ * la ruta, y lo etiquetado se sigue sirviendo hasta que se invalide su etiqueta
+ * —está escrito así en la documentación de `revalidatePath`—. El menú lateral
+ * lee los tableros de una caché por inquilino (ver `tenantCache`), así que sin
+ * esta llamada alguien publicaría un tablero y no lo vería aparecer en su menú
+ * hasta cinco minutos después. Y sería desconcertante, porque la pantalla del
+ * tablero SÍ enseñaría el cambio.
+ *
+ * `updateTag` y no `revalidateTag`: expira al instante en vez de marcar como
+ * viejo, que es lo que hace falta cuando quien invalida es la misma persona que
+ * acaba de guardar. Solo se puede llamar desde una acción de servidor.
+ *
+ * La usan las cuatro familias de acciones que pueden cambiar lo que el menú
+ * enseña: componer un tablero, mover una colocación, aceptar una recomendación
+ * y publicar una pregunta. En una función y no copiada en cada una: la lista de
+ * lo que hay que invalidar crece, y cuatro copias divergen.
+ */
+export async function revalidateDashboards() {
+  const ctx = await requireTenant();
+  updateTag(tenantTag(ctx.slug, TABLEROS_CACHE));
+  revalidateTenant();
 }

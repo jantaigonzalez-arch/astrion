@@ -3,7 +3,7 @@
 import { auth } from "@/lib/auth";
 import { isAdminRole } from "@/lib/roles";
 import { currentRole } from "@/lib/tenancy/context";
-import { revalidateTenant } from "@/lib/revalidate";
+import { revalidateDashboards } from "@/lib/revalidate";
 import {
   createQuestion,
   deleteQuestion,
@@ -92,7 +92,7 @@ export async function createQuestionAction(
     });
     if (!r.ok) return { ok: false, error: r.reason };
 
-    revalidateTenant();
+    await revalidateDashboards();
     return { ok: true, message: "Pregunta creada. Ya puedes entrenarla." };
   } catch (e) {
     console.error("[intelligence] createQuestion falló", e);
@@ -109,7 +109,7 @@ export async function deleteQuestionAction(
 
   const r = await deleteQuestion(String(form.get("slug") ?? ""));
   if (!r.ok) return { ok: false, error: r.reason };
-  revalidateTenant();
+  await revalidateDashboards();
   return { ok: true, message: "Pregunta borrada." };
 }
 
@@ -135,7 +135,7 @@ export async function trainQuestionAction(
   const r = await trainQuestion(slug, session?.user?.id ?? null);
   if (!r.ok) return { ok: false, error: r.reason };
 
-  revalidateTenant();
+  await revalidateDashboards();
   const v = r.result.verdict;
   return {
     ok: true,
@@ -164,7 +164,7 @@ export async function promoteModelAction(
   const slug = String(form.get("slug") ?? "");
   const f = slug ? await issueForecast(slug) : { ok: false, reason: "sin pregunta" };
 
-  revalidateTenant();
+  await revalidateDashboards();
   return {
     ok: true,
     message: f.ok
@@ -181,7 +181,7 @@ export async function retireModelAction(
   if (no) return { ok: false, error: no };
 
   await retireModel(String(form.get("modelId") ?? ""));
-  revalidateTenant();
+  await revalidateDashboards();
   return { ok: true, message: "Retirado. Deja de emitir pronósticos." };
 }
 
@@ -196,6 +196,6 @@ export async function issueForecastAction(
   const r = await issueForecast(String(form.get("slug") ?? ""), periods);
   if (!r.ok) return { ok: false, error: r.reason };
 
-  revalidateTenant();
+  await revalidateDashboards();
   return { ok: true, message: `${r.points ?? 0} periodos pronosticados.` };
 }

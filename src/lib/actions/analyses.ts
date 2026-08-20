@@ -2,7 +2,7 @@
 
 import { isAdminRole } from "@/lib/roles";
 import { currentRole } from "@/lib/tenancy/context";
-import { revalidateTenant } from "@/lib/revalidate";
+import { revalidateDashboards } from "@/lib/revalidate";
 import { resetPlacement, setPlacement } from "@/lib/ml/placements";
 
 /**
@@ -33,7 +33,7 @@ export async function togglePlacementAction(
     const r = await setPlacement({ analysis, screen, active });
     if (!r.ok) return { ok: false, error: r.reason };
 
-    revalidateTenant();
+    await revalidateDashboards();
     return {
       ok: true,
       message: active
@@ -67,7 +67,7 @@ export async function acceptRecommendationAction(
     });
     if (!r.ok) return { ok: false, error: r.reason };
 
-    revalidateTenant();
+    await revalidateDashboards();
     return { ok: true, message: "Listo: ya sale en esa pantalla." };
   } catch (e) {
     console.error("[análisis] aceptar recomendación:", e);
@@ -89,7 +89,7 @@ export async function resetPlacementAction(
       String(formData.get("analysis") ?? ""),
       String(formData.get("screen") ?? ""),
     );
-    revalidateTenant();
+    await revalidateDashboards();
     return { ok: true, message: "Restaurado a como viene de fábrica." };
   } catch (e) {
     console.error("[análisis] restaurar:", e);
