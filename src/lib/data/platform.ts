@@ -68,16 +68,7 @@ async function statsFor(schemaName: string): Promise<TenantStats | null> {
     `)) as unknown as Array<Record<string, unknown>>;
 
     const r = rows[0];
-    if (!r) return null;
-    return {
-      tickets: Number(r.tickets ?? 0),
-      openTickets: Number(r.open_tickets ?? 0),
-      organizations: Number(r.organizations ?? 0),
-      contracts: Number(r.contracts ?? 0),
-      equipment: Number(r.equipment ?? 0),
-      events: Number(r.events ?? 0),
-      lastActivity: r.last_activity ? new Date(String(r.last_activity)) : null,
-    };
+    return r ? filaAStats(r) : null;
   } catch {
     // El esquema puede existir sin estar migrado, o estar a medio aprovisionar.
     // Devolver null hace que la UI diga "sin datos" en vez de mentir con ceros.
@@ -107,12 +98,148 @@ export async function getTenants(): Promise<TenantRow[]> {
     .leftJoin(tenantSchemas, eq(tenantSchemas.tenantId, tenants.id))
     .orderBy(tenants.name);
 
-  return Promise.all(
-    rows.map(async (r) => ({
-      ...r,
-      stats: r.schemaName ? await statsFor(r.schemaName) : null,
-    })),
+  const esquemas = rows.map((r) => r.schemaName).filter((x): x is string => Boolean(x));
+
+  // La caché devuelve filas PLANAS y el mapa se arma aquí: ver `statsDeTodos`.
+  const planas = await statsDeTodos(esquemas);
+  const stats = new Map(
+    planas.map((p) => [
+      p.esquema,
+      { ...p, lastActivity: p.lastActivity ? new Date(p.lastActivity) : null },
+    ]),
   );
+
+  return rows.map((r) => ({
+    ...r,
+    stats: r.schemaName ? (stats.get(r.schemaName) ?? null) : null,
+  }));
+}
+
+/**
+ * Los conteos de TODOS los inquilinos, en una consulta y en caché.
+ *
+ * ── POR QUÉ UNA Y NO UNA POR INQUILINO ─────────────────────────────────────
+ *
+ * Era `Promise.all(rows.map(statsFor))`: una consulta por empresa, cada una con
+ * seis `count(*)` completos. Medido con 3 inquilinos: 21 consultas y 33 ms. Con
+ * 100 serían 700, disparadas a la vez contra un pool de 10 conexiones — así que
+ * no solo tarda: hace cola y le quita conexiones al resto del sistema mientras
+ * alguien mira un panel.
+ *
+ * Es la peor forma de escalado que tenía el sistema, porque crece con el número
+ * de clientes Y con lo que cada uno haya acumulado. Un `union all` la deja en un
+ * solo viaje.
+ *
+ * ── Y POR QUÉ ADEMÁS EN CACHÉ ──────────────────────────────────────────────
+ *
+ * Porque el viaje sigue costando lo que cuesta contar filas: seis recorridos
+ * completos por inquilino. Juntarlas quita las idas y vueltas, no el trabajo.
+ * Cinco minutos de antigüedad en un panel que dice cuán grande es cada empresa
+ * no le cambia la decisión a nadie; contar 600 tablas enteras cada vez que
+ * alguien abre la consola, sí.
+ *
+ * No lleva etiqueta de inquilino: esta pantalla es de plataforma y por
+ * definición mira a todos. La clave sí lleva la lista de esquemas, así que dar
+ * de alta una empresa estrena entrada en vez de heredar la de antes.
+ *
+ * ── DEVUELVE FILAS PLANAS, NO UN MAPA NI FECHAS ────────────────────────────
+ *
+ * Lo que entra a esta caché se serializa para guardarse. Un `Map` no sobrevive
+ * a ese viaje y un `Date` vuelve convertido en texto, así que la primera
+ * versión de esto reventaba la consola entera con un 500. Sale una lista de
+ * objetos con tipos primitivos y quien llama arma el mapa y las fechas — que es
+ * trabajo de microsegundos y la diferencia entre que funcione y que no.
+ *
+ * ── LO QUE NO SE HIZO ──────────────────────────────────────────────────────
+ *
+ * Cambiar los conteos por las estimaciones de `pg_class`, que serían O(1) por
+ * inquilino en vez de un recorrido. Habría sido más rápido y habría cambiado lo
+ * que la pantalla dice —de «14 151 tickets» a «≈14 000»—, y eso es una decisión
+ * de producto, no de rendimiento.
+ */
+type StatsPlanas = Omit<TenantStats, "lastActivity"> & {
+  esquema: string;
+  /** ISO, no `Date`: ver la nota de arriba sobre la serialización. */
+  lastActivity: string | null;
+};
+
+const statsDeTodos = unstable_cache(
+  async (esquemas: string[]): Promise<StatsPlanas[]> => {
+    // Se valida cada nombre: van interpolados, no parametrizados.
+    const validos = esquemas.filter((e) => /^tenant_[a-z0-9_]{1,50}$/.test(e));
+    if (validos.length === 0) return [];
+
+    const db = getDb();
+    const ramas = validos.map(
+      (e) => `select
+        '${e}'                                                            as esquema,
+        (select count(*)::int from "${e}"."tickets")                      as tickets,
+        (select count(*)::int from "${e}"."tickets"
+          where status in ('open','in_progress','pending_review'))        as open_tickets,
+        (select count(*)::int from "${e}"."crm_organizations")            as organizations,
+        (select count(*)::int from "${e}"."contracts")                    as contracts,
+        (select count(*)::int from "${e}"."equipment")                    as equipment,
+        (select count(*)::int from "${e}"."domain_events")                as events,
+        (select max(created_at) from "${e}"."tickets")                    as last_activity`,
+    );
+
+    const out: StatsPlanas[] = [];
+
+    // Rama a rama si la consulta única falla: un esquema a medio aprovisionar
+    // —existe pero no está migrado— tumba el `union all` entero, y entonces la
+    // consola se quedaría sin cifras de NADIE por culpa de uno. Es el mismo
+    // criterio del `catch` de `statsFor`, aplicado al conjunto.
+    try {
+      const filas = (await db.execute(
+        sql.raw(ramas.join("\nunion all\n")),
+      )) as unknown as Array<Record<string, unknown>>;
+      for (const r of filas) out.push(filaAPlana(String(r.esquema), r));
+      return out;
+    } catch {
+      const sueltos = await Promise.all(
+        validos.map(async (e) => [e, await statsFor(e)] as const),
+      );
+      for (const [esquema, st] of sueltos) {
+        if (!st) continue;
+        out.push({
+          ...st,
+          esquema,
+          lastActivity: st.lastActivity ? st.lastActivity.toISOString() : null,
+        });
+      }
+      return out;
+    }
+  },
+  ["platform-tenant-stats"],
+  { tags: ["platform-tenant-stats"], revalidate: 300 },
+);
+
+/** La fila cruda del conteo, en tipos que sobreviven a la caché. */
+function filaAPlana(esquema: string, r: Record<string, unknown>): StatsPlanas {
+  return {
+    esquema,
+    tickets: Number(r.tickets ?? 0),
+    openTickets: Number(r.open_tickets ?? 0),
+    organizations: Number(r.organizations ?? 0),
+    contracts: Number(r.contracts ?? 0),
+    equipment: Number(r.equipment ?? 0),
+    events: Number(r.events ?? 0),
+    lastActivity: r.last_activity ? new Date(String(r.last_activity)).toISOString() : null,
+  };
+}
+
+/** Lo mismo para UN esquema, con `Date` de vuelta. Lo usa `statsFor`. */
+function filaAStats(r: Record<string, unknown>): TenantStats {
+  const plana = filaAPlana("", r);
+  return {
+    tickets: plana.tickets,
+    openTickets: plana.openTickets,
+    organizations: plana.organizations,
+    contracts: plana.contracts,
+    equipment: plana.equipment,
+    events: plana.events,
+    lastActivity: plana.lastActivity ? new Date(plana.lastActivity) : null,
+  };
 }
 
 /** Etiqueta de caché de la marca de una empresa. Ver `getTenantBrand`. */
