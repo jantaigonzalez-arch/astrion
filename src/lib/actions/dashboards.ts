@@ -4,8 +4,10 @@ import { auth } from "@/lib/auth";
 import { isAdminRole } from "@/lib/roles";
 import { currentRole } from "@/lib/tenancy/context";
 import { revalidateDashboards } from "@/lib/revalidate";
+import { redirectAfterAction } from "@/lib/nav-server";
 import {
   createDashboard,
+  deleteDashboard,
   setDashboardModules,
   publishDashboard,
   renameDashboard,
@@ -178,4 +180,29 @@ export async function setDashboardModulesAction(
         ? "Ya no sale en ningún módulo; se llega por el menú."
         : `Sale en ${modulos.length} módulo${modulos.length === 1 ? "" : "s"}.`,
   };
+}
+
+/**
+ * Borra el tablero y lleva al portal.
+ *
+ * Redirige desde el servidor y no devuelve estado, al revés que las otras: si
+ * el borrado salió bien, la pantalla en la que está la persona ya no existe.
+ * Quedarse en ella para enseñar «borrado» sería dejarla mirando el compositor
+ * de algo que no está.
+ *
+ * `redirectAfterAction` y no `redirect` a secas: la dirección lleva el prefijo
+ * de la empresa, que depende de si el despliegue usa subdominio o path.
+ */
+export async function deleteDashboardAction(form: FormData): Promise<void> {
+  if (await soloAdmin()) return;
+
+  const session = await auth();
+  const r = await deleteDashboard(
+    String(form.get("slug") ?? ""),
+    session?.user?.id ?? null,
+  );
+  if (!r.ok) return;
+
+  await revalidateDashboards();
+  await redirectAfterAction("/dashboard");
 }

@@ -4,7 +4,8 @@ import { asc, eq, inArray, sql } from "drizzle-orm";
 import type { DbOrTx } from "@/lib/db";
 import { tenantDb } from "@/lib/tenancy/context";
 import { tenantCache } from "@/lib/tenant-cache";
-import { dashboardModules, dashboards } from "@/lib/db/schema";
+import { analysisPlacements, dashboardModules, dashboards } from "@/lib/db/schema";
+import { recordDeletion } from "@/lib/domain/events";
 import {
   MODULOS,
   analysesAll,
@@ -484,6 +485,60 @@ export async function renameDashboard(
     .update(dashboards)
     .set({ title: limpio, updatedAt: new Date() })
     .where(eq(dashboards.slug, slug));
+  return { ok: true };
+}
+
+/**
+ * Borra un tablero: su fila, dónde salía y todo lo que llevaba puesto.
+ *
+ * ── LAS COLOCACIONES HAY QUE BORRARLAS A MANO ──────────────────────────────
+ *
+ * `dashboard_modules` se va sola por la clave foránea, pero las colocaciones
+ * NO: se relacionan con el tablero por una convención de cadena
+ * —`screen = 'dashboard:<slug>'`— y no por una foránea, que es lo que permite
+ * que una pantalla de trabajo y un tablero compartan la misma tabla.
+ *
+ * El precio de esa decisión se paga justo aquí, y si se olvidara no fallaría
+ * nada: quedarían filas apuntando a un tablero inexistente, invisibles, hasta
+ * que alguien creara otro con el mismo slug y se encontrara el tablero de otro
+ * ya compuesto. Por eso van en la misma transacción.
+ *
+ * ── Y SE AUDITA ───────────────────────────────────────────────────────────
+ *
+ * Es la única operación de tableros que alguien puede lamentar. El registro
+ * guarda la fila entera y las colocaciones que se llevó, así que se puede
+ * reconstruir a mano lo que había. Componer no se audita porque es reversible
+ * sin ayuda: los bloques se vuelven a poner.
+ */
+export async function deleteDashboard(
+  slug: string,
+  actorId: string | null,
+): Promise<{ ok: boolean; reason?: string }> {
+  const db = await tenantDb();
+  const fila = await filaDe(slug, db);
+  if (!fila) return { ok: false, reason: "Ese tablero no existe." };
+
+  const screen = dashboardScreen(slug);
+
+  await db.transaction(async (tx) => {
+    const llevadas = await tx
+      .delete(analysisPlacements)
+      .where(eq(analysisPlacements.screen, screen))
+      .returning();
+
+    const [row] = await tx.delete(dashboards).where(eq(dashboards.id, fila.id)).returning();
+    if (!row) return;
+
+    await recordDeletion(tx, {
+      aggregateType: "dashboard",
+      aggregateId: fila.id,
+      eventType: "dashboard.deleted",
+      actorId,
+      snapshot: row,
+      extra: { placements: llevadas },
+    });
+  });
+
   return { ok: true };
 }
 

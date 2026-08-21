@@ -42,7 +42,8 @@ export type AggregateType =
   | "supplier_invoice"
   | "supplier_credit_note"
   | "supplier_advance"
-  | "payable_import";
+  | "payable_import"
+  | "dashboard";
 
 /**
  * Tipos de evento en uso. Convención: `agregado.verbo_en_pasado`.
@@ -121,7 +122,17 @@ export type DomainEventType =
   | "label.deleted"
   | "email_template.deleted"
   | "automation.deleted"
-  | "supplier.deleted";
+  | "supplier.deleted"
+  /*
+    Borrar un tablero se audita y componerlo no.
+
+    Componer es reversible —los bloques se vuelven a poner— y borrarlo se lleva
+    de una vez el nombre, la composición y dónde salía. Es además la única
+    operación de tableros que alguien puede lamentar, así que el registro
+    guarda la fila entera y las colocaciones que se llevó por delante: con eso
+    se puede reconstruir a mano lo que había.
+  */
+  | "dashboard.deleted";
 
 export type EventInput = {
   aggregateType: AggregateType;

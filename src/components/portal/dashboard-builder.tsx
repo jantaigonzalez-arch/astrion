@@ -12,10 +12,12 @@ import {
   Columns2,
   LayoutDashboard,
   Send,
+  Trash2,
   Undo2,
   XCircle,
 } from "lucide-react";
 import {
+  deleteDashboardAction as borrar,
   setDashboardModulesAction,
   publishDashboardAction,
   renameDashboardAction,
@@ -606,6 +608,43 @@ export function DashboardBuilder({
           onAgregar={(id) => alFinal(id)}
           onArrastrar={(id, desde) => setArrastrando(desde ? { id, desde } : null)}
         />
+
+        {/*
+          Zona de peligro, al pie y separada.
+
+          Abajo del todo y detrás de la lista: borrar no es algo que se busque,
+          es algo que se encuentra cuando se necesita. Ponerlo arriba —al lado
+          de «Guardar»— sería poner la acción irreversible junto a la que más se
+          pulsa.
+
+          La confirmación es del navegador y no un diálogo propio, como en el
+          borrado de contratos: para una pregunta de sí o no, un diálogo a
+          medida es más código y una cosa más que puede fallar.
+        */}
+        <form
+          action={borrar}
+          className="shrink-0 border-t border-border p-3"
+          onSubmit={(e) => {
+            if (
+              !confirm(
+                `¿Borrar «${titulo}»? Se van su composición y los módulos donde ` +
+                  "sale. Los análisis siguen existiendo. Esto no se puede deshacer.",
+              )
+            ) {
+              e.preventDefault();
+            }
+          }}
+        >
+          <input type="hidden" name="slug" value={slug} />
+          <Button
+            type="submit"
+            variant="ghost"
+            size="sm"
+            className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="size-3.5" /> Borrar este tablero
+          </Button>
+        </form>
       </aside>
       )}
     </div>
