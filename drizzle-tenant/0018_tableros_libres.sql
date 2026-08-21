@@ -32,37 +32,17 @@ UPDATE "dashboards" SET "slug" = "module" WHERE "slug" IS NULL;
 --> statement-breakpoint
 
 /*
-  Los siete de fábrica, materializados.
+  NO se siembra ningún tablero.
 
-  Hasta aquí la fila solo existía cuando alguien tocaba el tablero, y el resto
-  era un objeto virtual que `dashboardStates()` inventaba al vuelo a partir de
-  la lista de módulos. Eso funcionaba mientras «tablero» y «módulo» eran la
-  misma cosa; en cuanto un tablero puede llamarse como quiera y vivir en varios
-  módulos, un tablero sin fila no tiene dónde guardar su nombre.
+  Aquí se sembraban los siete de fábrica, y fue un error que se vio en cuanto
+  estuvieron delante: el menú lateral pasó a listar siete renglones llamados
+  todos «Dashboard de…» y en borrador. La 0019 los borra; esto evita que una
+  base nueva vuelva a crearlos.
 
-  Se siembran sin publicar —`published_at` en null— que es exactamente el estado
-  que tenían siendo virtuales: compuestos de fábrica y visibles solo para quien
-  puede componerlos.
-
-  La lista va escrita a mano porque una migración es una foto de un momento: si
-  mañana se agrega un módulo al catálogo, su tablero lo crea la aplicación, no
-  este archivo.
+  Un tablero existe cuando alguien lo crea. Los análisis de fábrica siguen en
+  el catálogo, y al crear un tablero desde el botón de un módulo se siembran
+  solos — ver `createDashboard`.
 */
-INSERT INTO "dashboards" ("module", "slug", "title")
-SELECT v.slug, v.slug, v.title
-  FROM (VALUES
-    ('servicio',     'Dashboard de Servicio'),
-    ('ventas',       'Dashboard de Ventas'),
-    ('clientes',     'Dashboard de Clientes'),
-    ('refacciones',  'Dashboard de Refacciones'),
-    ('compras',      'Dashboard de Compras'),
-    ('pagos',        'Dashboard de Cuentas por pagar'),
-    ('rentabilidad', 'Dashboard de Rentabilidad')
-  ) AS v(slug, title)
- WHERE NOT EXISTS (SELECT 1 FROM "dashboards" d WHERE d."slug" = v.slug);
-
---> statement-breakpoint
-
 ALTER TABLE "dashboards" ALTER COLUMN "slug" SET NOT NULL;
 
 --> statement-breakpoint

@@ -20,12 +20,15 @@ const inicial = { ok: false } as Awaited<ReturnType<typeof createDashboardAction
  * nombre está vacío» tendría que viajar en la URL o perderse. Devolviendo el
  * resultado, los dos caminos —error y éxito— salen del mismo sitio.
  *
- * ── EL MÓDULO SUGERIDO VIAJA, Y NO ATA ─────────────────────────────────────
+ * ── EL MÓDULO DE ORIGEN HACE DOS COSAS ─────────────────────────────────────
  *
- * Si se entró desde el botón de una pantalla sin tablero, se lleva ese módulo
- * al compositor como preselección. No se guarda aquí: dónde sale un tablero es
- * una decisión que se toma con el tablero ya compuesto delante, no antes de
- * saber qué va a llevar.
+ * Si se entró desde el botón de una pantalla sin tablero, ese módulo viaja con
+ * el formulario y el tablero nace con los análisis de fábrica de esa pantalla
+ * ya puestos —ver `sembrarDesde`—, además de quedar preseleccionado en «dónde
+ * sale» del compositor.
+ *
+ * Lo segundo es una sugerencia y no una atadura: dónde sale se decide con el
+ * tablero compuesto delante, y ahí se puede quitar o añadir.
  */
 export function NewDashboardForm({ modulo }: { modulo: string | null }) {
   const [state, crear, creando] = useActionState(createDashboardAction, inicial);
@@ -40,6 +43,9 @@ export function NewDashboardForm({ modulo }: { modulo: string | null }) {
   return (
     <Card className="p-5">
       <form action={crear} className="space-y-4">
+        {/* El módulo de origen viaja con el formulario: el tablero nace con los
+            análisis de fábrica de esa pantalla ya puestos. Ver `sembrarDesde`. */}
+        {modulo && <input type="hidden" name="modulo" value={modulo} />}
         <div>
           <label htmlFor="title" className="text-sm font-medium">
             Nombre del tablero

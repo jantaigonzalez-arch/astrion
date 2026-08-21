@@ -135,7 +135,12 @@ export async function createDashboardAction(
   const no = await soloAdmin();
   if (no) return { ok: false, error: no };
 
-  const r = await createDashboard(String(form.get("title") ?? ""));
+  const r = await createDashboard(
+    String(form.get("title") ?? ""),
+    // El módulo viene del botón «Crear tablero» de una pantalla. `createDashboard`
+    // lo valida contra el catálogo antes de sembrar nada.
+    String(form.get("modulo") ?? "") || null,
+  );
   if (!r.ok) return { ok: false, error: r.reason };
 
   await revalidateDashboards();

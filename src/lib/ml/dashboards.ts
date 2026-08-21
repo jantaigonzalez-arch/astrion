@@ -302,6 +302,11 @@ async function filaDe(slug: string, db: DbOrTx) {
  */
 export async function createDashboard(
   title: string,
+  /**
+   * El módulo desde el que se está creando, si se entró por el botón de una
+   * pantalla. Siembra el tablero con los análisis de fábrica de ese módulo.
+   */
+  modulo?: string | null,
 ): Promise<{ ok: true; slug: string } | { ok: false; reason: string }> {
   const limpio = title.trim().slice(0, 120);
   if (!limpio) return { ok: false, reason: "El tablero necesita un nombre." };
@@ -325,7 +330,51 @@ export async function createDashboard(
   for (let i = 2; usados.has(slug); i++) slug = `${base}-${i}`;
 
   await db.insert(dashboards).values({ slug, title: limpio });
+  if (modulo) await sembrarDesde(slug, modulo, db);
   return { ok: true, slug };
+}
+
+/**
+ * Pone en el tablero nuevo los análisis de fábrica de un módulo.
+ *
+ * ── POR QUÉ HACE FALTA ESTO ────────────────────────────────────────────────
+ *
+ * El catálogo dice dónde nace cada análisis, y siete de ellos —los cuatro de
+ * rentabilidad y los tres de clientes— solo nacen en un tablero: sus módulos no
+ * tienen pantalla de trabajo que admita análisis. Mientras existían siete
+ * tableros de fábrica eso funcionaba solo. Al borrarlos (migración 0019) esos
+ * siete análisis se quedaron sin ningún sitio, disponibles pero no puestos.
+ *
+ * Sembrar al crear devuelve el estreno útil sin devolver el ruido: quien pulsa
+ * «Crear tablero» en Rentabilidad recibe los cuatro de rentabilidad ya puestos,
+ * y quien no lo pulsa no tiene siete tableros vacíos en su menú.
+ *
+ * Se copian como filas `factory`, no `user`: es el sistema quien las puso, y esa
+ * distinción es la que enseña el compositor para que quien compone sepa qué
+ * venía de fábrica y qué eligió él.
+ */
+async function sembrarDesde(slug: string, modulo: string, db: DbOrTx) {
+  const origen = dashboardScreen(modulo);
+  const deFabrica = (await analysesAll(db))
+    .map((a) => ({ a, en: a.defaultOn.find((d) => d.screen === origen) }))
+    .filter((x): x is { a: Analysis; en: NonNullable<typeof x.en> } => Boolean(x.en))
+    .sort((x, y) => x.en.position - y.en.position);
+
+  const destino = dashboardScreen(slug);
+  for (const [i, { a, en }] of deFabrica.entries()) {
+    await setPlacement({
+      analysis: a.id,
+      screen: destino,
+      active: true,
+      // Se renumera desde cero: las posiciones de fábrica tienen huecos —las
+      // preguntas del usuario nacen en la 50— y copiarlas dejaría un tablero
+      // nuevo con un salto que nadie pidió.
+      position: i,
+      width: en.width ?? "full",
+      source: "system",
+      conexion: db,
+    });
+  }
 }
 
 /** De «Cierre de mes» a `cierre-de-mes`. */

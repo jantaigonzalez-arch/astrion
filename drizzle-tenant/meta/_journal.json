@@ -134,6 +134,13 @@
       "when": 1786852307339,
       "tag": "0018_tableros_libres",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1786852307340,
+      "tag": "0019_sin_tableros_de_fabrica",
+      "breakpoints": true
     }
   ]
 }
