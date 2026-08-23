@@ -109,8 +109,17 @@ export function tableroVisiblePara(role: MembershipRole, t: TableroItem): boolea
   return t.homes.some((h) => mias.has(h));
 }
 
-/** Las direcciones que este rol tiene en su menú, tableros aparte. */
-function pantallasDelRol(role: MembershipRole): Set<string> {
+/**
+ * Las direcciones que este rol tiene en su menú, tableros aparte.
+ *
+ * Exportada porque decide dos cosas y no una: qué tableros se ven —ver
+ * `tableroVisiblePara`— y qué áreas resume la pantalla de llegada. Un vendedor
+ * no tiene Compras en el menú, así que tampoco debe leer ahí cuántas facturas
+ * hay por pagar: es información que no puede ir a ver y que además es de
+ * administración. Preguntárselo al mismo sitio es lo que impide que un día
+ * digan cosas distintas.
+ */
+export function pantallasDelRol(role: MembershipRole): Set<string> {
   return new Set(menuDelRol(role).flatMap((g) => g.items.map((i) => i.href)));
 }
 

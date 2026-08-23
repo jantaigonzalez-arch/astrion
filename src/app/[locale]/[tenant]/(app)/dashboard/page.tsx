@@ -17,6 +17,8 @@ import { ListSkeleton, StatCardsSkeleton } from "@/components/portal/skeletons";
 import { currentRole, getTenantContext } from "@/lib/tenancy/context";
 import { exitTenant } from "@/lib/actions/platform";
 import { cn } from "@/lib/utils";
+import { CompanySummary } from "@/components/portal/company-summary";
+import { pantallasDelRol } from "@/lib/portal/menu";
 import type { MembershipRole } from "@/lib/db/platform";
 import {
   CATEGORY_LABELS,
@@ -165,6 +167,16 @@ export default async function DashboardPage({
         pantalla entera esperaba a la consulta más lenta para enseñar hasta el
         nombre del usuario.
       */}
+      {/* La empresa por áreas. Va ANTES que los tickets porque es lo general:
+          antes se entraba a una pantalla que hablaba solo de servicio y hacía
+          leer la empresa entera como una cola de tickets. Un cliente no lo ve
+          —su portal es el de SUS solicitudes, no el del negocio ajeno—. */}
+      {!isClient && (
+        <Suspense fallback={<StatCardsSkeleton />}>
+          <CompanySummary pantallas={pantallasDelRol(role)} locale={locale} />
+        </Suspense>
+      )}
+
       <Suspense fallback={<StatCardsSkeleton />}>
         <StatCards role={role} userId={session!.user.id} />
       </Suspense>
