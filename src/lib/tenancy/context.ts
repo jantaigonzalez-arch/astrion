@@ -256,7 +256,24 @@ export const getTenantContext = cache(async function getTenantContext(): Promise
   const jar = await cookies();
   const wanted = jar.get(ACTIVE_TENANT_COOKIE)?.value ?? null;
 
-  const mine = await listMemberships(session.user.id);
+  /**
+   * Un operador de Astraion NO tiene membresías, así que no se preguntan.
+   *
+   * No es una optimización: preguntarlas era un agujero. `session.user.id` de
+   * una sesión de plataforma es un id de `platform_users`, y la migración 0023
+   * conservó los UUID al separar las tablas —para no remapear la bitácora—, así
+   * que ese mismo id TAMBIÉN identifica a una fila de `users` cuando la persona
+   * tenía cuenta en las dos. `listMemberships` encontraba las membresías de esa
+   * otra cuenta y el operador entraba a la empresa como `owner`, con
+   * `impersonated: false` y sin el pool de solo lectura. Medido: entrando a
+   * bajío con `admin@astraion.com` salía «Hola, Administrador de Astraion» y el
+   * panel de un miembro.
+   *
+   * De qué TABLA salió la sesión es el hecho; las membresías son de la otra.
+   * Cruzarlas por el id es exactamente lo que separar las tablas vino a impedir.
+   */
+  const esOperador = session.user.kind === "platform";
+  const mine = esOperador ? [] : await listMemberships(session.user.id);
 
   if (wanted) {
     const own = mine.find((m) => m.slug === wanted);
@@ -271,9 +288,9 @@ export const getTenantContext = cache(async function getTenantContext(): Promise
         impersonated: false,
       };
     }
-    // Sin membresía: solo pasa si es personal de la plataforma. Se mira de qué
-    // TABLA salió la sesión, no si trae rol — ver la nota del layout de consola.
-    if (session.user.kind === "platform") {
+    // Sin membresía: solo pasa si es personal de la plataforma. Para un
+    // operador éste es SIEMPRE el camino, porque arriba no se le buscaron.
+    if (esOperador) {
       const db = getDb();
       const [t] = await db
         .select({
