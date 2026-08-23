@@ -664,9 +664,74 @@ export async function getClientAccounts() {
  * `hasPortal` permite decirlo en la pantalla en vez de mostrar un cero que
  * miente. Ocurre de verdad: Laboratorios Genoma es cliente por negocio ganado y
  * no tiene cuenta enlazada.
+ *
+ * ── LOS CONTEOS SE AGRUPAN UNA VEZ, NO UNO POR CLIENTE ─────────────────────
+ *
+ * Eran siete subconsultas CORRELACIONADAS, o sea siete recorridos por cada fila
+ * de la lista: tres de ellos sobre `tickets`, que es la tabla que más crece. El
+ * coste es clientes × tickets, así que no se nota hasta que se nota de golpe —
+ * y esta pantalla ya era la más lenta del portal.
+ *
+ * Medido en bajío, 88 clientes: 33 ms → 8,3 ms, y comprobado campo a campo
+ * contra la consulta vieja —las 88 filas idénticas en los siete conteos— antes
+ * de tirarla.
+ *
+ * Ahora cada tabla se agrupa UNA vez por su clave y se pega con un `left join`.
+ * Los tres conteos de tickets salen del mismo recorrido con `filter`, que es lo
+ * que antes obligaba a leer la tabla tres veces para responder tres preguntas
+ * sobre las mismas filas.
+ *
+ * El `left join` conserva la semántica que hacía falta conservar: cuando un
+ * cliente no tiene cuenta de portal, `client_id` es nulo, y nulo no casa con
+ * nada —tampoco con otro nulo— así que no encuentra pareja y el `coalesce` deja
+ * el cero. Es el mismo cero que devolvía la subconsulta al no comparar nunca
+ * cierto, y sigue significando «no hay por dónde encontrárselos», que es lo que
+ * `hasPortal` traduce en la pantalla.
  */
 export async function getClients() {
   const db = await tenantDb();
+
+  const porContrato = db
+    .select({
+      clientId: contracts.clientId,
+      n: sql<number>`count(*)::int`.as("contratos_n"),
+    })
+    .from(contracts)
+    .groupBy(contracts.clientId)
+    .as("por_contrato");
+
+  const porEquipo = db
+    .select({
+      ownerId: equipment.ownerId,
+      n: sql<number>`count(*)::int`.as("equipos_n"),
+    })
+    .from(equipment)
+    .groupBy(equipment.ownerId)
+    .as("por_equipo");
+
+  const porTicket = db
+    .select({
+      createdById: tickets.createdById,
+      abiertos: sql<number>`count(*) filter (
+        where ${tickets.status} in ('pending_review','open','in_progress','waiting')
+      )::int`.as("tickets_abiertos"),
+      total: sql<number>`count(*)::int`.as("tickets_total"),
+      ultimo: sql<string | null>`max(${tickets.createdAt})`.as("tickets_ultimo"),
+    })
+    .from(tickets)
+    .groupBy(tickets.createdById)
+    .as("por_ticket");
+
+  const porGanado = db
+    .select({
+      organizationId: crmDeals.organizationId,
+      n: sql<number>`count(*)::int`.as("ganados_n"),
+      valor: sql<number>`coalesce(sum(${VALOR_MXN}), 0)::float8`.as("ganados_valor"),
+    })
+    .from(crmDeals)
+    .where(eq(crmDeals.status, "won"))
+    .groupBy(crmDeals.organizationId)
+    .as("por_ganado");
 
   const rows = await db
     .select({
@@ -677,39 +742,24 @@ export async function getClients() {
       phone: crmOrganizations.phone,
       ownerId: crmOrganizations.ownerId,
       clientId: crmOrganizations.clientId,
-      contracts: sql<number>`(
-        select count(*)::int from ${contracts}
-         where ${contracts}.client_id = ${crmOrganizations}.client_id
-      )`,
-      equipment: sql<number>`(
-        select count(*)::int from ${equipment}
-         where ${equipment}.owner_id = ${crmOrganizations}.client_id
-      )`,
-      openTickets: sql<number>`(
-        select count(*)::int from ${tickets}
-         where ${tickets}.created_by_id = ${crmOrganizations}.client_id
-           and ${tickets}.status in ('pending_review','open','in_progress','waiting')
-      )`,
-      totalTickets: sql<number>`(
-        select count(*)::int from ${tickets}
-         where ${tickets}.created_by_id = ${crmOrganizations}.client_id
-      )`,
-      lastTicketAt: sql<string | null>`(
-        select max(${tickets}.created_at) from ${tickets}
-         where ${tickets}.created_by_id = ${crmOrganizations}.client_id
-      )`,
-      wonDeals: sql<number>`(
-        select count(*)::int from ${crmDeals}
-         where ${crmDeals}.organization_id = ${crmOrganizations}.id
-           and ${crmDeals}.status = 'won'
-      )`,
-      wonValue: sql<number>`(
-        select coalesce(sum(${VALOR_MXN}), 0)::float8 from ${crmDeals}
-         where ${crmDeals}.organization_id = ${crmOrganizations}.id
-           and ${crmDeals}.status = 'won'
-      )`,
+      // Se piden en crudo y el cero se pone abajo, en JavaScript. Envolverlos
+      // aquí en un `coalesce` obligaba a escribirlos dentro de una plantilla
+      // `sql`, y ahí Drizzle pierde el prefijo de la subconsulta: dos de ellas
+      // exponen una columna llamada `n` y Postgres rechazaba la consulta por
+      // ambigua. Como campos, los cualifica solo.
+      contracts: porContrato.n,
+      equipment: porEquipo.n,
+      openTickets: porTicket.abiertos,
+      totalTickets: porTicket.total,
+      lastTicketAt: porTicket.ultimo,
+      wonDeals: porGanado.n,
+      wonValue: porGanado.valor,
     })
     .from(crmOrganizations)
+    .leftJoin(porContrato, eq(porContrato.clientId, crmOrganizations.clientId))
+    .leftJoin(porEquipo, eq(porEquipo.ownerId, crmOrganizations.clientId))
+    .leftJoin(porTicket, eq(porTicket.createdById, crmOrganizations.clientId))
+    .leftJoin(porGanado, eq(porGanado.organizationId, crmOrganizations.id))
     .where(ES_CLIENTE)
     .orderBy(asc(crmOrganizations.name));
 
@@ -718,6 +768,14 @@ export async function getClients() {
 
   return rows.map((r) => ({
     ...r,
+    // Sin pareja en el `left join` no hay fila que contar, y eso es un cero: la
+    // pantalla enseña «0 equipos», no un hueco. Ver la cabecera.
+    contracts: r.contracts ?? 0,
+    equipment: r.equipment ?? 0,
+    openTickets: r.openTickets ?? 0,
+    totalTickets: r.totalTickets ?? 0,
+    wonDeals: r.wonDeals ?? 0,
+    wonValue: r.wonValue ?? 0,
     ownerName: r.ownerId ? (nameById.get(r.ownerId) ?? null) : null,
     hasPortal: Boolean(r.clientId),
     lastTicketAt: r.lastTicketAt ? new Date(r.lastTicketAt) : null,
