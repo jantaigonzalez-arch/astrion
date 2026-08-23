@@ -313,8 +313,11 @@ export async function approveSignup(
           // El papel de dueño no se pone aquí: lo crea `provisionTenant` como
           // membresía `owner` de la empresa que está naciendo. La cuenta es la
           // identidad; mandar en una empresa es otra cosa.
-          // Nunca de plataforma: es el dueño de SU empresa, no operador del SaaS.
-          platformRole: null,
+          //
+          // Y no hay nada que decir sobre la plataforma: quien opera Astraion
+          // vive en `platform_users` y no se llega ahí aprobando un alta. Antes
+          // esto ponía `platformRole: null` explícitamente para dejarlo dicho;
+          // con las tablas separadas la frase ya no se puede ni escribir.
           active: true,
         })
         .returning({ id: users.id });

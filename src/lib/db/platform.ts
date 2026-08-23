@@ -95,12 +95,57 @@ export const users = pgTable("users", {
   // Null = la cuenta existe pero no puede iniciar sesión (auth.ts lo exige).
   // Así se importan padrones de clientes sin abrirles acceso por accidente.
   passwordHash: text("password_hash"),
-  /** Null = usuario de un cliente. Ver la nota de `platformRole`. */
-  platformRole: platformRole("platform_role"),
   company: varchar("company", { length: 200 }),
   phone: varchar("phone", { length: 40 }),
   active: boolean("active").notNull().default(true),
   image: text("image"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * QUIEN OPERA ASTRAION. Tabla aparte, y no una columna de `users`.
+ *
+ * ── POR QUÉ SE SEPARÓ ──────────────────────────────────────────────────────
+ *
+ * Antes era `users.platform_role`: una columna nula en 137 de 138 cuentas, que
+ * convertía la misma fila en «trabajo en esta empresa» y «opero el producto».
+ * En bajío eso se veía en su forma más pura — el único operador del SaaS era
+ * `admin@evoelution.com`, que ADEMÁS tenía dos membresías en empresas. La misma
+ * contraseña abría la consola de todos los clientes y el portal de uno.
+ *
+ * Ahora son dos identidades y dos credenciales, aunque sean la misma persona.
+ * Operar la plataforma es un trabajo distinto de usarla, y entrar a hacer uno u
+ * otro tiene que ser un acto distinto.
+ *
+ * ── LA CONSECUENCIA QUE SOSTIENE TODO LO DEMÁS ─────────────────────────────
+ *
+ * Un operador NO existe para los esquemas de inquilino. Las 33 columnas de
+ * negocio que apuntan a `users` —`created_by_id`, `actor_id`, `owner_id`…— no
+ * pueden recibir un id de aquí, y eso no es una limitación que haya que
+ * recordar: es la razón por la que entrar a una empresa es de SOLO LECTURA.
+ * La conexión que recibe un operador se abre con `default_transaction_read_only`,
+ * así que Postgres rechaza la escritura antes de que ninguna foránea se entere.
+ * Ver `tenancy/context.ts`.
+ *
+ * Las dos columnas que sí registran a un operador —quién entró a una empresa y
+ * quién aprobó un alta— apuntan aquí, que es donde siempre debieron apuntar.
+ */
+export const platformUsers = pgTable("platform_users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: varchar("name", { length: 160 }),
+  /**
+   * Único entre operadores, y SIN relación con `users.email`.
+   *
+   * Que el mismo correo exista en las dos tablas es correcto y esperado: son
+   * dos cuentas de la misma persona para dos trabajos. Cruzarlas —buscar en
+   * ambas al iniciar sesión, o prohibir el duplicado— devolvería por la puerta
+   * de atrás la confusión que esta tabla existe para deshacer.
+   */
+  email: varchar("email", { length: 255 }).notNull().unique(),
+  /** Null = la cuenta existe y no puede entrar. Igual que en `users`. */
+  passwordHash: text("password_hash"),
+  role: platformRole("role").notNull(),
+  active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -253,7 +298,8 @@ export const tenantSignups = pgTable(
     tenantId: uuid("tenant_id").references(() => tenants.id, {
       onDelete: "set null",
     }),
-    reviewedBy: uuid("reviewed_by").references(() => users.id, {
+    /** Quién la revisó: es personal de Astraion, no de ninguna empresa. */
+    reviewedBy: uuid("reviewed_by").references(() => platformUsers.id, {
       onDelete: "set null",
     }),
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
@@ -327,7 +373,15 @@ export const platformEvents = pgTable(
     /** 'tenant.provisioned' | 'tenant.ml_consent_granted' | 'tenant.migrated'… */
     eventType: varchar("event_type", { length: 80 }).notNull(),
     payload: jsonb("payload").notNull().default({}),
-    actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+    /**
+     * Quién lo hizo, y siempre es personal de Astraion: esta bitácora registra
+     * a la plataforma operando sobre los inquilinos —quién entró a la empresa
+     * de un cliente y cuándo—, no lo que hace la gente dentro de la suya. Eso
+     * último vive en los eventos de dominio de cada esquema.
+     */
+    actorId: uuid("actor_id").references(() => platformUsers.id, {
+      onDelete: "set null",
+    }),
     occurredAt: timestamp("occurred_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

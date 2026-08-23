@@ -49,7 +49,7 @@ export default async function TenantAppLayout({
 
   // La franja de contexto solo le interesa a quien opera Astraion: un usuario
   // normal tiene una sola empresa y decirle en cuál está sería ruido.
-  const isPlatform = Boolean(session!.user.platformRole);
+  const isPlatform = session!.user.kind === "platform";
 
   // La marca es de ESTA empresa. Se resuelve una vez aquí y baja a las dos
   // piezas de chrome que la muestran.

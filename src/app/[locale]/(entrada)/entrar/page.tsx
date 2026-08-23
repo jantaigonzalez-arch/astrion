@@ -23,7 +23,7 @@ export default async function EntrarPage({
   const session = await auth();
   if (!session?.user?.id) redirect(`${prefix}/login`);
 
-  if (session.user.platformRole) redirect(`${prefix}/platform`);
+  if (session.user.kind === "platform") redirect(`${prefix}/platform`);
 
   const mine = await listMemberships(session.user.id);
   const first = mine.find((m) => m.schemaName);

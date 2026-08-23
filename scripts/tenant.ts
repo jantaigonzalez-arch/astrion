@@ -1,9 +1,18 @@
 import "./_env"; // DEBE ir primero: ver scripts/_env.ts
 import { readFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import bcrypt from "bcryptjs";
 import path from "node:path";
 import { sql, eq } from "drizzle-orm";
 import { getDb } from "../src/lib/db";
-import { tenants, tenantSchemas, platformEvents, users, schemaNameFor } from "../src/lib/db/platform";
+import {
+  tenants,
+  tenantSchemas,
+  platformEvents,
+  platformUsers,
+  users,
+  schemaNameFor,
+} from "../src/lib/db/platform";
 import {
   migrateAllTenants,
   migrateSchema,
@@ -19,7 +28,7 @@ import {
  *   npx tsx scripts/tenant.ts provision --slug acme --name "ACME Labs"
  *   npx tsx scripts/tenant.ts migrate
  *   npx tsx scripts/tenant.ts drop --slug acme          ← solo desarrollo
- *   npx tsx scripts/tenant.ts grant --email a@b.com --role superadmin
+ *   npx tsx scripts/tenant.ts grant --email a@b.com --role superadmin  ← cuenta de Astraion
  */
 
 const args = process.argv.slice(2);
@@ -195,25 +204,66 @@ async function main() {
       // Quién opera la plataforma es una decisión operativa, no un hecho del
       // esquema: por eso se otorga con un comando y queda en la bitácora, en
       // vez de venir horneado en una migración.
-      const email = flag("email");
+      //
+      // Antes esto PROMOVÍA una cuenta de cliente poniéndole un rol. Ya no
+      // existe esa operación: un operador de Astraion es una cuenta propia en
+      // `platform_users`, así que este comando la CREA —con su contraseña— o
+      // le cambia el rol si ya está. Que la persona tenga además una cuenta de
+      // inquilino con el mismo correo es normal y no se toca aquí.
+      const email = flag("email")?.toLowerCase().trim();
       const role = (flag("role") ?? "superadmin") as "superadmin" | "support";
       if (!email) throw new Error("Falta --email");
       if (role !== "superadmin" && role !== "support") {
         throw new Error('--role debe ser "superadmin" o "support"');
       }
+
       const db = getDb();
-      const [u] = await db
-        .update(users)
-        .set({ platformRole: role })
-        .where(eq(users.email, email.toLowerCase().trim()))
-        .returning({ id: users.id, email: users.email });
-      if (!u) throw new Error(`No existe el usuario ${email}`);
+      const [existe] = await db
+        .select({ id: platformUsers.id })
+        .from(platformUsers)
+        .where(eq(platformUsers.email, email))
+        .limit(1);
+
+      // La contraseña se genera y se imprime UNA vez si no la dan. Pedirla por
+      // bandera obliga a escribirla en la terminal, donde queda en el historial
+      // del shell.
+      const dada = flag("password");
+      const clave = dada ?? randomBytes(9).toString("base64url");
+
+      let id: string;
+      if (existe) {
+        await db
+          .update(platformUsers)
+          .set({
+            role,
+            active: true,
+            ...(dada ? { passwordHash: bcrypt.hashSync(clave, 10) } : {}),
+          })
+          .where(eq(platformUsers.id, existe.id));
+        id = existe.id;
+        console.log(`▸ ${email} ya era operador; ahora es ${role}.`);
+        if (dada) console.log("  (contraseña actualizada)");
+      } else {
+        const [creado] = await db
+          .insert(platformUsers)
+          .values({
+            name: flag("name") ?? null,
+            email,
+            passwordHash: bcrypt.hashSync(clave, 10),
+            role,
+            active: true,
+          })
+          .returning({ id: platformUsers.id });
+        id = creado.id;
+        console.log(`▸ ${email} es ${role} de Astraion.`);
+        if (!dada) console.log(`  contraseña: ${clave}   ← se muestra una sola vez`);
+      }
+
       await db.insert(platformEvents).values({
         eventType: "platform.role_granted",
-        actorId: u.id,
-        payload: { email: u.email, rol: role },
+        actorId: id,
+        payload: { email, rol: role, creado: !existe },
       });
-      console.log(`▸ ${u.email} ahora es ${role} de la plataforma.`);
       break;
     }
 
@@ -232,7 +282,7 @@ async function main() {
         '  provision --slug X --name "Nombre" [--owner UUID]\n' +
         "  adopt --slug X\n" +
         "  migrate\n" +
-        "  grant --email a@b.com [--role superadmin|support]\n" +
+        '  grant --email a@b.com [--role superadmin|support] [--name "X"] [--password X]\n' +
         "  drop --slug X   (solo desarrollo)",
       );
   }

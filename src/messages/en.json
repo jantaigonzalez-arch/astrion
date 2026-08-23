@@ -319,6 +319,15 @@
       "submit": "Sign in",
       "noAccount": "Is your company not on Astraion yet?",
       "register": "Request access"
+    },
+    "loginConsola": {
+      "title": "Astraion console",
+      "subtitle": "For the team that operates the platform. If you came to work in your company, your door is the other one.",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Enter the console",
+      "noAccount": "Looking for your company's portal?",
+      "register": "Sign in here"
     }
   }
 }

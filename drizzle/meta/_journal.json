@@ -162,6 +162,13 @@
       "when": 1786846838960,
       "tag": "0022_plano_analitico",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786846838961,
+      "tag": "0023_usuarios_de_astraion",
+      "breakpoints": true
     }
   ]
 }

@@ -319,6 +319,15 @@
       "submit": "Iniciar sesión",
       "noAccount": "¿Tu empresa todavía no está en Astraion?",
       "register": "Solicita acceso"
+    },
+    "loginConsola": {
+      "title": "Consola de Astraion",
+      "subtitle": "Acceso del equipo que opera la plataforma. Si vienes a trabajar en tu empresa, tu puerta es la otra.",
+      "email": "Correo",
+      "password": "Contraseña",
+      "submit": "Entrar a la consola",
+      "noAccount": "¿Buscas el portal de tu empresa?",
+      "register": "Entra por aquí"
     }
   }
 }

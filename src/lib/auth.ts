@@ -3,7 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { getDb, isDbConfigured } from "@/lib/db";
-import { users } from "@/lib/db/platform";
+import { platformUsers, users } from "@/lib/db/platform";
 import { ROOT_DOMAIN } from "@/lib/tenancy/host";
 
 /**
@@ -14,24 +14,43 @@ import { ROOT_DOMAIN } from "@/lib/tenancy/host";
  * alguien depende de la empresa en la que está parado y se pregunta con
  * `currentRole()` (`tenancy/context.ts`), que lee su membresía.
  *
- * `platformRole` sí vive aquí, y es una dimensión distinta: no habla de una
- * empresa, habla de operar el SaaS por encima de todas.
+ * ── DOS PUERTAS, Y NO UN FORMULARIO QUE BUSCA EN DOS SITIOS ────────────────
+ *
+ * Quien opera Astraion vive en `platform_users`, una tabla aparte de quien la
+ * usa. Cada tabla tiene su proveedor y su pantalla: `/login` entra al portal de
+ * una empresa, `/consola` entra a la consola. Ninguno de los dos mira la tabla
+ * del otro.
+ *
+ * Un solo formulario que probara primero una tabla y luego la otra sería más
+ * cómodo y devolvería el problema entero: el mismo correo puede existir en las
+ * dos —son dos cuentas de la misma persona para dos trabajos— y «cuál de las
+ * dos entra» pasaría a depender del orden en que se consultan. Peor: probar la
+ * contraseña de un operador contra la tabla de clientes es exactamente cómo se
+ * descubre que una funciona en la otra.
+ *
+ * `kind` es lo que la sesión lleva para no volver a mezclarlas. No se deduce de
+ * si `platformRole` es nulo, porque eso era la vieja columna con otro nombre.
  */
 
-/**
- * Rol de PLATAFORMA: quien opera el SaaS, por encima de los inquilinos.
- * Null en la enorme mayoría de las cuentas — son usuarios de un cliente.
- */
+/** Rol de PLATAFORMA. Solo significa algo cuando `kind === "platform"`. */
 export type PlatformRole = "superadmin" | "support" | null;
+
+/** De qué tabla salió esta sesión. Ver la nota de arriba. */
+export type SessionKind = "tenant" | "platform";
+
+/** El id del proveedor de la consola. `signIn(PLATFORM_PROVIDER, …)`. */
+export const PLATFORM_PROVIDER = "platform";
 
 declare module "next-auth" {
   interface Session {
     user: {
       id: string;
+      kind: SessionKind;
       platformRole: PlatformRole;
     } & DefaultSession["user"];
   }
   interface User {
+    kind?: SessionKind;
     platformRole?: PlatformRole;
   }
 }
@@ -74,6 +93,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
   providers: [
+    // La puerta de los inquilinos: quien USA el producto dentro de una empresa.
     Credentials({
       credentials: {
         email: { label: "Email", type: "email" },
@@ -100,7 +120,43 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           id: user.id,
           name: user.name ?? undefined,
           email: user.email,
-          platformRole: user.platformRole ?? null,
+          kind: "tenant" as const,
+          platformRole: null,
+        };
+      },
+    }),
+
+    // La puerta de la consola: quien OPERA Astraion. Otra tabla, otra pantalla.
+    Credentials({
+      id: PLATFORM_PROVIDER,
+      name: "Astraion",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(creds) {
+        if (!isDbConfigured) return null;
+        const email = String(creds?.email ?? "").toLowerCase().trim();
+        const password = String(creds?.password ?? "");
+        if (!email || !password) return null;
+
+        const db = getDb();
+        const [op] = await db
+          .select()
+          .from(platformUsers)
+          .where(eq(platformUsers.email, email))
+          .limit(1);
+
+        if (!op || !op.passwordHash || !op.active) return null;
+        const ok = await bcrypt.compare(password, op.passwordHash);
+        if (!ok) return null;
+
+        return {
+          id: op.id,
+          name: op.name ?? undefined,
+          email: op.email,
+          kind: "platform" as const,
+          platformRole: op.role,
         };
       },
     }),
@@ -109,15 +165,23 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.platformRole =
-          (user as { platformRole?: PlatformRole }).platformRole ?? null;
+        const u = user as { kind?: SessionKind; platformRole?: PlatformRole };
+        token.kind = u.kind ?? "tenant";
+        // El rol solo viaja si la sesión es de plataforma. Copiarlo siempre
+        // dejaría abierta la puerta a que un token de inquilino lo llevara —
+        // que es la columna vieja reencarnada en el JWT.
+        token.platformRole = u.kind === "platform" ? (u.platformRole ?? null) : null;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
-        session.user.platformRole = (token.platformRole as PlatformRole) ?? null;
+        session.user.kind = (token.kind as SessionKind) ?? "tenant";
+        session.user.platformRole =
+          session.user.kind === "platform"
+            ? ((token.platformRole as PlatformRole) ?? null)
+            : null;
       }
       return session;
     },

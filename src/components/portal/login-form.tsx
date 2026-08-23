@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 export function LoginForm({
   destination = "/entrar",
   brand = "tenant",
+  provider = "credentials",
 }: {
   destination?: string;
   /**
@@ -32,9 +33,26 @@ export function LoginForm({
    * ninguna todavía—. Recibirlo con el texto de un cliente le dice que se
    * equivocó de sitio, igual que hacía el logo.
    */
-  brand?: "tenant" | "astraion";
+  brand?: "tenant" | "astraion" | "consola";
+  /**
+   * Contra QUÉ TABLA se autentica.
+   *
+   * `credentials` mira `users` —quien usa el producto dentro de una empresa— y
+   * `platform` mira `platform_users` —quien opera Astraion—. Son dos tablas sin
+   * relación, así que el proveedor no se adivina del correo escrito: lo fija la
+   * puerta. Un formulario que probara los dos convertiría «cuál de las dos
+   * cuentas entra» en una cuestión de orden de consulta, y probaría además la
+   * contraseña de un operador contra la tabla de clientes.
+   */
+  provider?: "credentials" | "platform";
 }) {
-  const t = useTranslations(brand === "astraion" ? "portal.loginAstraion" : "portal.login");
+  const t = useTranslations(
+    brand === "consola"
+      ? "portal.loginConsola"
+      : brand === "astraion"
+        ? "portal.loginAstraion"
+        : "portal.login",
+  );
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -44,7 +62,7 @@ export function LoginForm({
     setPending(true);
     setError(null);
     const form = new FormData(e.currentTarget);
-    const res = await signIn("credentials", {
+    const res = await signIn(provider, {
       email: String(form.get("email")),
       password: String(form.get("password")),
       redirect: false,
@@ -94,7 +112,12 @@ export function LoginForm({
       <p className="mt-6 text-center text-sm text-muted-foreground">
         {t("noAccount")}{" "}
         <Link
-          href={brand === "astraion" ? "/#alta" : "/contacto"}
+          href={
+            // Desde la consola el pie no invita a darse de alta: manda a la
+            // OTRA puerta. Quien llega aquí por error es alguien del equipo de
+            // un cliente, y lo que necesita es el camino a su portal.
+            brand === "consola" ? "/login" : brand === "astraion" ? "/#alta" : "/contacto"
+          }
           className="font-medium text-primary hover:underline"
         >
           {t("register")}

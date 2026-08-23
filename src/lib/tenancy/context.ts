@@ -139,13 +139,21 @@ function evictOldestPool(): void {
  * Pasado ese punto la respuesta ya no es afinar números sino un pooler externo
  * o el modelo por transacción.
  */
-function clientFor(schemaName: string): TenantClient {
-  const cached = clients.get(schemaName);
+function clientFor(schemaName: string, soloLectura = false): TenantClient {
+  // El pool de solo lectura es OTRO pool, no el mismo con un ajuste puesto.
+  // `SET SESSION ... READ ONLY` sobre el pool compartido dejaría en solo
+  // lectura a todo el que estuviera trabajando en esa empresa, y quitarlo al
+  // terminar no es fiable: la conexión vuelve al pool en el estado en que
+  // quedó. Dos pools cuestan conexiones —las gobierna el mismo presupuesto y
+  // el mismo LRU— y no pueden contaminarse entre sí.
+  const clave = soloLectura ? `${schemaName}#ro` : schemaName;
+
+  const cached = clients.get(clave);
   if (cached) {
     // Reinsertar lo manda al final: en un Map el orden es de inserción, así
     // que el primero pasa a ser siempre el menos usado recientemente.
-    clients.delete(schemaName);
-    clients.set(schemaName, cached);
+    clients.delete(clave);
+    clients.set(clave, cached);
     return cached.client;
   }
 
@@ -161,11 +169,19 @@ function clientFor(schemaName: string): TenantClient {
     prepare: process.env.DB_PREPARE === "true",
     max: POOL_MAX,
     idle_timeout: Number(process.env.DB_TENANT_IDLE ?? 20),
-    connection: { search_path: `${schemaName}, public` },
+    connection: {
+      search_path: `${schemaName}, public`,
+      // Lo hace cumplir POSTGRES, no la aplicación, y ésa es toda la idea: un
+      // `INSERT` desde una acción que nadie se acordó de proteger no se cuela,
+      // se rechaza. Una comprobación en cada acción es una lista que hay que
+      // mantener al día para siempre y que falla en silencio en cuanto alguien
+      // escribe la acción número 71.
+      ...(soloLectura ? { default_transaction_read_only: true } : {}),
+    },
   });
 
   const client = drizzle(sql, { schema });
-  clients.set(schemaName, { client, sql });
+  clients.set(clave, { client, sql });
   // Se purga DESPUÉS de insertar: así el pool recién creado nunca es el
   // candidato a cerrarse, que sería absurdo estando a punto de usarse.
   while (clients.size > POOL_CACHE_MAX) evictOldestPool();
@@ -255,8 +271,9 @@ export const getTenantContext = cache(async function getTenantContext(): Promise
         impersonated: false,
       };
     }
-    // Sin membresía: solo pasa si es personal de la plataforma.
-    if (session.user.platformRole) {
+    // Sin membresía: solo pasa si es personal de la plataforma. Se mira de qué
+    // TABLA salió la sesión, no si trae rol — ver la nota del layout de consola.
+    if (session.user.kind === "platform") {
       const db = getDb();
       const [t] = await db
         .select({
@@ -335,7 +352,12 @@ export async function currentRole(): Promise<MembershipRole | null> {
  */
 export async function tenantDb() {
   const ctx = await requireTenant();
-  return clientFor(ctx.schemaName);
+  // Personal de Astraion dentro de la empresa de un cliente: SOLO LECTURA, y
+  // se decide aquí porque aquí pasa toda consulta de negocio. Un operador no
+  // existe en `users`, así que ni siquiera podría firmar lo que escribiera —
+  // las 33 columnas de negocio que registran quién hizo qué apuntan allí. Ver
+  // la cabecera de `platformUsers`.
+  return clientFor(ctx.schemaName, ctx.impersonated);
 }
 
 /** Para tareas fuera de una petición (cron, importadores): esquema explícito. */
