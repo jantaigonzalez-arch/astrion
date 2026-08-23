@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { setRequestLocale } from "next-intl/server";
-import { Ticket, Clock, Loader, CheckCircle2, UserCheck, UserX } from "lucide-react";
+import { Ticket, Clock, Loader, CheckCircle2, UserCheck, UserX, Undo2 } from "lucide-react";
 import { auth } from "@/lib/auth";
 import {
   getDashboardStats,
@@ -14,7 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { StatusBadge, PriorityBadge } from "@/components/portal/badges";
 import { ListSkeleton, StatCardsSkeleton } from "@/components/portal/skeletons";
-import { currentRole } from "@/lib/tenancy/context";
+import { currentRole, getTenantContext } from "@/lib/tenancy/context";
+import { exitTenant } from "@/lib/actions/platform";
+import { cn } from "@/lib/utils";
 import type { MembershipRole } from "@/lib/db/platform";
 import {
   CATEGORY_LABELS,
@@ -40,6 +42,14 @@ export default async function DashboardPage({
   const role = await currentRole();
   if (!role) return null;
   const isClient = role === "client";
+
+  // Personal de Astraion dentro de la empresa de un cliente. El panel es un
+  // resumen del trabajo DE UNO, y un operador no tiene ninguno aquí: su
+  // identidad vive en `platform_users` y ninguna fila de este esquema puede
+  // apuntarle. Sin esto, la pantalla de llegada le saludaba por su nombre y le
+  // ofrecía «Asignados a mí» — un cero que no puede dejar de serlo.
+  const ctx = await getTenantContext();
+  const deAstraion = Boolean(ctx?.impersonated);
 
   // El vendedor tiene su propio panel comercial.
   if (role === "sales") {
@@ -113,16 +123,35 @@ export default async function DashboardPage({
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            Hola, {session!.user.name ?? session!.user.email}
+            {/* De visita no se saluda por el nombre de uno: lo que hay que saber
+                es DÓNDE se está. El nombre de quien mira ya está arriba a la
+                derecha, y repetirlo aquí gasta el renglón más visible de la
+                pantalla en el único dato que el operador no necesita. */}
+            {deAstraion ? ctx!.name : `Hola, ${session!.user.name ?? session!.user.email}`}
           </h1>
           <p className="text-sm text-muted-foreground">
-            {isClient ? "Resumen de tus solicitudes." : "Resumen operativo de soporte."}
+            {deAstraion
+              ? "Estás dentro como personal de Astraion. Puedes mirarlo todo y no cambiar nada; el acceso quedó registrado."
+              : isClient
+                ? "Resumen de tus solicitudes."
+                : "Resumen operativo de soporte."}
           </p>
         </div>
         {isClient && (
           <Button asChild variant="accent">
             <Link href="/tickets/new">Nuevo ticket</Link>
           </Button>
+        )}
+        {deAstraion && (
+          // La salida, en la pantalla de llegada. Sin esto, volver a la consola
+          // desde dentro de una empresa exigía saberse la dirección: el menú
+          // lateral es el de la empresa y no tiene un renglón para irse de ella.
+          <form action={exitTenant}>
+            <input type="hidden" name="locale" value={locale} />
+            <Button type="submit" variant="outline" size="sm">
+              <Undo2 className="size-4" /> Volver a la consola
+            </Button>
+          </form>
         )}
       </div>
 
@@ -143,13 +172,17 @@ export default async function DashboardPage({
       {!isClient && (
         <Suspense
           fallback={
-            <div className="grid gap-5 lg:grid-cols-2">
+            <div className={cn("grid gap-5", !deAstraion && "lg:grid-cols-2")}>
               <ListSkeleton rows={4} />
-              <ListSkeleton rows={4} />
+              {!deAstraion && <ListSkeleton rows={4} />}
             </div>
           }
         >
-          <Workload userId={session!.user.id} locale={locale} />
+          <Workload
+            userId={session!.user.id}
+            locale={locale}
+            soloSinAsignar={deAstraion}
+          />
         </Suspense>
       )}
 
@@ -200,18 +233,38 @@ async function StatCards({
   );
 }
 
-/** Carga de trabajo del agente: lo suyo y lo que no es de nadie. */
-async function Workload({ userId, locale }: { userId: string; locale: string }) {
+/**
+ * Carga de trabajo del agente: lo suyo y lo que no es de nadie.
+ *
+ * `soloSinAsignar` deja fuera la mitad personal. Lo usa el panel cuando quien
+ * mira es personal de Astraion: su identidad no existe en esta empresa —vive en
+ * `platform_users`, y ninguna fila de este esquema puede apuntarle— así que
+ * «Asignados a mí» no es que esté vacío hoy, es que no puede llenarse nunca.
+ * Enseñar un cero permanente y llamarlo carga de trabajo es peor que no
+ * enseñarlo.
+ */
+async function Workload({
+  userId,
+  locale,
+  soloSinAsignar = false,
+}: {
+  userId: string;
+  locale: string;
+  soloSinAsignar?: boolean;
+}) {
   // Las dos consultas son independientes: en paralelo cuestan la más lenta y
   // no la suma. Van juntas en un solo límite de Suspense porque comparten
   // fila en la retícula y enseñarlas por separado haría saltar la maqueta.
   const [mine, unassigned] = await Promise.all([
-    getMyActiveTickets(userId),
+    soloSinAsignar
+      ? Promise.resolve({ rows: [], total: 0 })
+      : getMyActiveTickets(userId),
     getUnassignedTickets(),
   ]);
 
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
+    <div className={cn("grid gap-5", !soloSinAsignar && "lg:grid-cols-2")}>
+      {!soloSinAsignar && (
       <Card>
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <h2 className="flex items-center gap-2 font-semibold">
@@ -242,6 +295,7 @@ async function Workload({ userId, locale }: { userId: string; locale: string }) 
           </ul>
         )}
       </Card>
+      )}
 
       <Card>
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
