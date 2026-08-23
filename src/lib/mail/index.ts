@@ -2,6 +2,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { tenants } from "@/lib/db/platform";
+import { abrir } from "@/lib/secretos";
 
 /**
  * Enviar correo, y desde el dominio de CADA empresa.
@@ -46,6 +47,8 @@ export type Remitente = {
   replyTo?: string;
   /** Falso = se está usando el remitente de la plataforma como respaldo. */
   propio: boolean;
+  /** El buzón de la empresa, si lo configuró. Manda sobre todo lo demás. */
+  smtp?: { host: string; port: number; user: string; pass: string };
 };
 
 /** El remitente de la plataforma: el respaldo cuando la empresa no tiene el suyo. */
@@ -74,10 +77,45 @@ export async function remitenteDe(tenantId: string): Promise<Remitente> {
       verificado: tenants.mailVerifiedAt,
       name: tenants.name,
       brandName: tenants.brandName,
+      smtpHost: tenants.smtpHost,
+      smtpPort: tenants.smtpPort,
+      smtpUser: tenants.smtpUser,
+      smtpPassword: tenants.smtpPassword,
     })
     .from(tenants)
     .where(eq(tenants.id, tenantId))
     .limit(1);
+
+  /*
+    El buzón propio manda sobre todo lo demás.
+
+    Si la empresa configuró su SMTP, ése es el remitente que eligió a mano y
+    además el único que no depende de nada nuestro: sale de su servidor, con su
+    firma. El dominio verificado y el respaldo de plataforma son los caminos
+    para quien NO lo configuró.
+
+    Si la contraseña no se puede descifrar —secreto rotado, fila manipulada— se
+    cae al siguiente camino en vez de intentar un envío que va a fallar. Ver
+    `lib/secretos`.
+  */
+  if (t?.smtpHost && t.smtpUser && t.smtpPassword) {
+    const pass = abrir(t.smtpPassword);
+    if (pass) {
+      return {
+        from: t.from ?? t.smtpUser,
+        fromName: t.fromName ?? t.brandName ?? t.name,
+        replyTo: t.replyTo ?? undefined,
+        propio: true,
+        smtp: {
+          host: t.smtpHost,
+          port: t.smtpPort ?? 587,
+          user: t.smtpUser,
+          pass,
+        },
+      };
+    }
+    console.error("[mail] no se pudo descifrar la contraseña SMTP del inquilino");
+  }
 
   if (!t?.from || !t.verificado) {
     const base = remitenteDePlataforma();
@@ -119,6 +157,9 @@ export async function enviar(
   const proveedor = process.env.MAIL_PROVIDER ?? "consola";
 
   try {
+    // El buzón de la empresa gana incluso al proveedor global: si lo configuró,
+    // es porque quiere que salga de ahí.
+    if (r.smtp) return await porSmtp(r, correo);
     if (proveedor === "resend") return await porResend(r, correo);
     return porConsola(r, correo);
   } catch (e) {
@@ -178,4 +219,66 @@ async function porResend(r: Remitente, c: Correo): Promise<Resultado> {
   }
   const datos = (await res.json()) as { id?: string };
   return { ok: true, id: datos.id ?? "?", propio: r.propio };
+}
+
+/**
+ * El buzón de la propia empresa.
+ *
+ * `secure` se deduce del puerto y no se pregunta: 465 es TLS desde el primer
+ * byte y 587 empieza en claro y sube con STARTTLS. Es la confusión número uno
+ * de cualquier configuración de correo, y no hay motivo para trasladársela a
+ * quien solo quiere que le lleguen los avisos.
+ *
+ * El error se devuelve tal cual lo da el servidor: «535 authentication failed»
+ * le dice a un administrador exactamente qué pasa, y traducirlo a «no se pudo
+ * enviar» sería quitarle la única pista útil. La CONTRASEÑA no aparece nunca
+ * en ese mensaje — nodemailer no la incluye, y aquí no se añade.
+ */
+async function porSmtp(r: Remitente, c: Correo): Promise<Resultado> {
+  const { createTransport } = await import("nodemailer");
+  const t = createTransport({
+    host: r.smtp!.host,
+    port: r.smtp!.port,
+    secure: r.smtp!.port === 465,
+    auth: { user: r.smtp!.user, pass: r.smtp!.pass },
+  });
+
+  const info = await t.sendMail({
+    from: `${r.fromName} <${r.from}>`,
+    to: Array.isArray(c.para) ? c.para.join(", ") : c.para,
+    subject: c.asunto,
+    html: c.html,
+    text: c.texto,
+    ...(r.replyTo ? { replyTo: r.replyTo } : {}),
+  });
+
+  return { ok: true, id: info.messageId, propio: true };
+}
+
+/**
+ * Comprueba unas credenciales SMTP sin mandar nada.
+ *
+ * Existe para que la pantalla de configuración pueda decir «funciona» o «no
+ * funciona» en el momento en que se guarda, y no dos días después cuando un
+ * cliente pregunte por qué no le llegó nada. `verify()` abre la conexión y
+ * autentica; no manda correo.
+ */
+export async function probarSmtp(cfg: {
+  host: string;
+  port: number;
+  user: string;
+  pass: string;
+}): Promise<{ ok: true } | { ok: false; motivo: string }> {
+  try {
+    const { createTransport } = await import("nodemailer");
+    await createTransport({
+      host: cfg.host,
+      port: cfg.port,
+      secure: cfg.port === 465,
+      auth: { user: cfg.user, pass: cfg.pass },
+    }).verify();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, motivo: e instanceof Error ? e.message : "desconocido" };
+  }
 }

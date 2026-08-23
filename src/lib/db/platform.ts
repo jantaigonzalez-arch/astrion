@@ -210,6 +210,26 @@ export const tenants = pgTable(
     mailReplyTo: varchar("mail_reply_to", { length: 255 }),
     mailVerifiedAt: timestamp("mail_verified_at", { withTimezone: true }),
 
+    /* --- El buzón propio de la empresa (SMTP) ---
+     *
+     * La alternativa a que cada cliente pelee con su DNS: escribe el correo y
+     * la contraseña de un buzón que YA tiene, y el sistema envía a través de
+     * él. Sale de su servidor, lo firma su proveedor —así que SPF y DKIM ya
+     * están bien sin tocar nada— y le queda en Enviados.
+     *
+     * `smtpPassword` va CIFRADA (ver `lib/secretos`). Es el dato más peligroso
+     * de esta base: abre el buzón entero de un cliente. No se devuelve nunca a
+     * la interfaz ni aparece en ningún registro.
+     *
+     * Cuando hay SMTP configurado manda sobre todo lo demás: es el remitente
+     * que el cliente eligió a mano. */
+    smtpHost: varchar("smtp_host", { length: 255 }),
+    smtpPort: integer("smtp_port"),
+    smtpUser: varchar("smtp_user", { length: 255 }),
+    smtpPassword: text("smtp_password"),
+    /** Última vez que una prueba de envío funcionó. Null = sin comprobar. */
+    smtpCheckedAt: timestamp("smtp_checked_at", { withTimezone: true }),
+
     /* --- Consentimiento de datos para modelos globales ---
      * Apagado por defecto, y esa es la postura correcta: el dato de un
      * laboratorio farmacéutico no sale de su esquema salvo decisión explícita.

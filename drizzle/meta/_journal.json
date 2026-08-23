@@ -176,6 +176,13 @@
       "when": 1786846838962,
       "tag": "0024_correo_por_empresa",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786846838963,
+      "tag": "0025_smtp_de_la_empresa",
+      "breakpoints": true
     }
   ]
 }
