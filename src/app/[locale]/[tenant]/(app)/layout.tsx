@@ -7,6 +7,7 @@ import { getTenantContext } from "@/lib/tenancy/context";
 import { getTenantBrand } from "@/lib/data/platform";
 import { tenantBase } from "@/lib/nav-server";
 import { Sidebar, SIDEBAR_COOKIE } from "@/components/portal/sidebar";
+import { SoloLectura } from "@/components/portal/solo-lectura";
 import { Topbar } from "@/components/portal/topbar";
 import { TenantBar } from "@/components/portal/tenant-bar";
 import { tablerosDelMenu } from "@/lib/ml/dashboards";
@@ -86,6 +87,9 @@ export default async function TenantAppLayout({
           deVisita={ctx!.impersonated}
         />
         <div className="flex min-w-0 flex-1 flex-col">
+          {/* Corta las escrituras y las explica. Solo de visita: un miembro
+              de la empresa escribe con normalidad. Ver `SoloLectura`. */}
+          {ctx!.impersonated && <SoloLectura />}
           {isPlatform && (
             <TenantBar
               tenantName={ctx!.name}

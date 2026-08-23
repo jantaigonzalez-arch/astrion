@@ -148,7 +148,7 @@ export default async function DashboardPage({
           // La salida, en la pantalla de llegada. Sin esto, volver a la consola
           // desde dentro de una empresa exigía saberse la dirección: el menú
           // lateral es el de la empresa y no tiene un renglón para irse de ella.
-          <form action={exitTenant}>
+          <form action={exitTenant} data-permitido>
             <input type="hidden" name="locale" value={locale} />
             <Button type="submit" variant="outline" size="sm">
               <Undo2 className="size-4" /> Volver a la consola

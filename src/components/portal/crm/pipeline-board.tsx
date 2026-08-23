@@ -48,9 +48,22 @@ export type BoardColumn = {
 export function PipelineBoard({
   columns,
   locale,
+  soloLectura = false,
 }: {
   columns: BoardColumn[];
   locale: string;
+  /**
+   * Personal de Astraion, que mira y no cambia.
+   *
+   * Arrastrar es la ÚNICA escritura del portal que no pasa por un formulario:
+   * soltar llama a `moveDeal` directo. El guardia de solo lectura intercepta
+   * ENVÍOS, así que aquí no llegaría — la tarjeta se movería en pantalla, la
+   * base rechazaría el cambio y la tarjeta volvería sola a su sitio sin decir
+   * por qué. Llega como propiedad desde el servidor y no leyendo el DOM: el
+   * estado inicial de un componente no puede depender de algo que en el
+   * servidor no existe sin provocar un desajuste al hidratar.
+   */
+  soloLectura?: boolean;
 }) {
   // Firma del orden que llega del servidor: si cambia, se resincroniza el
   // estado local (patrón de "reset de estado al cambiar props" de React).
@@ -71,6 +84,7 @@ export function PipelineBoard({
   const [dragging, setDragging] = useState<string | null>(null);
   const [over, setOver] = useState<{ stageId: string; index: number } | null>(null);
   const [pending, startTransition] = useTransition();
+
 
   const fmtDate = (d: string | null) =>
     d
@@ -102,6 +116,8 @@ export function PipelineBoard({
     const at = Math.max(0, Math.min(index, target.deals.length));
     target.deals.splice(at, 0, { ...moved, stageId });
     setCols(next);
+
+    if (soloLectura) return;
 
     const fd = new FormData();
     fd.set("dealId", dealId);
@@ -203,7 +219,7 @@ export function PipelineBoard({
                         <div className="mb-2 h-1 rounded-full bg-primary/60" />
                       )}
                       <article
-                        draggable
+                        draggable={!soloLectura}
                         onDragStart={(e) => {
                           setDragging(deal.id);
                           e.dataTransfer.effectAllowed = "move";

@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { PipelineBoard } from "@/components/portal/crm/pipeline-board";
+import { getTenantContext } from "@/lib/tenancy/context";
 import { currentRole } from "@/lib/tenancy/context";
 import { DashboardFab } from "@/components/portal/dashboard-fab";
 import {
@@ -150,7 +151,11 @@ export default async function CrmBoardPage({
           )}
         </Card>
       ) : (
-        <PipelineBoard columns={columns} locale={locale} />
+        <PipelineBoard
+          columns={columns}
+          locale={locale}
+          soloLectura={Boolean((await getTenantContext())?.impersonated)}
+        />
       )}
 
       {/* Cerrados recientes */}

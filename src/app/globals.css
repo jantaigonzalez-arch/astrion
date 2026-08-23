@@ -266,3 +266,23 @@
     margin: 16mm;
   }
 }
+
+/* ── SOLO LECTURA ───────────────────────────────────────────────────────────
+   Personal de Astraion dentro de la empresa de un cliente. La marca la pone
+   `SoloLectura` en la raíz, y desde una regla se atenúan los controles de
+   TODOS los formularios del portal — 50 componentes que no hay que tocar uno
+   por uno, ni acordarse de tocar en el número 51.
+
+   Se atenúa y NO se esconde: un botón que desaparece deja a la persona
+   buscando lo que juraría que estaba ahí, y además borra la pista de que la
+   empresa sí puede hacer eso. Atenuado dice «existe, no es para ti ahora».
+
+   `pointer-events: none` es lo que evita el clic. La interceptación del envío
+   sigue estando —es la que explica el porqué—, porque a un formulario se llega
+   también con Intro desde un campo de texto, sin tocar el botón.
+
+   Quedan fuera los marcados con `data-permitido`: hoy, salir de la empresa. */
+[data-solo-lectura] form:not([data-permitido]) :is(button, [type="submit"]):not([type="button"]):not([data-permitido]) {
+  opacity: 0.45;
+  pointer-events: none;
+}

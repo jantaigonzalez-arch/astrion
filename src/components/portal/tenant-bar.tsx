@@ -44,7 +44,10 @@ export async function TenantBar({
         {impersonated && " como personal de Astraion. El acceso quedó registrado."}
       </span>
 
-      <form action={exitTenant} className="ml-auto">
+      {/* Exento del guardia de solo lectura: no escribe en la empresa,
+          borra una cookie. Sin esto, el guardia atraparía la salida y dejaría
+          al operador encerrado dentro del cliente. Ver `SoloLectura`. */}
+      <form action={exitTenant} className="ml-auto" data-permitido>
         <input type="hidden" name="locale" value={locale} />
         <button
           type="submit"
