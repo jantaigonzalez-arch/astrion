@@ -135,14 +135,17 @@ export function Sidebar({
   brand,
   defaultCollapsed = false,
   tableros = [],
+  deVisita = false,
 }: {
   role: MembershipRole;
   brand: TenantBrand;
   defaultCollapsed?: boolean;
   tableros?: TableroItem[];
+  /** Personal de Astraion visitando esta empresa. Ver `menuDelRol`. */
+  deVisita?: boolean;
 }) {
   const pathname = usePathname();
-  const groups = navFor(role, tableros);
+  const groups = navFor(role, tableros, deVisita);
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
 
   /**

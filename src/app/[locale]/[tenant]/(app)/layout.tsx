@@ -83,6 +83,7 @@ export default async function TenantAppLayout({
           brand={brand}
           defaultCollapsed={sidebarCollapsed}
           tableros={tableros}
+          deVisita={ctx!.impersonated}
         />
         <div className="flex min-w-0 flex-1 flex-col">
           {isPlatform && (

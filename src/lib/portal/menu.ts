@@ -178,11 +178,21 @@ function conTableros(
  * en realidad es de dónde salen todos: el resumen del día, antes de elegir a
  * qué entrar.
  */
-function menuDelRol(role: MembershipRole): NavGroup[] {
+function menuDelRol(role: MembershipRole, deVisita = false): NavGroup[] {
   const panel: NavItem = {
     href: "/dashboard",
-    label: role === "client" ? "Inicio" : "Panel",
-   
+    /**
+     * «Panel» nombra un tablero de mando: LO TUYO, resumido. Para personal de
+     * Astraion esa pantalla ya no es eso —es la bienvenida a la empresa que
+     * está visitando, con su nombre y el aviso de solo lectura—, y el menú se
+     * quedaba llamándola por el nombre de lo que dejó de ser. Es el único
+     * renglón de esta barra que no es un sitio de la empresa, así que era
+     * también el único que podía quedar hablando de otra cosa.
+     *
+     * Mismo criterio por el que un cliente lee «Inicio»: el renglón dice a qué
+     * se entra, no cómo se llamaba antes.
+     */
+    label: role === "client" || deVisita ? "Inicio" : "Panel",
   };
 
   if (role === "client") {
@@ -338,6 +348,13 @@ function menuDelRol(role: MembershipRole): NavGroup[] {
 }
 
 /** El menú completo de un rol, con su sección de tableros al final. */
-export function navFor(role: MembershipRole, tableros: TableroItem[]): NavGroup[] {
-  return conTableros(menuDelRol(role), tableros, role);
+export function navFor(
+  role: MembershipRole,
+  tableros: TableroItem[],
+  /** Personal de Astraion dentro de la empresa de un cliente. Solo cambia cómo
+   *  se llama el primer renglón; no cambia qué pantallas se ven, que eso lo
+   *  decide el rol y nada más. */
+  deVisita = false,
+): NavGroup[] {
+  return conTableros(menuDelRol(role, deVisita), tableros, role);
 }
