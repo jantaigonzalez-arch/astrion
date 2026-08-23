@@ -3,6 +3,7 @@ import { isAdminRole } from "@/lib/roles";
 import { MODULOS } from "@/lib/ml/analyses";
 import { currentRole } from "@/lib/tenancy/context";
 import { tablerosDelModulo, tablerosDelMenu } from "@/lib/ml/dashboards";
+import { tableroVisiblePara } from "@/lib/portal/menu";
 import { Link } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
@@ -83,17 +84,23 @@ export async function DashboardFab({ modulo }: { modulo: string }) {
   //
   // Y la lista ya codifica los tres estados: quien no aparece en ella es
   // exactamente quien no tiene nada compuesto. Ver `tablerosDelMenu`.
-  const [admin, todos] = await Promise.all([
-    currentRole().then(isAdminRole),
-    tablerosDelMenu(),
-  ]);
+  const [role, todos] = await Promise.all([currentRole(), tablerosDelMenu()]);
+  const admin = isAdminRole(role);
 
   const info = MODULOS.find((m) => m.id === modulo);
-  if (!info) return null;
+  if (!info || !role) return null;
 
   // Ya vienen con el principal delante (ver `tablerosDelModulo`), así que
   // buscar el primero publicado da «el publicado más principal» de una vez.
-  const aqui = tablerosDelModulo(todos, modulo);
+  //
+  // Y se filtra por la MISMA regla que el menú y que la pantalla del tablero:
+  // este botón manda a una dirección, así que ofrecer lo que esa dirección va a
+  // rechazar es exactamente el botón que lleva a una pantalla vacía del que
+  // habla la cabecera. En particular deja fuera los tableros compuestos solo de
+  // análisis de administración, que para el resto del equipo no tienen nada.
+  const aqui = tablerosDelModulo(todos, modulo).filter((t) =>
+    tableroVisiblePara(role, t),
+  );
   const d = aqui.find((t) => t.publicado) ?? aqui[0];
   const publicado = Boolean(d?.publicado);
 

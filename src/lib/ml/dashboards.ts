@@ -136,6 +136,16 @@ export type DashboardState = {
   modules: string[];
   /** Bloques encendidos. Cero significa que no hay tablero que enseñar. */
   bloques: number;
+  /**
+   * De esos, los que NO son de administración.
+   *
+   * Es lo que ve alguien que no administra, y hace falta aparte porque el número
+   * de arriba miente para todo el mundo menos para el administrador: un tablero
+   * hecho solo de análisis `adminOnly` tiene bloques y no enseña ninguno. Sin
+   * esta cifra, el menú lo listaba para cualquiera que tuviera el módulo y la
+   * pantalla se abría vacía — medido en bajío, el tablero «test».
+   */
+  bloquesPublicos: number;
 };
 
 /**
@@ -191,14 +201,19 @@ export const dashboardStates = cache(async (conexion?: DbOrTx): Promise<Dashboar
     porTablero.set(m.dashboardId, lista);
   }
 
-  return filas.map((f) => ({
-    slug: f.slug,
-    title: f.title,
-    publishedAt: f.publishedAt,
-    modules: porTablero.get(f.id) ?? [],
-    bloques: (porPantalla.get(dashboardScreen(f.slug)) ?? []).filter((b) => b.active)
-      .length,
-  }));
+  return filas.map((f) => {
+    const encendidos = (porPantalla.get(dashboardScreen(f.slug)) ?? []).filter(
+      (b) => b.active,
+    );
+    return {
+      slug: f.slug,
+      title: f.title,
+      publishedAt: f.publishedAt,
+      modules: porTablero.get(f.id) ?? [],
+      bloques: encendidos.length,
+      bloquesPublicos: encendidos.filter((b) => !b.analysis.adminOnly).length,
+    };
+  });
 });
 
 /* ------------------------- El menú, en caché ------------------------- */
@@ -218,6 +233,8 @@ export type TableroMenu = {
   /** Las pantallas de esos módulos: es lo que decide si este rol lo ve. */
   homes: string[];
   publicado: boolean;
+  /** Bloques encendidos que NO son de administración. Ver `DashboardState`. */
+  bloquesPublicos: number;
 };
 
 /**
@@ -254,6 +271,7 @@ const leerMenu = tenantCache(TABLEROS_CACHE, async (db): Promise<TableroMenu[]> 
       modules: s.modules,
       homes: s.modules.map((m) => moduloById(m)?.home).filter((h): h is string => !!h),
       publicado: Boolean(s.publishedAt),
+      bloquesPublicos: s.bloquesPublicos,
     })),
 );
 

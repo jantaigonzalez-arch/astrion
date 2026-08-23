@@ -4,6 +4,7 @@ import { LayoutDashboard, Pencil, Undo2 } from "lucide-react";
 import { isAdminRole } from "@/lib/roles";
 import { currentRole } from "@/lib/tenancy/context";
 import { Link } from "@/lib/nav";
+import { tableroVisiblePara } from "@/lib/portal/menu";
 import { dashboardFor } from "@/lib/ml/dashboards";
 import { moduloById, resolveAnalysis } from "@/lib/ml/analyses";
 import { Card } from "@/components/ui/card";
@@ -27,8 +28,20 @@ import { cn } from "@/lib/utils";
  * otra pantalla: un tablero son seis u ocho consultas y, sin presupuesto,
  * bastaba la más lenta para decidir cuánto tarda en aparecer todo lo demás.
  *
- * Sin publicar, solo lo ve quien puede componerlo. Nadie debería encontrarse un
- * tablero a medio ordenar porque alguien salió a comer.
+ * ── QUIÉN PUEDE ABRIRLA ────────────────────────────────────────────────────
+ *
+ * La MISMA regla que decide si sale en el menú, y llamada desde el mismo sitio:
+ * `tableroVisiblePara`. Aquí no se vuelve a escribir.
+ *
+ * Comprobarlo hace falta aunque el menú ya lo esconda, porque a esta dirección
+ * no se llega solo por el menú: el slug de un tablero no cambia nunca —ver
+ * `createDashboard`— precisamente para que el enlace se pueda mandar por chat,
+ * así que ES una dirección que la gente escribe y pega. Sin esta comprobación,
+ * `/admin/dashboard/ventas` le enseñaba el embudo y el valor ganado por mes a
+ * un agente de soporte que no tiene Ventas en su menú. Medido en bajío.
+ *
+ * `notFound` y no un aviso de permiso: quien no puede ver un tablero tampoco
+ * tiene por qué enterarse de que existe.
  */
 export default async function DashboardPage({
   params,
@@ -38,18 +51,37 @@ export default async function DashboardPage({
   const { locale, slug } = await params;
   setRequestLocale(locale);
 
-  const admin = isAdminRole(await currentRole());
+  const role = await currentRole();
+  const admin = isAdminRole(role);
   const d = await dashboardFor(slug);
   if (!d) notFound();
-  if (!d.publishedAt && !admin) notFound();
+
+  const encendidos = d.bloques.filter((b) => b.active);
+  const visibles = encendidos.filter((b) => admin || !b.analysis.adminOnly);
+
+  // El tablero se describe con la MISMA forma que consume el menú, y se decide
+  // con la misma función. Se arma aquí y no se pide a `tablerosDelMenu` porque
+  // `d` ya lo trae todo: pedirlo sería una lectura más para saber lo que está
+  // en la mano.
+  if (
+    !role ||
+    !tableroVisiblePara(role, {
+      slug: d.slug,
+      title: d.title,
+      homes: d.modules
+        .map((m) => moduloById(m)?.home)
+        .filter((h): h is string => Boolean(h)),
+      publicado: Boolean(d.publishedAt),
+      bloquesPublicos: encendidos.filter((b) => !b.analysis.adminOnly).length,
+    })
+  ) {
+    notFound();
+  }
 
   const primero = d.modules.map((m) => moduloById(m)).find(Boolean);
   const vuelta = primero
     ? { href: primero.home, label: primero.label }
     : { href: "/dashboard", label: "el panel" };
-
-  const encendidos = d.bloques.filter((b) => b.active);
-  const visibles = encendidos.filter((b) => admin || !b.analysis.adminOnly);
 
   const resueltos = await Promise.allSettled(
     visibles.map(async (b) => ({

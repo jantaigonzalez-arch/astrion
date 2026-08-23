@@ -33,37 +33,51 @@ import { TenantMark, type TenantBrand } from "@/components/portal/tenant-mark";
 import { PoweredByAstraion } from "@/components/portal/powered-by";
 import type { MembershipRole } from "@/lib/db/platform";
 import { isAdminRole, ROLE_LABELS } from "@/lib/roles";
+import { navFor, type NavItem, type TableroItem } from "@/lib/portal/menu";
 import { cn } from "@/lib/utils";
 
-type NavItem = {
-  href: string;
-  label: string;
-  Icon: LucideIcon;
-  /** Marca de estado al final del renglón. Hoy solo la usan los tableros. */
-  badge?: string;
-};
+/**
+ * Qué pantallas ve cada rol vive en `lib/portal/menu.ts`, no aquí.
+ *
+ * Este archivo es `use client`, y de ese menú sale una decisión de permiso —qué
+ * tableros se ven— que el servidor también tiene que poder tomar. Ver la
+ * cabecera de ese archivo.
+ */
+export type { TableroItem };
 
 /**
- * Un tablero publicable, tal como lo necesita el menú.
+ * El icono de cada renglón, por su dirección.
  *
- * Llega ya resuelto desde el servidor —qué módulo, cómo se llama, si está
- * publicado— porque decidirlo aquí exigiría leer la base desde el navegador
- * para pintar una barra lateral.
+ * Vive aquí y no en el modelo porque es lo ÚNICO del menú que es dibujo: el
+ * modelo decide quién ve qué y tiene que poder correr fuera de un navegador,
+ * y `lucide-react` no puede. La tabla se busca por `href`, que es la clave que
+ * el modelo ya usa para todo lo demás, así que añadir una pantalla allí y
+ * olvidarse de aquí no rompe nada — cae en el icono de reserva.
  */
-export type TableroItem = {
-  slug: string;
-  /** El nombre que le puso quien lo compuso. */
-  title: string;
-  /**
-   * Las pantallas de los módulos donde sale. Es lo que decide si este rol lo ve.
-   *
-   * En plural desde que un tablero puede publicarse en varios: basta con que UNA
-   * de esas pantallas esté en el menú de este rol. Un tablero de cierre de mes
-   * puesto en Ventas y en Rentabilidad tiene que verlo el vendedor —que tiene
-   * Ventas— aunque Rentabilidad sea solo del administrador.
-   */
-  homes: string[];
-  publicado: boolean;
+const ICONO: Record<string, LucideIcon> = {
+  "/dashboard": LayoutDashboard,
+  "/tickets": Ticket,
+  "/tickets/new": PlusCircle,
+  "/admin/tickets": Inbox,
+  "/admin/tickets/new": ClipboardPlus,
+  "/admin/crm": KanbanSquare,
+  "/admin/pedidos": Receipt,
+  "/admin/leads": Mail,
+  "/admin/crm/leads": Building2,
+  "/admin/crm/contactos": Users2,
+  "/admin/crm/actividades": CalendarCheck,
+  "/admin/clientes": Building2,
+  "/admin/contratos": FileSignature,
+  "/admin/refacciones": Package,
+  "/admin/compras/requisiciones": ClipboardList,
+  "/admin/compras": ShoppingCart,
+  "/admin/compras/proveedores": Truck,
+  "/admin/compras/cuentas-por-pagar": Wallet,
+  "/admin/rentabilidad": TrendingUp,
+  "/admin/crm/informes": BarChart3,
+  "/admin/crm/objetivos": Target,
+  "/admin/inteligencia": Brain,
+  "/admin/dashboard/nuevo": PlusCircle,
 };
 
 /**
@@ -88,264 +102,13 @@ const ICONO_DE_MODULO: Record<string, LucideIcon> = {
   rentabilidad: TrendingUp,
 };
 
-/**
- * Añade la sección de tableros al final del menú de un rol.
- *
- * Va AL FINAL y no dentro de Análisis por lo mismo que ordena el resto: las
- * secciones siguen el circuito del trabajo —atiendo, vendo, tengo, compro— y un
- * tablero no es un paso de ese circuito, es la lectura de todos ellos. Y no
- * dentro de Análisis porque hay roles que no tienen esa sección y sí tienen
- * tableros que mirar.
- *
- * Qué tableros se ven se deduce del MENÚ QUE YA SE ARMÓ, no de una segunda
- * tabla de permisos por rol: si la pantalla del módulo no está en el menú de
- * este rol, su tablero tampoco. Escribir la regla dos veces es garantizar que
- * algún día digan cosas distintas, y el síntoma sería el peor de todos —un
- * tablero de cuentas por pagar en el menú de soporte.
- */
-function conTableros(
-  groups: NavGroup[],
-  tableros: TableroItem[],
-  role: MembershipRole,
-): NavGroup[] {
-  const visibles = new Set(groups.flatMap((g) => g.items.map((i) => i.href)));
-
-  const items = tableros
-    // Basta con que salga en UN módulo que este rol ve. Un tablero sin módulos
-    // no se filtra por rol —no hay pantalla contra la que comprobar— así que se
-    // reserva para administración, que es quien lo compuso.
-    .filter((t) =>
-      t.homes.length > 0 ? t.homes.some((h) => visibles.has(h)) : isAdminRole(role),
-    )
-    // Sin publicar solo lo ve quien puede componerlo, igual que el botón del
-    // módulo: nadie debería encontrarse un tablero a medio ordenar porque
-    // alguien salió a comer.
-    .filter((t) => t.publicado || isAdminRole(role))
-    .map(
-      (t): NavItem => ({
-        href: `/admin/dashboard/${t.slug}`,
-        label: t.title,
-        Icon: ICONO_DE_MODULO[t.slug] ?? LayoutDashboard,
-        badge: t.publicado ? undefined : "borrador",
-      }),
-    );
-
-  // Administración siempre puede crear uno, y por eso su sección existe aunque
-  // no haya ninguno todavía: sin este renglón, crear un tablero desde cero solo
-  // se podría desde el botón de una pantalla que no tenga — un camino que hay
-  // que descubrir por accidente.
-  if (isAdminRole(role)) {
-    items.push({
-      href: "/admin/dashboard/nuevo",
-      label: "Nuevo tablero",
-      Icon: PlusCircle,
-    });
-  }
-
-  // Sin tableros ni permiso para crearlos no hay sección: un encabezado
-  // «Tableros» sobre una lista vacía ocupa sitio para decir que no hay nada.
-  return items.length > 0 ? [...groups, { section: "Tableros", items }] : groups;
-}
-
-/**
- * Un grupo del menú. `section` es opcional a propósito: el Panel va suelto
- * arriba de todo, sin título, porque no es una categoría más — es la puerta de
- * entrada a todas las demás.
- */
-type NavGroup = { section?: string; items: NavItem[] };
-
-/**
- * Esta barra es la de UNA empresa y solo eso: la consola de Astraion vive en
- * `(console)`, y el camino entre los dos planos es la franja de contexto de
- * arriba (`TenantBar`).
- *
- * El menú se agrupa por DOMINIO DE NEGOCIO, no por nivel de permiso.
- *
- * Antes las secciones eran Operación / CRM / Administración, y "Administración"
- * era un cajón de sastre: Contratos (comercial), Rentabilidad (análisis),
- * Usuarios (personas) y Configuración (ajustes) uno debajo del otro. No había
- * una pregunta que alguien se hiciera que llevara a esa sección.
- *
- * Ahora cada sección responde a una pregunta real, y van EN EL ORDEN EN QUE SE
- * HACEN: qué atiendo hoy (Servicio), qué vendo (Ventas), qué tengo
- * (Inventario), qué compro (Compras), cómo vamos (Análisis). Y todo lo que es
- * ajuste salió del menú a su propia área, al pie.
- *
- * El Panel va suelto arriba de todas las secciones y no dentro de una de ellas.
- * Estaba metido como primer renglón de "Servicio" —y de "Ventas" para el
- * vendedor—, lo que lo hacía leer como una pantalla más de ese dominio cuando
- * en realidad es de dónde salen todos: el resumen del día, antes de elegir a
- * qué entrar.
- */
-function navFor(role: MembershipRole, tableros: TableroItem[]): NavGroup[] {
-  const panel: NavItem = {
-    href: "/dashboard",
-    label: role === "client" ? "Inicio" : "Panel",
-    Icon: LayoutDashboard,
-  };
-
-  if (role === "client") {
-    return [
-      { items: [panel] },
-      {
-        section: "Portal",
-        items: [
-          { href: "/tickets", label: "Mis tickets", Icon: Ticket },
-          { href: "/tickets/new", label: "Nuevo ticket", Icon: PlusCircle },
-        ],
-      },
-    ];
-  }
-
-  // Ventas: el recorrido de una oportunidad, de contacto a contrato firmado.
-  // Leads y Contratos entran aquí; estaban sueltos en "Administración" pese a
-  // ser los dos extremos del mismo embudo.
-  //
-  // Pedidos va justo después del Embudo porque es lo que sigue: el negocio se
-  // gana y deja de ser una oportunidad para pasar a ser trabajo. Antes no tenía
-  // dónde vivir —al ganarlo caía en la lista de «cerrados», revuelto con los
-  // perdidos— y desde que las requisiciones nacen de un pedido, no tener esa
-  // pantalla dejaba el circuito empezando en un sitio al que no se podía entrar.
-  const ventas: NavItem[] = [
-    { href: "/admin/crm", label: "Embudo", Icon: KanbanSquare },
-    // `Receipt` y no otro portapapeles: en este menú ya hay dos —levantamiento
-    // y requisición— y un tercero los volvería indistinguibles de reojo, que es
-    // como se lee una barra lateral.
-    { href: "/admin/pedidos", label: "Pedidos", Icon: Receipt },
-    // «Bandeja web» y ya no «Leads». Son los mensajes del formulario de
-    // contacto: personas que escribieron, no empresas. Compartir nombre con las
-    // organizaciones sin compra dejaba dos cosas distintas llamadas igual en el
-    // mismo menú, y quien entraba buscando una encontraba la otra.
-    { href: "/admin/leads", label: "Bandeja web", Icon: Mail },
-    { href: "/admin/crm/leads", label: "Leads", Icon: Building2 },
-    { href: "/admin/crm/contactos", label: "Contactos", Icon: Users2 },
-    { href: "/admin/crm/actividades", label: "Actividades", Icon: CalendarCheck },
-  ];
-
-  /*
-    Clientes: la post-venta, fuera de Ventas.
-
-    Lo que se hace con un cliente —revisar su contrato, mirar su equipo
-    instalado, atender sus tickets— no es vender. Tenerlo dentro de Ventas
-    obligaba a cruzar 141 leads para llegar a los 24 que ya compran, y ponía la
-    misma pantalla a servir dos trabajos que no se parecen.
-
-    Contratos se muda aquí desde Ventas por la misma razón: un contrato es lo
-    que pasa DESPUÉS de vender. Estaba en Ventas por herencia, no por criterio.
-  */
-  const clientes: NavItem[] = [
-    { href: "/admin/clientes", label: "Clientes", Icon: Building2 },
-    { href: "/admin/contratos", label: "Contratos", Icon: FileSignature },
-  ];
-
-  // Análisis: lo que se mira para decidir, no para trabajar. Separarlo evita
-  // que un informe compita por atención con la cola de tickets.
-  const analisis: NavItem[] = [
-    { href: "/admin/crm/informes", label: "Informes", Icon: BarChart3 },
-    { href: "/admin/crm/objetivos", label: "Objetivos", Icon: Target },
-  ];
-
-  if (role === "sales") {
-    return conTableros(
-      [
-        { items: [panel] },
-        { section: "Ventas", items: ventas },
-        { section: "Clientes", items: clientes },
-        { section: "Análisis", items: analisis },
-      ],
-      tableros,
-      role,
-    );
-  }
-
-  // Servicio es atender: la cola, lo que se levanta, lo que se resuelve.
-  const servicio: NavItem[] = [
-    { href: "/admin/tickets", label: "Cola de tickets", Icon: Inbox },
-    { href: "/admin/tickets/new", label: "Nuevo levantamiento", Icon: ClipboardPlus },
-  ];
-
-  // Inventario es qué hay. Refacciones estaba en Servicio porque de ahí salen
-  // las piezas que se consumen en un ticket, pero eso es de dónde se usa, no de
-  // qué es: existencias, costos y sobregiros son un dominio propio, y este es
-  // el apartado donde van a caer los movimientos y los conteos físicos.
-  const inventario: NavItem[] = [
-    { href: "/admin/refacciones", label: "Refacciones", Icon: Package },
-  ];
-
-  // Compras tiene sus puertas a la vista en vez de una sola que esconde a las
-  // otras detrás de un botón: las órdenes son el trabajo del día y los
-  // proveedores el padrón que lo sostiene, y se entra a cada uno por su cuenta.
-  //
-  // Las requisiciones van ANTES que las órdenes, por el mismo criterio que
-  // ordena las secciones: se pide, se autoriza, se compra. Ponerlas después
-  // haría parecer que son un apéndice de la orden cuando son el paso que la
-  // origina.
-  const compras: NavItem[] = [
-    { href: "/admin/compras/requisiciones", label: "Requisiciones", Icon: ClipboardList },
-    { href: "/admin/compras", label: "Órdenes de compra", Icon: ShoppingCart },
-    { href: "/admin/compras/proveedores", label: "Proveedores", Icon: Truck },
-  ];
-
-  // Cuentas por pagar es de administración y no de soporte: quien recibe la
-  // mercancía no debería ser también quien autoriza su pago.
-  const porPagar: NavItem = {
-    href: "/admin/compras/cuentas-por-pagar",
-    label: "Cuentas por pagar",
-    Icon: Wallet,
-  };
-
-  if (role === "agent") {
-    return conTableros(
-      [
-        { items: [panel] },
-        { section: "Servicio", items: servicio },
-        { section: "Inventario", items: inventario },
-        { section: "Compras", items: compras },
-      ],
-      tableros,
-      role,
-    );
-  }
-
-  // El orden de las secciones sigue el CIRCUITO, no el organigrama.
-  //
-  // Ventas iba debajo de Compras, y desde que existen las requisiciones eso se
-  // leía al revés: la requisición nace de un pedido, así que tener Requisiciones
-  // por encima de donde viven los pedidos contaba la historia hacia atrás. El
-  // recorrido es: atiendo lo que ya hay abierto → vendo → miro qué tengo →
-  // compro lo que falta.
-  //
-  // Inventario y Compras siguen pegados, que es lo que había que conservar al
-  // mover Ventas: son la misma pregunta en dos tiempos —qué hay hoy y qué viene
-  // en camino—, y meter Ventas entre ellos habría arreglado una lectura
-  // rompiendo otra.
-  return conTableros(
-    [
-      { items: [panel] },
-      { section: "Servicio", items: servicio },
-      { section: "Ventas", items: ventas },
-      { section: "Clientes", items: clientes },
-      { section: "Inventario", items: inventario },
-      { section: "Compras", items: [...compras, porPagar] },
-      // Rentabilidad solo la ve el administrador: mide el margen del negocio.
-      {
-        section: "Análisis",
-        items: [
-          { href: "/admin/rentabilidad", label: "Rentabilidad", Icon: TrendingUp },
-          ...analisis,
-          // La inteligencia va en Análisis y no en Configuración a propósito: no
-          // es un ajuste que se deja puesto, es una herramienta que se consulta
-          // para decidir, igual que Rentabilidad. Y no en una sección propia:
-          // es donde se configura lo que las otras pantallas van a decir, no un
-          // dominio de negocio aparte. Quien entra aquí viene de preguntarse
-          // «cómo vamos», no «qué modelo entreno».
-          { href: "/admin/inteligencia", label: "Inteligencia", Icon: Brain },
-        ],
-      },
-    ],
-    tableros,
-    role,
-  );
+function iconoDe(item: NavItem): LucideIcon {
+  const directo = ICONO[item.href];
+  if (directo) return directo;
+  const slug = item.href.startsWith("/admin/dashboard/")
+    ? item.href.slice("/admin/dashboard/".length)
+    : null;
+  return (slug && ICONO_DE_MODULO[slug]) || LayoutDashboard;
 }
 
 /** Cookie del estado plegado. La lee el layout para que no haya parpadeo. */
@@ -519,7 +282,9 @@ export function Sidebar({
                   </p>
                 ))}
               <ul className="space-y-1">
-                {g.items.map(({ href, label, Icon, badge }) => {
+                {g.items.map((item) => {
+                  const { href, label, badge } = item;
+                  const Icon = iconoDe(item);
                   const active = href === bestMatch;
                   // La marca entra en el nombre largo porque plegada NO hay
                   // dónde pintarla, y «borrador» es justo lo que hay que saber
