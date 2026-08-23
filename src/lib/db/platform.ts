@@ -187,6 +187,29 @@ export const tenants = pgTable(
      */
     folioPrefix: varchar("folio_prefix", { length: 8 }),
 
+    /* --- Desde qué dirección avisa esta empresa ---
+     *
+     * Vive en el plano de control y no en los `settings` de su esquema por lo
+     * mismo que la marca: para mandar un correo hay que saber el remitente
+     * ANTES de abrir la conexión al inquilino, y a veces sin petición ninguna
+     * —un aviso disparado por un proceso de fondo—.
+     *
+     * `mailDomain` es el dominio que el cliente publica en su DNS; `mailFrom`
+     * la dirección concreta. `mailVerifiedAt` es la fecha en que el proveedor
+     * confirmó los registros, y es lo que decide si se usa: un dominio a medio
+     * verificar manda correo que acaba en spam y quema la reputación de todos
+     * los demás. Sin verificar, el aviso sale por el remitente de la
+     * plataforma; ver `remitenteDe` en `lib/mail`.
+     *
+     * `mailReplyTo` es el buzón real de la empresa. Es lo que hace que cuando
+     * el cliente final le da a Responder, la respuesta le llegue a alguien y
+     * no a un buzón de sistema que nadie lee. */
+    mailDomain: varchar("mail_domain", { length: 255 }),
+    mailFrom: varchar("mail_from", { length: 255 }),
+    mailFromName: varchar("mail_from_name", { length: 120 }),
+    mailReplyTo: varchar("mail_reply_to", { length: 255 }),
+    mailVerifiedAt: timestamp("mail_verified_at", { withTimezone: true }),
+
     /* --- Consentimiento de datos para modelos globales ---
      * Apagado por defecto, y esa es la postura correcta: el dato de un
      * laboratorio farmacéutico no sale de su esquema salvo decisión explícita.

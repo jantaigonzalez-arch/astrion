@@ -2,6 +2,11 @@
 
 import { z } from "zod";
 import { revalidateTenant } from "@/lib/revalidate";
+import {
+  avisarAsignacion,
+  avisarComentario,
+  avisarEstado,
+} from "@/lib/mail/tickets";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { tenantDb, currentRole } from "@/lib/tenancy/context";
 import {
@@ -541,6 +546,21 @@ export async function addComment(formData: FormData) {
   });
 
   revalidateTenant();
+
+  // Se avisa a la otra parte. Las notas internas no salen de aquí: se pasa
+  // `internal` y `avisarComentario` corta antes de mirar a ningún destinatario.
+  const [t] = await db
+    .select({
+      id: tickets.id,
+      reference: tickets.reference,
+      subject: tickets.subject,
+      createdById: tickets.createdById,
+      assignedToId: tickets.assignedToId,
+    })
+    .from(tickets)
+    .where(eq(tickets.id, ticketId))
+    .limit(1);
+  if (t) await avisarComentario(t, session.user.id, body, internal);
 }
 
 export async function updateTicketStatus(formData: FormData) {
@@ -601,6 +621,21 @@ export async function updateTicketStatus(formData: FormData) {
   }
 
   revalidateTenant();
+
+  // Solo los estados terminales avisan, y solo al cliente: los intermedios son
+  // del taller. Ver `avisarEstado`.
+  const [t] = await db
+    .select({
+      id: tickets.id,
+      reference: tickets.reference,
+      subject: tickets.subject,
+      createdById: tickets.createdById,
+      assignedToId: tickets.assignedToId,
+    })
+    .from(tickets)
+    .where(eq(tickets.id, ticketId))
+    .limit(1);
+  if (t) await avisarEstado(t, status, session.user.id);
 }
 
 export async function assignTicket(formData: FormData) {
@@ -632,4 +667,22 @@ export async function assignTicket(formData: FormData) {
     .where(eq(tickets.id, ticketId));
 
   revalidateTenant();
+
+  // Después de revalidar, y `avisarAsignacion` no lanza NUNCA: si el proveedor
+  // de correo está caído, la asignación ya está hecha y lo que se pierde es el
+  // aviso. Al revés sería cambiar un problema pequeño por uno grave.
+  if (assignedToId) {
+    const [t] = await db
+      .select({
+        id: tickets.id,
+        reference: tickets.reference,
+        subject: tickets.subject,
+        createdById: tickets.createdById,
+        assignedToId: tickets.assignedToId,
+      })
+      .from(tickets)
+      .where(eq(tickets.id, ticketId))
+      .limit(1);
+    if (t) await avisarAsignacion(t, session.user.id);
+  }
 }
