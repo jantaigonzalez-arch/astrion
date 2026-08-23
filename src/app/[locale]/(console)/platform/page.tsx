@@ -1,24 +1,42 @@
 import { setRequestLocale } from "next-intl/server";
-import { Building2, Database, LogIn, History } from "lucide-react";
+import Link from "next/link";
+import { Building2, Inbox, History, ArrowRight, DoorOpen } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getTenants, getPlatformEvents, getSignups } from "@/lib/data/platform";
 import { getTenantContext } from "@/lib/tenancy/context";
-import { enterTenant, setMlContribution } from "@/lib/actions/platform";
+import { exitTenant } from "@/lib/actions/platform";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { NewTenantForm } from "@/components/portal/new-tenant-form";
-import { SignupInbox } from "@/components/portal/signup-inbox";
+import { TenantCard } from "@/components/console/tenant-card";
 import { cn } from "@/lib/utils";
 
 /**
- * Consola de plataforma.
+ * La bienvenida de la consola de Astraion.
  *
- * Es la capa que está POR DEBAJO de los inquilinos: aquí el equipo que opera el
- * SaaS ve todas las empresas y puede entrar a cualquiera. Deliberadamente
- * separada del área /admin, que es "administro MI empresa".
+ * ── QUÉ ERA ANTES, Y POR QUÉ NO SERVÍA ─────────────────────────────────────
+ *
+ * Era la consola ENTERA en un scroll: el título decía «Empresas» y debajo
+ * venían la bandeja de solicitudes, todas las empresas con seis métricas cada
+ * una, el formulario de alta y la bitácora completa. Nada recibía a nadie; se
+ * abría en mitad del inventario. Y al ser una sola pantalla, todo competía por
+ * el mismo sitio: lo que espera una decisión —una solicitud de alta— quedaba
+ * encima de una lista que crece con cada cliente.
+ *
+ * ── QUÉ ES AHORA ──────────────────────────────────────────────────────────
+ *
+ * Orienta y reparte, en el orden en que importa:
+ *
+ *   1. dónde estás parado   si tienes abierta la empresa de un cliente, eso es
+ *                           lo primero, porque es lo único con consecuencias
+ *   2. qué espera decisión   solicitudes pendientes; si no hay, no ocupa nada
+ *   3. cómo va la plataforma cuatro cifras, no seis por empresa
+ *   4. por dónde seguir      las tres secciones, y las empresas para entrar
+ *
+ * Las cifras de cada empresa NO están aquí a propósito: comparar empresas es
+ * trabajo de la sección de Empresas. Una bienvenida que las trae vuelve a ser
+ * el inventario del que se la sacó, solo que con un saludo encima.
  */
-export default async function PlatformPage({
+export default async function ConsolaInicioPage({
   params,
 }: {
   params: Promise<{ locale: string }>;
@@ -26,24 +44,22 @@ export default async function PlatformPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  // El layout de la consola ya exigió `platformRole`, pero su `redirect()` NO
-  // impide que esta página se ejecute: en Next, layout y página se renderizan
-  // en paralelo. La aserción `session!` reventaba en cada visita sin sesión —el
-  // usuario veía la redirección correcta y el servidor registraba un TypeError
-  // por petición—. La comprobación propia cuesta una línea y no depende de en
-  // qué orden corran las cosas.
+  // El layout ya exigió sesión de plataforma, pero en Next layout y página se
+  // renderizan EN PARALELO: su `redirect()` no impide que esto corra.
   const session = await auth();
   if (!session?.user) return null;
   const isSuper = session.user.platformRole === "superadmin";
+  const prefijo = locale === "en" ? "/en" : "";
 
-  const [rows, events, active, signups] = await Promise.all([
+  const [rows, active, signups, events] = await Promise.all([
     getTenants(),
-    getPlatformEvents(25),
     getTenantContext(),
-    getSignups(),
+    isSuper ? getSignups() : Promise.resolve([]),
+    getPlatformEvents(5),
   ]);
-  const pendingSignups = signups.filter((s) => s.status === "pending").length;
 
+  const pendientes = signups.filter((s) => s.status === "pending").length;
+  const fmt = new Intl.NumberFormat(locale === "en" ? "en-US" : "es-MX");
   const totals = rows.reduce(
     (a, r) => ({
       tickets: a.tickets + (r.stats?.tickets ?? 0),
@@ -53,251 +69,191 @@ export default async function PlatformPage({
     { tickets: 0, orgs: 0, members: 0 },
   );
 
-  const fmt = new Intl.NumberFormat(locale === "en" ? "en-US" : "es-MX");
-  const when = (d: Date | null) =>
-    d
-      ? new Intl.DateTimeFormat(locale === "en" ? "en-US" : "es-MX", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        }).format(new Date(d))
-      : "—";
-
-  const statusTone: Record<string, string> = {
-    active: "bg-success/15 text-success ring-success/25",
-    trial: "bg-primary/15 text-primary ring-primary/25",
-    suspended: "bg-warning/15 text-warning ring-warning/25",
-    cancelled: "bg-muted text-muted-foreground ring-border",
-  };
-  const statusLabel: Record<string, string> = {
-    active: "Activa",
-    trial: "Prueba",
-    suspended: "Suspendida",
-    cancelled: "Cancelada",
-  };
+  const nombre = (session.user.name ?? session.user.email ?? "").split(" ")[0];
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">Empresas</h1>
-            {pendingSignups > 0 && (
-              <Badge className="bg-warning/15 text-warning ring-1 ring-warning/25">
-                {pendingSignups} solicitud(es) por revisar
-              </Badge>
-            )}
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {rows.length} empresa(s) · {fmt.format(totals.tickets)} ticket(s) ·{" "}
-            {fmt.format(totals.orgs)} cliente(s) · {totals.members} usuario(s)
-          </p>
-        </div>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {nombre ? `Hola, ${nombre}` : "Hola"}
+        </h1>
+        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+          Estás en el plano de Astraion, por debajo de todas las empresas. Desde
+          aquí se dan de alta, se entra a cualquiera para diagnosticar y queda
+          registrado quién lo hizo.
+        </p>
       </div>
 
+      {/* 1 · Dónde estás parado. Va primero porque es lo único de esta pantalla
+             que tiene consecuencias ahora mismo: estar dentro de la empresa de
+             un cliente y no darse cuenta es el error que esta consola no puede
+             permitir. Con salida a la vista, que antes no existía. */}
       {active && (
-        <Card className="border-warning/40 bg-warning/5 p-4">
-          <p className="text-sm">
-            Tienes abierta la empresa{" "}
-            <span className="font-semibold">{active.name}</span>
-            {active.impersonated
-              ? " como personal de plataforma. Este acceso quedó registrado."
-              : " con tu propia membresía."}
-          </p>
+        <Card
+          className={cn(
+            "flex flex-wrap items-center justify-between gap-4 p-4",
+            active.impersonated
+              ? "border-warning/40 bg-warning/5"
+              : "border-primary/30 bg-primary/5",
+          )}
+        >
+          <div className="flex items-start gap-3">
+            <DoorOpen
+              className={cn(
+                "mt-0.5 size-5 shrink-0",
+                active.impersonated ? "text-warning" : "text-primary",
+              )}
+            />
+            <p className="text-sm">
+              Tienes abierta <span className="font-semibold">{active.name}</span>
+              {active.impersonated ? (
+                <>
+                  {" "}
+                  como personal de Astraion. El acceso quedó registrado, y dentro
+                  solo puedes <span className="font-medium">leer</span>.
+                </>
+              ) : (
+                " con tu propia membresía."
+              )}
+            </p>
+          </div>
+          <form action={exitTenant}>
+            <input type="hidden" name="locale" value={locale} />
+            <Button type="submit" variant="outline" size="sm">
+              Salir de la empresa
+            </Button>
+          </form>
         </Card>
       )}
 
-      {/* Bandeja de solicitudes: va ANTES de las empresas porque es lo único
-          de esta pantalla que espera una decisión. */}
-      {isSuper && <SignupInbox rows={signups} />}
+      {/* 2 · Lo que espera una decisión. Si no hay nada, no ocupa ni una línea:
+             una tarjeta que dice «0 pendientes» es ruido con buena intención. */}
+      {isSuper && pendientes > 0 && (
+        <Card className="flex flex-wrap items-center justify-between gap-4 border-warning/40 bg-warning/5 p-4">
+          <div className="flex items-start gap-3">
+            <Inbox className="mt-0.5 size-5 shrink-0 text-warning" />
+            <p className="text-sm">
+              <span className="font-semibold">
+                {pendientes} solicitud{pendientes === 1 ? "" : "es"} de alta
+              </span>{" "}
+              esperando tu decisión.
+            </p>
+          </div>
+          <Button asChild size="sm">
+            <Link href={`${prefijo}/platform/solicitudes`}>
+              Revisar <ArrowRight className="size-4" />
+            </Link>
+          </Button>
+        </Card>
+      )}
 
-      {/* Empresas */}
-      <div className="grid gap-4 xl:grid-cols-2">
-        {rows.map((t) => {
-          const here = active?.slug === t.slug;
-          return (
-            <Card key={t.id} className="p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Building2 className="size-4 shrink-0 text-primary" />
-                    <span className="font-medium">{t.name}</span>
-                    <Badge className={cn("ring-1", statusTone[t.status])}>
-                      {statusLabel[t.status] ?? t.status}
-                    </Badge>
-                    {here && (
-                      <Badge className="bg-primary/15 text-primary ring-primary/25">
-                        Estás aquí
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="mt-1 font-mono text-xs text-muted-foreground">
-                    {t.slug} · plan {t.plan} · {t.members} usuario(s)
-                  </p>
-                </div>
-
-                {t.schemaName && (
-                  <form action={enterTenant}>
-                    <input type="hidden" name="slug" value={t.slug} />
-                    <input type="hidden" name="locale" value={locale} />
-                    <Button
-                      type="submit"
-                      variant={here ? "default" : "outline"}
-                      size="sm"
-                    >
-                      <LogIn className="size-4" /> {here ? "Volver a entrar" : "Entrar"}
-                    </Button>
-                  </form>
-                )}
-              </div>
-
-              {/* Cifras del inquilino, leídas de SU esquema */}
-              {t.stats ? (
-                <div className="mt-4 grid grid-cols-2 gap-x-5 gap-y-2 text-xs sm:grid-cols-3">
-                  <Metric label="Tickets" value={fmt.format(t.stats.tickets)} />
-                  <Metric
-                    label="Abiertos"
-                    value={fmt.format(t.stats.openTickets)}
-                    tone={t.stats.openTickets > 0 ? "warn" : undefined}
-                  />
-                  <Metric label="Clientes" value={fmt.format(t.stats.organizations)} />
-                  <Metric label="Equipos" value={fmt.format(t.stats.equipment)} />
-                  <Metric label="Contratos" value={fmt.format(t.stats.contracts)} />
-                  <Metric label="Eventos" value={fmt.format(t.stats.events)} />
-                </div>
-              ) : (
-                <p className="mt-4 text-xs text-muted-foreground">
-                  {t.schemaName
-                    ? "El esquema existe pero aún no responde: puede estar a medio aprovisionar."
-                    : "Sin esquema aprovisionado."}
-                </p>
-              )}
-
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-                <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
-                  <Database className="size-3.5" />
-                  {t.schemaName ?? "—"}
-                  {t.migratedVersion && <span>· {t.migratedVersion}</span>}
-                </div>
-
-                {/* Consentimiento de datos para modelos globales */}
-                {isSuper && (
-                  <form action={setMlContribution} className="flex items-center gap-2">
-                    <input type="hidden" name="slug" value={t.slug} />
-                    <input type="hidden" name="grant" value={t.mlContribution ? "0" : "1"} />
-                    <span
-                      className={cn(
-                        "font-mono text-[11px]",
-                        t.mlContribution ? "text-success" : "text-muted-foreground",
-                      )}
-                    >
-                      Aporta a modelos globales: {t.mlContribution ? "sí" : "no"}
-                    </span>
-                    <Button type="submit" variant="ghost" size="sm">
-                      {t.mlContribution ? "Revocar" : "Otorgar"}
-                    </Button>
-                  </form>
-                )}
-              </div>
-
-              <p className="mt-2 text-[11px] text-muted-foreground">
-                Última actividad: {when(t.stats?.lastActivity ?? null)} · alta{" "}
-                {when(t.createdAt)}
-              </p>
-            </Card>
-          );
-        })}
+      {/* 3 · Cómo va la plataforma. Cuatro cifras del conjunto, que es la
+             pregunta de esta pantalla; el desglose por empresa es de la otra. */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <Cifra etiqueta="Empresas" valor={fmt.format(rows.length)} />
+        <Cifra etiqueta="Tickets" valor={fmt.format(totals.tickets)} />
+        <Cifra etiqueta="Clientes" valor={fmt.format(totals.orgs)} />
+        <Cifra etiqueta="Usuarios" valor={fmt.format(totals.members)} />
       </div>
 
-      {isSuper && <NewTenantForm />}
+      {/* 4 · Por dónde seguir. */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Building2 className="size-4 text-primary" />
+              <h2 className="font-semibold">Entrar a una empresa</h2>
+            </div>
+            {rows.length > 4 && (
+              <Link
+                href={`${prefijo}/platform/empresas`}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                ver las {rows.length}
+              </Link>
+            )}
+          </div>
 
-      {/* Bitácora de la plataforma */}
-      <Card className="p-5">
-        <div className="flex items-center gap-2">
-          <History className="size-4 text-primary" />
-          <h2 className="font-semibold">Bitácora de la plataforma</h2>
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Altas de empresa, accesos del equipo y cambios de consentimiento. Es la
-          respuesta a «quién vio los datos de mi empresa y cuándo».
-        </p>
+          {rows.length === 0 ? (
+            <p className="mt-4 text-sm text-muted-foreground">
+              Todavía no hay ninguna empresa dada de alta.
+            </p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {/* Las cuatro más recientes: en una bienvenida, la lista completa
+                  es la otra sección. Compactas — aquí se viene a ENTRAR. */}
+              {rows.slice(0, 4).map((t) => (
+                <TenantCard
+                  key={t.id}
+                  t={t}
+                  locale={locale}
+                  aqui={active?.slug === t.slug}
+                  isSuper={isSuper}
+                  compacta
+                />
+              ))}
+            </div>
+          )}
+        </Card>
 
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-[11px] uppercase tracking-wider text-muted-foreground">
-                <th className="py-2 pr-4 font-medium">Cuándo</th>
-                <th className="py-2 pr-4 font-medium">Evento</th>
-                <th className="py-2 pr-4 font-medium">Empresa</th>
-                <th className="py-2 font-medium">Quién</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="py-6 text-center text-muted-foreground">
-                    Sin movimientos registrados.
-                  </td>
-                </tr>
-              )}
+        <Card className="p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <History className="size-4 text-primary" />
+              <h2 className="font-semibold">Últimos movimientos</h2>
+            </div>
+            <Link
+              href={`${prefijo}/platform/bitacora`}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              ver la bitácora
+            </Link>
+          </div>
+
+          {events.length === 0 ? (
+            <p className="mt-4 text-sm text-muted-foreground">
+              Sin movimientos registrados.
+            </p>
+          ) : (
+            <ul className="mt-4 space-y-2.5">
               {events.map((e) => (
-                <tr key={e.id} className="border-b border-border/60 last:border-0">
-                  <td className="whitespace-nowrap py-2 pr-4 font-mono text-xs text-muted-foreground">
+                <li key={e.id} className="flex flex-wrap items-baseline gap-x-2 text-sm">
+                  <span
+                    className={cn(
+                      "font-mono text-xs",
+                      e.eventType === "tenant.accessed_by_platform" && "text-warning",
+                    )}
+                  >
+                    {e.eventType}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {e.tenantName ?? "—"} · {e.actorName ?? e.actorEmail ?? "sistema"}
+                  </span>
+                  <span className="ml-auto whitespace-nowrap font-mono text-[11px] text-muted-foreground">
                     {new Intl.DateTimeFormat(locale === "en" ? "en-US" : "es-MX", {
                       day: "2-digit",
                       month: "short",
                       hour: "2-digit",
                       minute: "2-digit",
                     }).format(new Date(e.occurredAt))}
-                  </td>
-                  <td className="py-2 pr-4">
-                    <span
-                      className={cn(
-                        "font-mono text-xs",
-                        e.eventType === "tenant.accessed_by_platform" && "text-warning",
-                      )}
-                    >
-                      {e.eventType}
-                    </span>
-                  </td>
-                  <td className="py-2 pr-4 text-muted-foreground">
-                    {e.tenantName ?? "—"}
-                  </td>
-                  <td className="py-2 text-muted-foreground">
-                    {e.actorName ?? e.actorEmail ?? "sistema"}
-                  </td>
-                </tr>
+                  </span>
+                </li>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+            </ul>
+          )}
+        </Card>
+      </div>
     </div>
   );
 }
 
-function Metric({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: "warn";
-}) {
+function Cifra({ etiqueta, valor }: { etiqueta: string; valor: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-2 sm:block">
-      <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
-        {label}
-      </span>
-      <span
-        className={cn(
-          "block font-mono text-base font-semibold tabular-nums",
-          tone === "warn" && "text-warning",
-        )}
-      >
-        {value}
-      </span>
-    </div>
+    <Card className="p-4">
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+        {etiqueta}
+      </div>
+      <div className="mt-1 font-mono text-2xl font-semibold tabular-nums">{valor}</div>
+    </Card>
   );
 }

@@ -1,8 +1,11 @@
 "use client";
 
 import { signOut } from "next-auth/react";
-import { LogOut, Building2, ShieldAlert } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { LogOut, Building2, ShieldAlert, Home, Inbox, History } from "lucide-react";
+import Link from "next/link";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
+import { cn } from "@/lib/utils";
 
 /**
  * Marco visual de la consola de Astraion.
@@ -11,19 +14,56 @@ import { ThemeToggle } from "@/components/shared/theme-toggle";
  * nombre y la navegación de una empresa, y la consola está por debajo de
  * cualquier empresa. Que se vean distintas es el punto — es la señal de que
  * cambiaste de plano, no de sección.
+ *
+ * ── POR QUÉ AHORA HAY NAVEGACIÓN ───────────────────────────────────────────
+ *
+ * Porque antes no hacía falta: la consola era UNA pantalla con todo apilado
+ * dentro —empresas, solicitudes, bitácora y el formulario de alta—, así que
+ * moverse era desplazarse. Al partirla en secciones hay a dónde ir, y sin una
+ * fila que lo diga las tres nuevas serían direcciones que solo conoce quien
+ * escribió el código.
+ *
+ * Una fila horizontal y no una barra lateral como el portal: son cuatro
+ * destinos y no van a ser veinte. Una lateral gastaría un cuarto del ancho en
+ * enseñar cuatro palabras, y además volvería a parecerse al portal, que es de
+ * lo que esta cáscara huye.
+ *
+ * `next/link` y `usePathname` de `next/navigation`, no los de `@/lib/nav`: los
+ * de la aplicación anteponen el prefijo de la EMPRESA activa, y aquí no hay
+ * ninguna — un enlace así mandaría a la consola dentro del portal de un
+ * cliente, que es exactamente la confusión que separar los planos vino a
+ * evitar.
  */
 export function ConsoleChrome({
   children,
   name,
   email,
   platformRole,
+  locale,
+  solicitudesPendientes = 0,
 }: {
   children: React.ReactNode;
   locale: string;
   name?: string | null;
   email?: string | null;
   platformRole?: string | null;
+  /** Para el punto en «Solicitudes». Cero lo apaga. */
+  solicitudesPendientes?: number;
 }) {
+  const pathname = usePathname();
+  const prefijo = locale === "en" ? "/en" : "";
+  const esSuper = platformRole === "superadmin";
+
+  const secciones = [
+    { href: "/platform", label: "Inicio", Icon: Home },
+    { href: "/platform/empresas", label: "Empresas", Icon: Building2 },
+    // Solo el superadministrador aprueba altas; a soporte le sería un renglón
+    // que abre una pantalla donde no puede hacer nada.
+    ...(esSuper
+      ? [{ href: "/platform/solicitudes", label: "Solicitudes", Icon: Inbox }]
+      : []),
+    { href: "/platform/bitacora", label: "Bitácora", Icon: History },
+  ];
   const initials = (name ?? email ?? "?")
     .split(" ")
     .map((s) => s[0])
@@ -73,6 +113,46 @@ export function ConsoleChrome({
             </button>
           </div>
         </div>
+
+        {/* La fila de secciones va DEBAJO de la marca y dentro del mismo
+            encabezado pegajoso: se mueve con la página tanto como el logo, que
+            es cero, y así la bitácora —que es larga— no obliga a subir hasta
+            arriba para cambiar de sección. */}
+        <nav className="mx-auto max-w-7xl px-6">
+          <ul className="-mb-px flex gap-1 overflow-x-auto">
+            {secciones.map(({ href, label, Icon }) => {
+              // Coincidencia exacta para «Inicio» y por prefijo para el resto:
+              // `/platform` es prefijo de todas, así que sin esta distinción
+              // Inicio se quedaría encendido en las cuatro.
+              const activa =
+                href === "/platform"
+                  ? pathname === `${prefijo}/platform`
+                  : pathname.startsWith(`${prefijo}${href}`);
+              return (
+                <li key={href}>
+                  <Link
+                    href={`${prefijo}${href}`}
+                    aria-current={activa ? "page" : undefined}
+                    className={cn(
+                      "inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm font-medium transition-colors",
+                      activa
+                        ? "border-primary text-foreground"
+                        : "border-transparent text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    {label}
+                    {label === "Solicitudes" && solicitudesPendientes > 0 && (
+                      <span className="ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full bg-warning/15 px-1.5 py-0.5 text-[11px] font-semibold text-warning ring-1 ring-warning/25">
+                        {solicitudesPendientes}
+                      </span>
+                    )}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
       </header>
 
       <main className="mx-auto max-w-7xl p-6 lg:p-8">{children}</main>

@@ -3,6 +3,7 @@ import { setRequestLocale } from "next-intl/server";
 import { auth } from "@/lib/auth";
 import { redirect } from "@/i18n/navigation";
 import { ConsoleChrome } from "@/components/console/console-chrome";
+import { getSignups } from "@/lib/data/platform";
 
 /**
  * Cáscara de la CONSOLA DE ASTRAION.
@@ -29,16 +30,33 @@ export default async function ConsoleLayout({
   setRequestLocale(locale);
 
   const session = await auth();
+  // Sin sesión, a la puerta de la CONSOLA y no a `/login`: quien viene a
+  // `/platform` viene a operar, y mandarlo al formulario de los clientes lo
+  // pondría a escribir su contraseña de operador contra la tabla equivocada,
+  // donde no entraría nunca y sin saber por qué.
   if (!session?.user) {
-    redirect({ href: "/login", locale });
+    redirect({ href: "/consola", locale });
   }
-  // El rol de plataforma es otra dimensión que el rol dentro de una empresa:
-  // el dueño de una cuenta manda en la suya y no debe ver esta capa siquiera.
-  // Se le manda a `/entrar` y no a un `/dashboard` suelto, porque ese ya no
-  // existe: sin empresa en la URL no hay portal al que llegar.
-  if (!session!.user.platformRole) {
+  // Y con sesión, tiene que ser una sesión de PLATAFORMA. Se mira `kind`, que
+  // es de qué tabla salió, y no si trae rol: el rol es una consecuencia de eso
+  // —`auth.ts` no lo copia en tokens de inquilino— y colgar el permiso de la
+  // consecuencia es cómo esta capa acabó colgando de una columna nula.
+  //
+  // Un usuario de empresa va a `/entrar` y no a un `/dashboard` suelto: sin
+  // empresa en la URL no hay portal al que llegar.
+  if (session!.user.kind !== "platform") {
     redirect({ href: "/entrar", locale });
   }
+
+  const isAdminDePlataforma = session!.user.platformRole === "superadmin";
+
+  // El punto sobre «Solicitudes» cuelga del layout y no de la página porque
+  // tiene que verse desde CUALQUIER sección: enterarse de que hay una empresa
+  // esperando solo al pasar por el inicio es enterarse tarde. Solo se consulta
+  // para quien puede aprobarlas — a soporte ni se le pinta el renglón.
+  const pendientes = isAdminDePlataforma
+    ? (await getSignups()).filter((s) => s.status === "pending").length
+    : 0;
 
   return (
     <SessionProvider session={session}>
@@ -47,6 +65,7 @@ export default async function ConsoleLayout({
         name={session!.user.name}
         email={session!.user.email}
         platformRole={session!.user.platformRole}
+        solicitudesPendientes={pendientes}
       >
         {children}
       </ConsoleChrome>
