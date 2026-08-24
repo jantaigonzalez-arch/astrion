@@ -157,6 +157,30 @@ if $COMPOSE run --rm --entrypoint \
   YA_HAY_CERT="1"
 fi
 
+# …y si lo hay, ¿es del MISMO entorno que el que se está pidiendo ahora?
+#
+# El runbook manda ensayar con `--staging` y repetir en serio, y sin esta
+# comprobación el segundo intento veía el certificado de pruebas, lo daba por
+# bueno y se limitaba a "expandirlo": el sitio se quedaba servido con un
+# certificado que ningún navegador acepta, y el script decía "✅ Listo".
+#
+# La pista está en el propio archivo de renovación: certbot anota ahí contra qué
+# servidor ACME lo emitió. Si no coincide con lo que se pide ahora, no hay nada
+# que conservar — se borra y se emite de cero.
+if [[ -n "$YA_HAY_CERT" ]]; then
+  ERA_STAGING=""
+  if $COMPOSE run --rm --entrypoint \
+      "sh -c 'grep -q staging /etc/letsencrypt/renewal/$CERT_NAME.conf'" certbot >/dev/null 2>&1; then
+    ERA_STAGING="1"
+  fi
+  if [[ "$ERA_STAGING" != "${STAGING_FLAG:+1}" ]]; then
+    echo "▸ El certificado que hay es de otro entorno (pruebas ↔ producción): se descarta."
+    $COMPOSE run --rm --entrypoint \
+      "certbot delete --cert-name $CERT_NAME --non-interactive" certbot >/dev/null 2>&1 || true
+    YA_HAY_CERT=""
+  fi
+fi
+
 if [[ -z "$YA_HAY_CERT" ]]; then
   echo "▸ 1/4 Certificado temporal autofirmado (para que nginx pueda arrancar)…"
   $COMPOSE run --rm --entrypoint "sh -c '
