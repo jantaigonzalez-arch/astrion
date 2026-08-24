@@ -226,16 +226,18 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # OJO con la indentación: en un bloque plegado (`>`), YAML CONSERVA el salto
+    # de línea de toda línea más indentada que la primera. Alinear las
+    # continuaciones para que se lea mejor le entrega al shell un `&&` al
+    # principio de línea, y el contenedor entra en bucle de reinicio con
+    # `sh: syntax error: unexpected "&&"`. Todas las líneas van al mismo nivel.
     entrypoint: >
       sh -c "while :; do
-               ts=$$(date +%Y%m%d-%H%M%S);
-               pg_dump -h postgres -U ${POSTGRES_USER:-evoelution} -d ${POSTGRES_DB:-evoelution} -Fc
-                 > /backups/evoelution-$$ts.dump
-                 && echo \"[backup] ok evoelution-$$ts.dump\"
-                 || echo '[backup] FALLÓ';
-               find /backups -name '*.dump' -mtime +$${RETENTION_DAYS} -delete;
-               sleep 24h;
-             done"
+      ts=$$(date +%Y%m%d-%H%M%S);
+      if pg_dump -h postgres -U ${POSTGRES_USER:-evoelution} -d ${POSTGRES_DB:-evoelution} -Fc > /backups/evoelution-$$ts.dump; then echo \"[backup] ok evoelution-$$ts.dump\"; else echo '[backup] FALLÓ'; fi;
+      find /backups -name '*.dump' -mtime +$${RETENTION_DAYS} -delete;
+      sleep 24h;
+      done"
 
   # Copia los dumps FUERA del servidor.
   #
@@ -280,19 +282,18 @@ services:
     # perderías la copia vieja justo cuando la necesitás. El remoto conserva.
     #
     # Corre 20 minutos después que el dump para no copiar un archivo a medias.
+    # Misma trampa de indentación que en `backup`: todo al mismo nivel.
     entrypoint: >
       sh -c "if [ -z \"$$BACKUP_REMOTE\" ]; then
-               echo '[offsite] BACKUP_REMOTE está vacío: no hay a dónde copiar.';
-               echo '[offsite] Configuralo en deploy/.env — ver los ejemplos ahí.';
-               exit 1;
-             fi;
-             sleep 1200;
-             while :; do
-               rclone copy /backups \"$$BACKUP_REMOTE\" --stats-one-line
-                 && echo '[offsite] ok'
-                 || echo '[offsite] FALLÓ — el respaldo NO salió del servidor';
-               sleep 24h;
-             done"
+      echo '[offsite] BACKUP_REMOTE está vacío: no hay a dónde copiar.';
+      echo '[offsite] Configuralo en deploy/.env — ver los ejemplos ahí.';
+      exit 1;
+      fi;
+      sleep 1200;
+      while :; do
+      if rclone copy /backups \"$$BACKUP_REMOTE\" --stats-one-line; then echo '[offsite] ok'; else echo '[offsite] FALLÓ — el respaldo NO salió del servidor'; fi;
+      sleep 24h;
+      done"
 
   # ---- Cromatografía / ML (perfil opcional) --------------------------------
   # Requiere el repo evo_ai hermano de este. Se levanta con:
