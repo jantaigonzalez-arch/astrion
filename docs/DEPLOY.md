@@ -32,10 +32,33 @@ red interna. Para conectarte desde tu máquina, túnel SSH (ver más abajo).
 
 ## Requisitos
 
-- **Un VPS con Docker y Docker Compose.** Hetzner **CPX31** (4 vCPU / 8 GB,
-  ~€13/mes) es el punto dulce. No bajes de 8 GB de RAM: el compose **construye
-  la imagen en el servidor**, y `next build` es lo único de todo el stack que
-  pide memoria de verdad. En operación sobra con mucho menos.
+- **Un VPS con Docker y Docker Compose.** 4 vCPU / 8 GB es el punto dulce
+  (Hetzner: `CPX31` en EE. UU., `CPX32` en Europa).
+
+  Quien fija ese número es el **build**, no la operación ni el número de
+  empresas: el compose construye la imagen en el servidor y `next build` es lo
+  único de todo el stack que pide memoria de verdad. **Medido: 1.360 MB de
+  pico**, muestreando el árbol de procesos de un build completo. Servir el ERP
+  cuesta una fracción de eso.
+
+  **Con 4 GB se puede**, y para una sola empresa va sobrado en operación, pero
+  hay que dejar sitio al pico: bajá `PG_SHARED_BUFFERS` a `1GB` y
+  `PG_EFFECTIVE_CACHE_SIZE` a `3GB` (ya está anotado en `deploy/.env.example`),
+  y agregá 2 GB de swap como red de seguridad —el build es lo bastante corto
+  como para que tocar swap no se note:
+
+  ```bash
+  fallocate -l 2G /swapfile && chmod 600 /swapfile
+  mkswap /swapfile && swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  ```
+
+  **Con 2 GB no.** El pico del build por sí solo se come casi toda la RAM antes
+  de contar Postgres ni el sistema.
+
+  Si querés quedarte en 4 GB sin swap, el camino es sacar el build del
+  servidor: construir la imagen en tu máquina o en CI y publicarla en un
+  registro. Ahí el servidor solo la ejecuta, y 4 GB le sobran de largo.
 - **Registros DNS de tipo A** apuntando a la IP del servidor, resolviendo
   **antes** de emitir certificados. Cuáles, según el modo (ver abajo).
   En modo `sslip` no hace falta ninguno: el nombre lo resuelve un DNS público.
