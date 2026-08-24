@@ -190,7 +190,8 @@ nano deploy/.env
 #    síntoma es "dejó de salir el correo", sin ninguna pista que lleve ahí.
 openssl rand -base64 32   # → AUTH_SECRET
 openssl rand -base64 32   # → MAIL_SECRET
-openssl rand -base64 24   # → POSTGRES_PASSWORD
+# POSTGRES_PASSWORD va dentro de la URL de conexión: sin símbolos, o la parte
+openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 24; echo
 
 # 4. Certificados TLS. Probá primero contra el entorno de pruebas de Let's
 #    Encrypt: el límite real es de 5 emisiones por dominio por semana y se
