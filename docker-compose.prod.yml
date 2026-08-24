@@ -70,6 +70,14 @@ services:
     restart: "no"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-evoelution}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-evoelution}
+      # Esta imagen es también la que corre `scripts/` a mano: aprovisionar una
+      # empresa, dar de alta un operador de Astraion, extraer al lago. Por eso
+      # lleva las mismas rutas que la aplicación — si el extractor escribiera en
+      # otro sitio que el que lee `web`, el lago quedaría partido en dos.
+      ANALYTICS_LAKE_DIR: /data/lake
+      TZ: ${TZ:-America/Mexico_City}
+    volumes:
+      - lake:/data/lake
     depends_on:
       postgres:
         condition: service_healthy
@@ -119,8 +127,39 @@ services:
       UPLOADS_DIR: /data/uploads
       # Red interna: el ML se llama servidor-a-servidor, sin salir a internet.
       ML_SERVICE_URL: ${ML_SERVICE_URL:-http://evoai-backend:8000}
+
+      # --- Correo -----------------------------------------------------------
+      # Sin MAIL_PROVIDER no sale un solo correo: el transporte por omisión
+      # imprime en el registro lo que se habría mandado. Es deliberado — un
+      # aviso de prueba llegando al buzón de un cliente real es un incidente.
+      #
+      # Estas cuatro son el remitente de la PLATAFORMA, el respaldo para las
+      # empresas que todavía no conectaron su propio buzón (Configuración →
+      # Correo de salida) ni verificaron su dominio.
+      MAIL_PROVIDER: ${MAIL_PROVIDER:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-}
+
+      # Con qué se CIFRAN las contraseñas SMTP que guarda cada empresa.
+      #
+      # Si se deja vacía, `lib/secretos.ts` la deriva de AUTH_SECRET, y ahí está
+      # la trampa: el día que alguien rote AUTH_SECRET —algo que se hace sin
+      # pensarlo dos veces— todas las contraseñas guardadas dejan de descifrarse
+      # y el síntoma es «el correo dejó de salir», sin ninguna pista que lleve a
+      # la causa. Definirla aparte desacopla las dos rotaciones.
+      MAIL_SECRET: ${MAIL_SECRET:-}
+
+      # --- Lago analítico ---------------------------------------------------
+      # Un volumen, no el sistema de archivos del contenedor. `scripts/extract.ts`
+      # escribe aquí los parquet y `analytics_snapshots` anota hasta dónde llegó:
+      # si los archivos viven en la capa efímera, cada despliegue los borra y la
+      # tabla sigue afirmando que ya se extrajeron. Quedaría un lago vacío que el
+      # sistema cree lleno, y la única salida es reextraer desde cero a mano.
+      ANALYTICS_LAKE_DIR: /data/lake
     volumes:
       - uploads:/data/uploads
+      - lake:/data/lake
     depends_on:
       postgres:
         condition: service_healthy
@@ -327,6 +366,7 @@ services:
 volumes:
   pgdata:
   uploads:
+  lake:
   backups:
   certbot_conf:
   certbot_www:

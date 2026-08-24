@@ -1,0 +1,193 @@
+# Enrutado por dominio — MODO SSLIP (subdominios reales, sin comprar dominio).
+#
+# ── QUÉ PROBLEMA RESUELVE ──────────────────────────────────────────────────
+#
+# El modo `multiempresa` es el que queremos en producción: el apex sirve el
+# producto y cada subdominio el portal de una empresa. Pero exige un
+# certificado COMODÍN, y ése solo se emite por desafío DNS — o sea, hay que
+# controlar el DNS del dominio. Antes de comprar uno, no se controla nada.
+#
+# `sslip.io` es un DNS público que devuelve la IP que lleva el propio nombre:
+#
+#   5-75-1-2.sslip.io          → 5.75.1.2
+#   bajio.5-75-1-2.sslip.io    → 5.75.1.2     ← el subdominio también
+#
+# Eso da nombres de host REALES apuntando a este servidor sin registrar nada,
+# y con nombres reales Let's Encrypt sí valida por HTTP. No se puede pedir el
+# comodín —el DNS sigue sin ser nuestro— pero sí UN certificado con varios
+# nombres (SAN): el apex y el host de cada empresa.
+#
+# Por eso este archivo es casi idéntico al de multiempresa: el bloque de
+# servidor es el mismo, lo único que cambia es CÓMO se emitió el certificado
+# que referencia. Cuando compres el dominio, se pasa a `multiempresa` cambiando
+# variables en deploy/.env, sin tocar código ni esta plantilla.
+#
+# ── LO QUE HAY QUE SABER ANTES DE USARLO ──────────────────────────────────
+#
+# Dar de alta una empresa SÍ obliga a reemitir el certificado, porque su
+# nombre tiene que entrar en la lista. Es un comando —ver init-letsencrypt.sh
+# `--agregar`— y es exactamente el trabajo que el comodín ahorra. Con dos o
+# tres empresas de prueba no se nota; con veinte, ya toca comprar el dominio.
+#
+# Let's Encrypt limita las emisiones por dominio y por semana. Cada etiqueta de
+# IP cuenta por separado, así que el límite es por servidor y no global — pero
+# reemitir en bucle mientras se depura lo agota igual. Ensayá con `--staging`.
+
+# Docker resuelve nombres de servicio aquí. Se declara para poder usar
+# variables en proxy_pass más abajo.
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+upstream web_app {
+    server web:3000;
+}
+
+# --- HTTP: solo desafío ACME; todo lo demás va a HTTPS --------------------
+server {
+    listen 80;
+    listen [::]:80;
+    server_name _;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# --- Host desconocido: cortar ---------------------------------------------
+# Aquí pesa más que con un dominio propio: la IP es pública y cualquiera puede
+# apuntarle un nombre suyo. 444 cierra la conexión sin responder.
+server {
+    listen 443 ssl default_server;
+    http2 on;
+    server_name _;
+    ssl_certificate     /etc/letsencrypt/live/${ROOT_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${ROOT_DOMAIN}/privkey.pem;
+    return 444;
+}
+
+# --- El apex y sus subdominios: producto + portales de cliente ------------
+#
+# `*.${ROOT_DOMAIN}` en `server_name` NO exige un certificado comodín: solo
+# dice qué peticiones atiende este bloque. Quien exige el comodín es el
+# certificado, y aquí lo sustituye uno con varios nombres. Un host que resuelva
+# aquí pero NO esté en el certificado falla en el saludo TLS con un error de
+# nombre — que es la forma correcta de enterarse de que falta reemitir.
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${ROOT_DOMAIN} www.${ROOT_DOMAIN} *.${ROOT_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${ROOT_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${ROOT_DOMAIN}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:SSL:10m;
+
+    client_max_body_size 12M;
+
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript image/svg+xml;
+    gzip_min_length 1024;
+
+    # UN DÍA, y no el año del dominio de verdad.
+    #
+    # HSTS le dice al navegador «para este nombre, nunca más http». En un
+    # dominio propio eso es lo que se quiere. Aquí el nombre es prestado y
+    # temporal: si el certificado caduca, si se recicla la IP, o si hay que
+    # volver a http un rato para depurar, un pin de un año deja el sitio
+    # inalcanzable en TODAS las máquinas que ya lo visitaron, y no hay forma de
+    # revertirlo desde el servidor. Un día protege igual el día a día y caduca
+    # solo. `includeSubDomains` se conserva: la cookie de sesión se emite para
+    # `.${ROOT_DOMAIN}` y viaja a todos los portales.
+    add_header Strict-Transport-Security "max-age=86400; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location /uploads/ {
+        alias /srv/uploads/;
+        access_log off;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        autoindex off;
+        try_files $uri =404;
+    }
+
+    location /_next/static/ {
+        proxy_pass http://web_app;
+        proxy_set_header Host $host;
+        access_log off;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location / {
+        proxy_pass http://web_app;
+        proxy_http_version 1.1;
+        # `$host` y no un valor fijo: es el subdominio lo que le dice a la
+        # aplicación de qué empresa es este portal. Aplastarlo aquí dejaría a
+        # todos los clientes viendo el mismo inquilino.
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        # NextAuth lo usa para construir las URLs de callback. Sin esto
+        # generaría enlaces http:// detrás del proxy y el login fallaría.
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host  $host;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        "upgrade";
+        proxy_read_timeout 120s;
+    }
+}
+
+# --- evo_ai (perfil opcional) ---------------------------------------------
+# Un nombre EXACTO gana sobre el comodín de arriba, así que este bloque
+# atiende `cromatografia.<apex>` aunque el otro diga `*.<apex>`. Y
+# `cromatografia` está en la lista de subdominios reservados de la aplicación
+# (ver lib/tenancy/host.ts), así que nunca se confunde con una empresa.
+#
+# Los proxy_pass usan variables a propósito: así nginx arranca aunque los
+# contenedores de evo_ai no estén levantados —devuelve 502 solo aquí— en vez
+# de negarse a iniciar y tumbar también el sitio principal.
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name ${ML_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${ROOT_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${ROOT_DOMAIN}/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    # Los .dat de Waters Empower son grandes.
+    client_max_body_size 100M;
+
+    add_header Strict-Transport-Security "max-age=86400; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    location /api/ {
+        set $evoai_backend "evoai-backend:8000";
+        proxy_pass http://$evoai_backend;
+        proxy_set_header Host            $host;
+        proxy_set_header X-Real-IP       $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        # El análisis cromatográfico tarda: el default de 60 s corta corridas
+        # legítimas a la mitad.
+        proxy_read_timeout 300s;
+    }
+
+    location / {
+        set $evoai_frontend "evoai-frontend:3000";
+        proxy_pass http://$evoai_frontend;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        "upgrade";
+    }
+}

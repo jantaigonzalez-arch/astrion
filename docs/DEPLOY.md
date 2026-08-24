@@ -38,30 +38,109 @@ red interna. Para conectarte desde tu máquina, túnel SSH (ver más abajo).
   pide memoria de verdad. En operación sobra con mucho menos.
 - **Registros DNS de tipo A** apuntando a la IP del servidor, resolviendo
   **antes** de emitir certificados. Cuáles, según el modo (ver abajo).
+  En modo `sslip` no hace falta ninguno: el nombre lo resuelve un DNS público.
 - **Puertos 80 y 443 abiertos.**
 
-### Los dos modos
+### Los tres modos
 
 Se elige con `NGINX_TEMPLATES` en `deploy/.env` y se cambia después sin tocar
-código: la aplicación soporta los dos y decide según `ROOT_DOMAIN` esté
+código: la aplicación soporta los tres y decide según `ROOT_DOMAIN` esté
 definida o no.
 
-| | `una-empresa` (por defecto) | `multiempresa` |
-|---|---|---|
-| Dominios | `evoelution.com` | `astraion.com` + `*.astraion.com` |
-| La empresa se resuelve por | primer segmento del path | subdominio |
-| DNS | registros A | registro A **comodín** |
-| Certificado | desafío HTTP, lo emite el script | **comodín**, exige desafío DNS |
-| Registros A necesarios | `APP_DOMAIN`, `www.APP_DOMAIN`, `ML_DOMAIN` | los anteriores + `ROOT_DOMAIN` y `*.ROOT_DOMAIN` |
+| | `una-empresa` (por defecto) | `multiempresa` | `sslip` |
+|---|---|---|---|
+| Dominios | `evoelution.com` | `astraion.com` + `*.astraion.com` | `5-75-1-2.sslip.io` + subdominios |
+| ¿Hace falta comprar un dominio? | sí | sí | **no** |
+| La empresa se resuelve por | primer segmento del path | subdominio | subdominio |
+| DNS | registros A | registro A **comodín** | ninguno: lo resuelve sslip.io |
+| Certificado | desafío HTTP | **comodín**, exige desafío DNS | desafío HTTP, un nombre por empresa |
+| Dar de alta una empresa | nada que emitir | nada que emitir | **reemitir el certificado** |
 
-Empezá en `una-empresa`. Es el modo con menos piezas y el certificado sale con
-un registro A; el comodín obliga a darle a certbot un token de la API de tu
-proveedor de DNS, y eso conviene resolverlo cuando haya un segundo cliente que
-lo justifique.
+Empezá en `una-empresa` si ya tenés el dominio: es el modo con menos piezas y
+el certificado sale con un registro A. El comodín obliga a darle a certbot un
+token de la API de tu proveedor de DNS, y eso conviene resolverlo cuando haya
+un segundo cliente que lo justifique.
+
+**`sslip` es para el servidor de estreno, antes de comprar el dominio.**
+`sslip.io` es un DNS público que devuelve la IP que lleva el propio nombre
+—`5-75-1-2.sslip.io` y `bajio.5-75-1-2.sslip.io` resuelven ambos a `5.75.1.2`—
+así que da subdominios reales y HTTPS real sin registrar nada. Es el mismo
+enrutado que `multiempresa`; lo único que cambia es cómo se emite el
+certificado. El precio de no tener comodín: cada empresa entra por su nombre en
+el certificado, y darla de alta obliga a reemitirlo.
+
+> **No lo despliegues por HTTP plano para ahorrarte esto.** En producción la
+> cookie de sesión se emite con el prefijo `__Secure-` y el atributo `secure`,
+> así que el navegador la descarta sin decir nada: el formulario acepta la
+> contraseña, responde 302, y no entra nadie. Es el fallo más caro de
+> diagnosticar de todos porque no aparece ningún error en ninguna parte.
 
 > **nginx no arranca si referencia un certificado que no existe.** Poner
 > `multiempresa` sin haber emitido el comodín no degrada el servicio: tumba el
 > sitio entero. Por eso el modo es explícito y no se deduce solo.
+
+---
+
+## Servidor sin dominio todavía (modo `sslip`)
+
+Para estrenar el servidor antes de comprar el dominio. Da HTTPS real y
+subdominios reales; lo único que se pierde es el comodín.
+
+Con la IP del servidor —digamos `5.75.1.2`— en `deploy/.env`:
+
+```ini
+NGINX_TEMPLATES="sslip"
+ROOT_DOMAIN="5-75-1-2.sslip.io"    # la IP con guiones en vez de puntos
+APP_DOMAIN="5-75-1-2.sslip.io"     # el mismo valor
+AUTH_DOMAIN="5-75-1-2.sslip.io"    # el mismo valor
+ML_DOMAIN=""                       # se deriva: cromatografia.<apex>
+TENANT_SLUGS="evoelution"          # las empresas que van en el certificado
+```
+
+Los tres dominios llevan el mismo valor y eso es correcto aquí: la plantilla de
+`sslip` no declara un bloque aparte para `APP_DOMAIN`, así que no hay conflicto
+de `server_name` —que sí lo habría en `multiempresa`, y nginx abortaría—.
+
+Después, el despliegue es el mismo de abajo. No hace falta esperar a ningún
+DNS: `sslip.io` ya resuelve.
+
+```bash
+./deploy/init-letsencrypt.sh --staging   # ensayo
+./deploy/init-letsencrypt.sh             # en serio
+```
+
+Queda servido en:
+
+```
+https://5-75-1-2.sslip.io/consola              ← la consola de Astraion
+https://5-75-1-2.sslip.io/login                ← puerta de los clientes
+https://evoelution.5-75-1-2.sslip.io/dashboard ← el portal de una empresa
+```
+
+**Cada empresa nueva exige reemitir el certificado**, porque su nombre tiene que
+entrar en él. Es un comando, y es exactamente el trabajo que el comodín ahorra:
+
+```bash
+./deploy/init-letsencrypt.sh --agregar acme
+```
+
+Si se olvida, el portal de esa empresa falla en el saludo TLS —el navegador
+avisa de que el certificado no es para ese nombre— aunque todo lo demás esté
+bien configurado.
+
+### Cuando llegue el dominio
+
+Es cambiar variables, no desplegar código:
+
+```ini
+NGINX_TEMPLATES="multiempresa"
+ROOT_DOMAIN="tu-dominio.com"
+APP_DOMAIN="…"                 # ahora sí, distinto de ROOT_DOMAIN
+```
+
+…emitir el comodín como indica `init-letsencrypt.sh` al terminar, y recargar
+nginx. Las direcciones de `sslip.io` dejan de servirse; conviene avisar antes
+si alguien ya las tenía guardadas.
 
 ---
 
@@ -80,7 +159,14 @@ nano deploy/.env
 # 3. Secretos reales. NO reutilices los de desarrollo:
 #    quien tenga AUTH_SECRET puede firmar sesiones válidas y entrar como
 #    cualquier usuario, incluido un admin.
+#
+#    Generá TAMBIÉN MAIL_SECRET, aunque todavía no mandes correo. Es con lo
+#    que se cifran las contraseñas SMTP de cada empresa, y si se deja vacía se
+#    deriva de AUTH_SECRET: el día que alguien rote AUTH_SECRET, las
+#    contraseñas de correo de todos los clientes dejan de descifrarse y el
+#    síntoma es "dejó de salir el correo", sin ninguna pista que lleve ahí.
 openssl rand -base64 32   # → AUTH_SECRET
+openssl rand -base64 32   # → MAIL_SECRET
 openssl rand -base64 24   # → POSTGRES_PASSWORD
 
 # 4. Certificados TLS. Probá primero contra el entorno de pruebas de Let's
@@ -135,13 +221,34 @@ $C run --rm --entrypoint "npx tsx scripts/seed.ts" migrate
 **Cambiá la contraseña del admin apenas entres.** El seed usa una conocida y
 está en el repo.
 
-Para operar la plataforma —ver todas las empresas, entrar a cualquiera— hace
-falta además el rol de plataforma, que no lo da el seed:
+### Crear el primer operador de Astraion
+
+**Sin esto nadie puede entrar a la consola.** Quien opera la plataforma vive en
+`platform_users`, una tabla aparte de quien la usa, y en una base nueva nace
+vacía: el seed no la toca, porque las cuentas que crea son de una empresa.
 
 ```bash
 $C run --rm --entrypoint "npx tsx scripts/tenant.ts grant \
-  --email admin@evoelution.com --role superadmin" migrate
+  --email admin@astraion.com --role superadmin --name 'Administrador'" migrate
 ```
+
+Imprime una contraseña generada **una sola vez**: copiala antes de cerrar la
+terminal. Con ella se entra por `/consola`, que es una puerta distinta de la de
+los clientes:
+
+| | puerta | tabla | quién |
+|---|---|---|---|
+| Astraion | `/consola` | `platform_users` | opera el producto: ve todas las empresas y entra a cualquiera **en solo lectura** |
+| Empresa | `/login` | `users` | trabaja dentro de una empresa |
+
+Son dos cuentas aunque sean la misma persona, y no comparten contraseña.
+
+> Usá un correo de **tu** dominio, no del de un cliente. Un
+> `admin@evoelution.com` operando Astraion mezcla las dos cosas justo donde se
+> acaban de separar, y el rastro de la bitácora queda a nombre del cliente.
+
+`--role support` da una cuenta que entra a diagnosticar pero no da de alta
+empresas ni aprueba solicitudes.
 
 ### Al agregar la empresa número dos
 
@@ -150,10 +257,16 @@ $C run --rm --entrypoint "npx tsx scripts/tenant.ts provision \
   --slug acme --name 'ACME Labs' --prefix ACM" migrate
 ```
 
-Y si querés darle subdominio propio, ahí sí se pasa a `multiempresa`: cambiás
-`NGINX_TEMPLATES` y `ROOT_DOMAIN` en `deploy/.env`, emitís el comodín como
-indica `init-letsencrypt.sh` al terminar, y recargás nginx. Sin desplegar
-código nuevo.
+En modo `sslip`, además, hay que meterla en el certificado:
+
+```bash
+./deploy/init-letsencrypt.sh --agregar acme
+```
+
+Y si querés darle subdominio propio bajo un dominio de verdad, ahí sí se pasa a
+`multiempresa`: cambiás `NGINX_TEMPLATES` y `ROOT_DOMAIN` en `deploy/.env`,
+emitís el comodín como indica `init-letsencrypt.sh` al terminar, y recargás
+nginx. Sin desplegar código nuevo.
 
 ---
 
@@ -301,12 +414,25 @@ standalone`, `NODE_ENV=production`), no sobre el dev server:
 - `saveImage()` escribe en `UPLOADS_DIR` y **no** en `public/` del proyecto;
   respeta formatos permitidos y sanea el subdirectorio.
 
+Del **modo `sslip`**, lo que sí se pudo comprobar sin servidor:
+
+- `sslip.io` resuelve como promete: `5-75-1-2.sslip.io` y
+  `bajio.5-75-1-2.sslip.io` devuelven ambos `5.75.1.2`.
+- La aplicación reconoce esos hosts sin tocar una línea de código. Los nueve
+  casos del enrutado por subdominio con `ROOT_DOMAIN=5-75-1-2.sslip.io`: el
+  apex no es una empresa, `www` y `cromatografia` siguen reservados,
+  `bajio.<apex>` da `bajio` con puerto y en mayúsculas, y un host de **otra**
+  IP no se acepta.
+- `bash -n` sobre `init-letsencrypt.sh` y el YAML del compose parsean.
+
 **No verificado** — hace falta el servidor:
 
-- La emisión de certificados de `init-letsencrypt.sh`: requiere DNS público
-  apuntando al host.
+- La emisión de certificados de `init-letsencrypt.sh`, en cualquier modo.
 - El build de la imagen Docker y el arranque del stack completo.
-- El enrutado de nginx entre los dos dominios.
+- **La plantilla de nginx del modo `sslip` no pasó por `nginx -t`**: no hay
+  Docker ni nginx en la máquina donde se escribió. Está calcada de la de
+  `multiempresa`, que sí está en uso, pero eso es un argumento y no una prueba.
+  El primer `docker compose up -d nginx` del servidor es quien la valida.
 
-Nada de eso se puede probar sin un VPS y DNS reales. El build de la app, que sí
-era verificable, está verificado.
+Nada de eso se puede probar sin un VPS. Lo que era verificable —el build de la
+app y el enrutado por host— está verificado.
