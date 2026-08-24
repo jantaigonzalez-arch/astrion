@@ -192,10 +192,69 @@ export async function provisionTenant(input: ProvisionInput) {
     .from(tenants)
     .where(eq(tenants.slug, slug))
     .limit(1);
-  if (existing) throw new Error(`Ya existe un inquilino con el identificador "${slug}".`);
+
+  /*
+    Existir la FILA no es lo mismo que estar aprovisionado.
+
+    En una instalación nueva, la migración 0016 siembra el inquilino
+    `evoelution` y su `company` —para que un despliegue que venía de la época de
+    una sola empresa siga funcionando—, pero no crea ningún esquema: eso lo hace
+    este archivo. El resultado era que la primera empresa de un servidor recién
+    montado NO se podía dar de alta: `provision` abortaba con "ya existe" y no
+    quedaba ningún camino hacia adelante.
+
+    Y el que parecía la salida es peor: `tenant.ts adopt` MUEVE las tablas de
+    negocio desde `public` y marca la línea base como aplicada sin ejecutarla.
+    Sobre una base nueva, donde esas tablas nunca estuvieron en `public`, deja
+    un esquema VACÍO que el sistema cree migrado — y eso no da un error, da una
+    empresa que falla al primer ticket.
+
+    Así que se distingue por el esquema, que es lo que de verdad importa: si el
+    inquilino ya tiene uno registrado, sigue siendo un duplicado y se rechaza;
+    si no lo tiene, esta llamada es justo lo que le faltaba y se completa.
+  */
+  let filaSembrada: { id: string } | null = null;
+  if (existing) {
+    const [conEsquema] = await db
+      .select({ schemaName: tenantSchemas.schemaName })
+      .from(tenantSchemas)
+      .where(eq(tenantSchemas.tenantId, existing.id))
+      .limit(1);
+    if (conEsquema) {
+      throw new Error(`Ya existe un inquilino con el identificador "${slug}".`);
+    }
+    filaSembrada = existing;
+  }
 
   // 1. Registro del inquilino y su esquema.
-  const tenant = await db.transaction(async (tx) => {
+  const tenant = filaSembrada
+    ? await db.transaction(async (tx) => {
+        // El nombre y el prefijo de folio de la fila sembrada son marcadores de
+        // posición: mandan los que se pasan aquí, que son los que eligió quien
+        // da de alta la empresa. El prefijo sobre todo — se congela en el
+        // primer folio emitido y después ya no se corrige.
+        const [t] = await tx
+          .update(tenants)
+          .set({
+            name: input.name.trim(),
+            folioPrefix: input.folioPrefix ?? suggestFolioPrefix(input.name),
+          })
+          .where(eq(tenants.id, filaSembrada!.id))
+          .returning({ id: tenants.id, slug: tenants.slug });
+
+        await tx.insert(tenantSchemas).values({ tenantId: t.id, schemaName });
+
+        if (input.ownerUserId) {
+          await tx.insert(memberships).values({
+            userId: input.ownerUserId,
+            tenantId: t.id,
+            role: "owner",
+            acceptedAt: new Date(),
+          });
+        }
+        return t;
+      })
+    : await db.transaction(async (tx) => {
     const [t] = await tx
       .insert(tenants)
       .values({
