@@ -527,6 +527,29 @@ async function main() {
 
     /* --- técnicos --- */
     const techId = new Map<string, string>();
+    /** Nombre o correo → llave estable: sin acentos, sin dobles espacios, en mayúsculas. */
+    const clave = (v: string) =>
+      (v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
+    const techDesconocidos = new Set<string>();
+    /** Resuelve el técnico de una fila, y AVISA si no puede: nunca en silencio. */
+    const tecnicoDe = (v: string, folio: string): string | null => {
+      const raw = (v || "").trim();
+      if (!raw) return null;
+      const id = techId.get(clave(raw));
+      if (id) return id;
+      // Una incidencia por técnico desconocido, no una por ticket: si el origen
+      // cambia de formato son cientos de filas y el reporte deja de leerse.
+      if (techDesconocidos.has(clave(raw))) return null;
+      techDesconocidos.add(clave(raw));
+      note({
+        archivo: "Reportes de Servicio.csv",
+        registro: folio || "(sin folio)",
+        problema: "Técnico no reconocido",
+        detalle: `"${raw}" no casa con ningún técnico conocido (primer ticket afectado; puede haber más)`,
+        accion: "Tickets importados SIN asignar. Agregarlo a TECH_EMAIL y reimportar, o asignarlos desde la UI.",
+      });
+      return null;
+    };
     for (const [name, email] of Object.entries(TECH_EMAIL)) {
       const [u] = await tx
         .insert(users)
@@ -537,7 +560,16 @@ async function main() {
         })
         .returning({ id: users.id });
       await grantMembership(tx, u.id, "agent");
-      techId.set(name, u.id);
+      // Se indexa por nombre Y por correo, normalizando ambos.
+      //
+      // El origen ha exportado esta columna de las dos formas: el volcado de
+      // agosto traía el correo, el de julio y el siguiente traen el nombre. Con
+      // un solo índice, el otro formato no casa con nada — y como el destino de
+      // ese fallo era `?? null`, los 633 tickets entraron SIN TÉCNICO y sin una
+      // sola línea de aviso. Aceptar los dos cuesta tres líneas; descubrirlo en
+      // producción costó una reimportación completa.
+      techId.set(clave(name), u.id);
+      techId.set(clave(email), u.id);
       counts.techs++;
       if (email !== "ruben.barrios@evoelution.com") {
         note({
@@ -837,7 +869,7 @@ async function main() {
           priority: PRIORITY[r.Prioridad] ?? "medium",
           category,
           createdById: clientUser ?? unassignedUser,
-          assignedToId: techId.get(r["Asignado a"]) ?? null,
+          assignedToId: tecnicoDe(r["Asignado a"], r.Ticket_evo),
           equipmentId: eqId ?? null,
           moduleId: modId ?? null,
           slaDueAt: parseDate(r["Fecha de vencimiento"]),
@@ -865,7 +897,7 @@ async function main() {
           .insert(ticketComments)
           .values({
             ticketId: t.id,
-            authorId: techId.get(r["Asignado a"]) ?? fallbackAuthor.id,
+            authorId: techId.get(clave(r["Asignado a"] || "")) ?? fallbackAuthor.id,
             body: obs || "Actividad importada del sistema anterior.",
             internal: true,
             equipmentId: eqId ?? null,
