@@ -57,16 +57,36 @@ import { companies, memberships, tenants, users } from "../src/lib/db/platform";
 import { parseCsv } from "../src/lib/import/csv";
 
 /**
- * Fechas del origen: mm/dd/yyyy. Verificado sobre los 4 archivos — 337 fechas
- * tienen el segundo campo > 12 y NINGUNA tiene el primero > 12. Es formato de
- * EE.UU., no día/mes.
+ * Fechas del origen, en los dos formatos en que el origen las ha exportado.
+ *
+ * El volcado de julio venía mm/dd/yyyy. Verificado sobre los 4 archivos — 337
+ * fechas tienen el segundo campo > 12 y NINGUNA tiene el primero > 12. Es
+ * formato de EE.UU., no día/mes.
+ *
+ * El de agosto trae ISO 8601 en los reportes de servicio
+ * (`2026-08-21T07:00:00Z`) y sigue con mm/dd/yyyy en los contratos. Se aceptan
+ * ambos, y eso importa más de lo que parece: si solo se entendiera el viejo,
+ * una fecha ISO no daría error —`parseDate` devolvería null— y el ticket
+ * entraría fechado el día de la importación. Un fallo mudo que reescribe la
+ * historia de servicio del cliente es mucho peor que uno ruidoso.
+ *
+ * De la marca ISO se toma SOLO la parte de fecha, anclada al mediodía local
+ * igual que el otro camino. El origen exporta la medianoche de Ciudad de México
+ * como `T07:00:00Z`: construir la fecha desde el instante UTC la correría un día
+ * en cuanto el proceso corriera bajo otro huso —y en el servidor corre dentro de
+ * un contenedor, donde el huso lo fija una variable de entorno—.
  */
 function parseDate(v: string): Date | null {
-  const m = (v || "").trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  const s = (v || "").trim();
+  const alMediodia = (yyyy: string, mm: string, dd: string) => {
+    const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd), 12, 0, 0);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return alMediodia(iso[1], iso[2], iso[3]);
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if (!m) return null;
-  const [, mm, dd, yyyy] = m;
-  const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd), 12, 0, 0);
-  return Number.isNaN(d.getTime()) ? null : d;
+  return alMediodia(m[3], m[1], m[2]);
 }
 
 const isoDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
@@ -207,6 +227,49 @@ type Issue = {
   accion: string;
 };
 
+/**
+ * Alias de columnas, POR ARCHIVO.
+ *
+ * El origen cambió de dialecto entre volcados: el de julio traía los nombres de
+ * columna en español y con acentos, el de agosto los trae en inglés y sin
+ * ellos. Se normaliza AL LEER, de modo que todo lo de abajo —el mapeo de
+ * dominio, que no cambió— siga siendo el mismo código ya probado contra el
+ * volcado anterior, y ambos dialectos entren por la misma puerta.
+ *
+ * Por archivo y no global a propósito: `Serie` significa cosas distintas según
+ * dónde aparezca. En Detalles es la serie de UN módulo; en Contratos es la
+ * LISTA de series que el contrato ampara. Un alias global las confundiría, y
+ * ese error no se vería en la carga: se vería meses después, en equipos
+ * colgando del laboratorio equivocado.
+ */
+const ALIAS: Record<string, Record<string, string>> = {
+  "Detalles.csv": {
+    Serie: "Número de serie",
+    Modulo: "Módulo",
+    Descripcion: "Descripción",
+  },
+  "Reportes de Servicio.csv": {
+    Status: "Estado",
+    Priority: "Prioridad",
+    "Assigned to": "Asignado a",
+    "Date reported": "Fecha de reporte",
+    "Expiration date": "Fecha de vencimiento",
+  },
+};
+
+/**
+ * SharePoint antepone al CSV una línea `ListSchema={…}` con la definición de la
+ * lista. No es la cabecera, pero sí la primera fila no vacía, y `parseCsv` toma
+ * por cabecera la primera fila no vacía: el encabezado real pasaría a ser una
+ * fila de datos y TODAS las columnas quedarían mal nombradas. Se descarta antes
+ * de parsear.
+ */
+function stripListSchema(text: string): string {
+  if (!/^\ufeff?ListSchema=/.test(text.slice(0, 32))) return text;
+  const nl = text.indexOf("\n");
+  return nl === -1 ? "" : text.slice(nl + 1);
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const dir = args[args.indexOf("--dir") + 1];
@@ -217,7 +280,19 @@ async function main() {
     process.exit(1);
   }
 
-  const read = (f: string) => parseCsv(readFileSync(path.join(dir, f), "utf8"));
+  const read = (f: string) => {
+    const rows = parseCsv(stripListSchema(readFileSync(path.join(dir, f), "utf8")));
+    const alias = ALIAS[f];
+    if (!alias) return rows;
+    for (const r of rows) {
+      for (const [desde, hacia] of Object.entries(alias)) {
+        // Solo se rellena lo que falta: si el volcado ya trae el nombre
+        // canónico —el dialecto de julio— manda ese y el alias no lo pisa.
+        if (r[hacia] === undefined && r[desde] !== undefined) r[hacia] = r[desde];
+      }
+    }
+    return rows;
+  };
   const sae = read("SAE90_customer.csv");
   const det = read("Detalles.csv");
   const con = read("Contratos (1).csv");
