@@ -214,6 +214,21 @@ const TECH_EMAIL: Record<string, string> = {
   "Victor Carvajal": "victor.carvajal@evoelution.com",
 };
 
+/**
+ * Los vendedores que firman los contratos.
+ *
+ * Existe por la misma razón que `TECH_EMAIL`: el origen trae el NOMBRE y la
+ * base necesita una persona con cuenta. Aneth aparece en los dos mapas porque
+ * en esta empresa es las dos cosas —atiende servicios y tiene contratos a su
+ * nombre—; el importador reutiliza la misma cuenta y le deja el rol de agente,
+ * que es el más amplio de los dos.
+ */
+const SALES_EMAIL: Record<string, string> = {
+  "Rodrigo Montero Mondragón": "rodrigo.montero@evoelution.com",
+  "Rocío  Juan Escamilla": "rocio.juan@evoelution.com",
+  "Aneth Mitchelle Maldonado": "aneth.maldonado@evoelution.com",
+};
+
 /** Laboratorio técnico para lo que no se pudo atribuir. No es un cliente real. */
 const UNASSIGNED = "SIN ASIGNAR (revisar)";
 
@@ -416,7 +431,7 @@ async function main() {
   }
   const tenantId = tenantRow.id;
   const counts = {
-    orgs: 0, labs: 0, techs: 0, equipos: 0, modulos: 0,
+    orgs: 0, labs: 0, techs: 0, vendedores: 0, equipos: 0, modulos: 0,
     contratos: 0, contratoEquipos: 0, tickets: 0, comentarios: 0, refacciones: 0,
   };
 
@@ -514,7 +529,7 @@ async function main() {
     const grantMembership = async (
       tx2: typeof tx,
       userId: string,
-      role: "agent" | "client",
+      role: "agent" | "sales" | "client",
     ) => {
       await tx2
         .insert(memberships)
@@ -531,6 +546,34 @@ async function main() {
     const clave = (v: string) =>
       (v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
     const techDesconocidos = new Set<string>();
+    const vendDesconocidos = new Set<string>();
+    /**
+     * Resuelve el vendedor de un contrato, y AVISA si no puede.
+     *
+     * Mismo trato que `tecnicoDe` y por el mismo motivo: si el origen trae un
+     * nombre que no está en `SALES_EMAIL` —alguien que entró después— el
+     * contrato se importa igual, pero sin dueño y CON incidencia. Callarlo
+     * dejaría una cartera repartida entre menos gente de la que hay.
+     */
+    const vendedorDe = (v: string, contrato: string): string | null => {
+      const raw = (v || "").trim();
+      if (!raw) return null;
+      const id = techId.get(clave(raw));
+      if (id) return id;
+      if (!vendDesconocidos.has(clave(raw))) {
+        vendDesconocidos.add(clave(raw));
+        note({
+          archivo: "Contratos (1).csv",
+          registro: contrato || "(sin número)",
+          problema: "Vendedor no reconocido",
+          detalle: `"${raw}" no casa con ningún vendedor conocido (primer contrato afectado; puede haber más)`,
+          accion:
+            "Contratos importados sin vendedor; el nombre queda en las notas. " +
+            "Agregarlo a SALES_EMAIL y reimportar, o asignarlo desde la UI.",
+        });
+      }
+      return null;
+    };
     /** Resuelve el técnico de una fila, y AVISA si no puede: nunca en silencio. */
     const tecnicoDe = (v: string, folio: string): string | null => {
       const raw = (v || "").trim();
@@ -576,6 +619,49 @@ async function main() {
           archivo: "Reportes de Servicio.csv",
           registro: name,
           problema: "Correo del técnico deducido",
+          detalle: email,
+          accion: "Verificar antes de invitarlo al portal. Sin contraseña no puede entrar.",
+        });
+      }
+    }
+
+    /* --- vendedores ---
+     *
+     * El nombre del vendedor venía en la columna «Vendedor» de los contratos y
+     * hasta hoy se escribía DENTRO DE LAS NOTAS del contrato, como texto:
+     * «Vendedor: Rodrigo Montero Mondragón». Legible para una persona e
+     * invisible para una consulta — `sales_rep_id` quedaba en 0 de 54, así que
+     * la pregunta «¿quién sostiene la cartera?» no se podía contestar.
+     *
+     * Es el mismo patrón que dejó 633 tickets sin técnico: la dimensión llegó
+     * como prosa y nunca se volvió columna.
+     *
+     * Van al MISMO índice que los técnicos, y no a uno aparte, porque una
+     * persona puede ser las dos cosas: Aneth atiende servicios y tiene
+     * contratos. Con dos índices habría acabado con dos cuentas y el mismo
+     * correo, que la restricción única del correo habría rechazado a mitad de
+     * la importación.
+     */
+    for (const [name, email] of Object.entries(SALES_EMAIL)) {
+      const limpio = name.replace(/\s+/g, " ").trim();
+      const yaEsTecnico = techId.has(clave(name));
+      const [u] = await tx
+        .insert(users)
+        .values({ name: limpio, email })
+        .onConflictDoUpdate({ target: users.email, set: { name: limpio } })
+        .returning({ id: users.id });
+      // A quien ya es técnico se le respeta ese rol: `agent` abre la cola de
+      // servicio además del CRM, y degradarlo a `sales` le quitaría el trabajo
+      // que sí hace.
+      if (!yaEsTecnico) await grantMembership(tx, u.id, "sales");
+      techId.set(clave(name), u.id);
+      techId.set(clave(email), u.id);
+      if (!yaEsTecnico) {
+        counts.vendedores++;
+        note({
+          archivo: "Contratos (1).csv",
+          registro: limpio,
+          problema: "Correo del vendedor deducido",
           detalle: email,
           accion: "Verificar antes de invitarlo al portal. Sin contraseña no puede entrar.",
         });
@@ -778,6 +864,8 @@ async function main() {
         });
       }
 
+      const vendedor = vendedorDe(r.Vendedor, r.Contrato);
+
       const [c] = await tx
         .insert(contracts)
         .values({
@@ -789,9 +877,15 @@ async function main() {
           startDate: isoDate(parseDate(r.Inicio)),
           endDate: isoDate(parseDate(r.Fin)),
           companyId,
+          salesRepId: vendedor,
           notes: [
             `Importado · tipo ${r["Tipo de contrato"] || "N/D"} · ${r.Vigencia || ""}`,
-            r.Vendedor ? `Vendedor: ${r.Vendedor.replace(/\s+/g, " ").trim()}` : "",
+            // El nombre solo se conserva como texto cuando NO se pudo resolver
+            // a una persona. Con la columna puesta, repetirlo en las notas es
+            // duplicar el dato en un sitio donde nadie lo va a mantener.
+            vendedor || !r.Vendedor
+              ? ""
+              : `Vendedor (sin cuenta): ${r.Vendedor.replace(/\s+/g, " ").trim()}`,
             r.Total ? `Total con IVA en el origen: ${r.Total.trim()}` : "",
           ].filter(Boolean).join("\n"),
         })
