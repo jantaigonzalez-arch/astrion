@@ -107,21 +107,47 @@ const ROWS = [
 ];
 
 /**
- * Reparto de carga entre el equipo. Son las proporciones reales del primer
- * cliente —Rubén 239, Aranza 204, Luis 130, Oscar 37— sin apellidos.
+ * Reparto de carga entre el equipo.
+ *
+ * Las proporciones son las reales del primer cliente; los nombres, no. La
+ * lámina es de «tu empresa», así que el personal que aparece tiene que ser
+ * genérico o el panel volvería a hablar de otra compañía por la puerta de
+ * atrás.
  *
  * El ancho sale del máximo y no de la suma: una barra tiene que poder llegar
  * al final, o la más alta parece la mitad de lo que es.
  */
 const LOAD = [
-  { name: "Rubén", value: 239 },
-  { name: "Aranza", value: 204 },
+  { name: "Ana", value: 239 },
+  { name: "Marco", value: 204 },
   { name: "Luis", value: 130 },
-  { name: "Oscar", value: 37 },
+  { name: "Sofía", value: 37 },
 ];
 const LOAD_MAX = Math.max(...LOAD.map((l) => l.value));
 
 const BADGE = { open: "badgeOpen", wait: "badgeWait", done: "badgeDone" } as const;
+
+/**
+ * Dónde cae la estimación dentro de su propia banda, en porcentaje de la pista.
+ *
+ * Se calcula a partir de las tres cifras en vez de escribir un número a mano:
+ * si alguien cambia el valor o los extremos en la copia y la marca se quedara
+ * fija, la tarjeta enseñaría una banda que no corresponde a sus propios
+ * números — y el error sería invisible.
+ *
+ * La banda se dibuja del 12 % al 88 % de la pista, así que la marca se mapea a
+ * ese tramo. Es la misma aritmética que hace `ForecastCard` en el producto.
+ */
+function marcaEnBanda(value: string, low: string, high: string): number {
+  const v = Number(value);
+  const a = Number(low);
+  const b = Number(high);
+  if (!Number.isFinite(v) || !Number.isFinite(a) || !Number.isFinite(b) || b <= a) {
+    return 50;
+  }
+  const dentro = Math.min(1, Math.max(0, (v - a) / (b - a)));
+  return Math.round(12 + dentro * 76);
+}
 
 export function PanelPreview({
   styles: s,
@@ -130,6 +156,8 @@ export function PanelPreview({
   styles: Record<string, string>;
   copy: PlatformCopy["product"];
 }) {
+  const marca = marcaEnBanda(t.smart.value, t.smart.low, t.smart.high);
+
   return (
     <div className={s.product}>
       {/* ---------------- La ventana: la empresa al entrar ---------------- */}
@@ -153,7 +181,7 @@ export function PanelPreview({
           <div className={s.shotBody}>
             <aside className={s.shotNav}>
               <div className={s.shotBrand}>
-                <span className={s.shotBrandMark}>E</span>
+                <span className={s.shotBrandMark}>{t.shot.mark}</span>
                 <span className={s.shotBrandName}>{t.shot.brand}</span>
               </div>
               <ul className={s.shotNavList}>
@@ -218,7 +246,11 @@ export function PanelPreview({
         <figcaption className={s.shotCap}>{t.shot.caption}</figcaption>
       </figure>
 
-      {/* ---------------- El tablero: la capa 3 leyendo lo de arriba ---------------- */}
+      {/* ---------------- Lo que se midió y lo que se estima ----------------
+          Dos tarjetas y en este orden: la de arriba describe lo que ya pasó,
+          la de abajo estima lo que viene. La segunda no se sostiene sin la
+          primera, que es exactamente lo que dice la pila de tres capas. */}
+      <div className={s.aside}>
       <figure className={s.board}>
         <div aria-hidden="true">
           <div className={s.boardHead}>
@@ -245,6 +277,45 @@ export function PanelPreview({
 
         <figcaption className={s.boardFoot}>{t.board.foot}</figcaption>
       </figure>
+
+      {/* La capa 3. Ver la nota de `.smart`: banda y casos, siempre. */}
+      <figure className={s.smart}>
+        <div aria-hidden="true">
+          <div className={s.boardHead}>
+            <h3 className={s.boardTitle}>{t.smart.title}</h3>
+            <span className={s.smartTag}>{t.smart.tag}</span>
+          </div>
+
+          <p className={s.smartValue}>
+            <span className={s.smartNumber}>{t.smart.value}</span>
+            <span className={s.smartUnit}>{t.smart.unit}</span>
+          </p>
+
+          <div className={s.smartBand}>
+            <div className={s.smartTrack}>
+              {/*
+                La banda ocupa el centro de la pista y la marca cae donde de
+                verdad está el valor dentro de ella, no en el medio: una
+                estimación asimétrica tiene que verse asimétrica.
+              */}
+              <span className={s.smartSpan} style={{ left: "12%", right: "12%" }} />
+              <span className={s.smartMark} style={{ left: `${marca}%` }} />
+            </div>
+            <p className={s.smartEnds}>
+              <span>{t.smart.low}</span>
+              <span>{t.smart.high}</span>
+            </p>
+          </div>
+
+          <p className={s.smartMeta}>
+            <span>{t.smart.support}</span>
+            <span>{t.smart.model}</span>
+          </p>
+        </div>
+
+        <figcaption className={s.smartFoot}>{t.smart.foot}</figcaption>
+      </figure>
+      </div>
     </div>
   );
 }

@@ -1565,3 +1565,119 @@
   color: var(--muted);
   max-width: 68ch;
 }
+
+/* ---------------- La columna de la derecha ----------------
+   Dos tarjetas apiladas: lo que el sistema MIDIÓ y lo que el sistema ESTIMA.
+   Van juntas y en ese orden porque la segunda no se sostiene sin la primera —es
+   la tesis de las tres capas dicha en dos objetos—, y porque la columna se
+   quedaba medio vacía con una sola. */
+.aside {
+  display: grid;
+  gap: 22px;
+  align-content: start;
+  min-width: 0;
+}
+
+/* ---------------- La capa 3, con su propia tarjeta ----------------
+   El tablero de al lado describe lo que pasó; esto estima lo que viene, y es
+   lo único que un ERP tradicional no puede hacer. Por eso lleva el cálido: en
+   esta página el cálido es la decisión, y una estimación es exactamente eso.
+
+   Enseña banda y casos SIEMPRE, igual que el tipo `ForecastBlock` del producto
+   obliga a hacerlo: un número sin banda invita a creerle de más, y sin los
+   casos que lo sostienen no se sabe si lo respaldan doce servicios o dos. */
+.smart {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 16px 16px 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 20px 46px -26px rgba(0, 0, 0, 0.8);
+}
+.smartTag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-lit);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+.smartValue {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 10px 0 0;
+}
+.smartNumber {
+  font-size: 2.1rem;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.smartUnit {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* La banda, dibujada. El punto marca dónde cae la estimación DENTRO de ella:
+   si está descentrado, la estimación es asimétrica y conviene que se vea. */
+.smartBand {
+  margin-top: 12px;
+}
+.smartTrack {
+  position: relative;
+  height: 7px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.smartSpan {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent) 28%, transparent),
+    color-mix(in srgb, var(--accent) 62%, transparent)
+  );
+}
+.smartMark {
+  position: absolute;
+  top: -2px;
+  width: 2px;
+  height: 11px;
+  border-radius: 1px;
+  background: var(--accent-lit);
+}
+.smartEnds {
+  display: flex;
+  justify-content: space-between;
+  margin: 6px 0 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.smartMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 12px 0 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+}
+.smartFoot {
+  margin: 13px 0 0;
+  padding-top: 11px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}

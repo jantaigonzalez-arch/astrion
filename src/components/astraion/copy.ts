@@ -20,7 +20,10 @@ const es = {
   },
 
   hero: {
-    eyebrow: "ERP + Machine Learning",
+    // La audiencia vivía en el titular («para una PYME») y se perdió al
+    // reescribirlo en lenguaje llano. Vuelve aquí, que es donde no le quita
+    // sitio a la idea y sigue siendo lo primero que se lee.
+    eyebrow: "ERP + Machine Learning · para pequeñas y medianas empresas",
     /*
       El titular dice qué es y para quién. Es lo único que abre la página: la
       tesis («una pyme no decide peor…») y el duelo de las dos respuestas
@@ -59,11 +62,24 @@ const es = {
   */
   product: {
     eyebrow: "El producto",
-    title: "Esto es lo que ves al entrar",
-    lede: "Una sola pantalla con la empresa entera: lo que hay que atender, lo que está vendido, lo que se debe. Y al lado, los tableros que la leen por vos.",
+    title: "La operación completa, en una sola pantalla",
+    lede: "Lo que hay que atender, lo que está vendido, lo que se debe. Y al lado, lo que el sistema mide — y lo que estima, que es lo único de aquí que un ERP tradicional no puede hacer.",
     shot: {
-      url: "evoelution.astraion.com/panel",
-      brand: "Evoelution",
+      /*
+        El panel lleva la marca de QUIEN LEE, no la de un cliente.
+
+        Decía «Evoelution» y esa es la primera empresa que usa el sistema, no
+        la audiencia de esta página: verla ahí hacía que la portada de Astraion
+        pareciera ser sobre otra compañía. Un nombre de relleno dice lo mismo
+        sin regalarle el escaparate a nadie, y de paso el lector se ve a sí
+        mismo dentro del producto.
+
+        El caso Evoelution sigue existiendo — tiene su enlace en la barra y su
+        línea de prueba con las cifras. Lo que no hace es firmar la lámina.
+      */
+      url: "tu-empresa.astraion.com/panel",
+      brand: "Tu empresa",
+      mark: "T",
       nav: [
         "Panel",
         "Servicio",
@@ -75,7 +91,7 @@ const es = {
         "Inteligencia",
       ],
       powered: "Powered by Astraion",
-      hi: "Hola, Rubén",
+      hi: "Hola, Ana",
       sub: "La empresa entera, al entrar.",
       areas: {
         servicio: "Servicio",
@@ -108,13 +124,36 @@ const es = {
       ],
       states: { open: "Abierto", wait: "En espera", done: "Cerrado" },
       caption:
-        "El panel de una empresa al entrar. Las cifras de Servicio y Clientes son las de Evoelution, el primer cliente; las de Ventas, Inventario y Compras son de ejemplo —esos módulos ya existen y esa empresa todavía no los usa—.",
+        "El panel de una empresa al entrar. Las cifras de Servicio y Clientes son las de una empresa real en operación; las de Ventas, Inventario y Compras son de ejemplo, porque esos módulos ya existen y esa empresa todavía no los usa.",
     },
     board: {
       tag: "Tablero",
       title: "Carga por técnico",
       note: "630 servicios repartidos entre seis técnicos; se enseñan los cuatro con más carga. Sale de los mismos tickets del panel.",
       foot: "Uno de los 38 análisis del catálogo. Se coloca eligiéndolo de una lista, y ninguno pide capturar un dato nuevo: todos leen lo que la operación ya dejó escrito.",
+    },
+    /*
+      La capa 3, con tarjeta propia.
+
+      El tablero de al lado DESCRIBE lo que pasó; esto ESTIMA lo que viene, y
+      es lo único de toda la página que un ERP tradicional no puede hacer. Sin
+      esta tarjeta el producto se veía completo y corriente: cinco áreas y unas
+      barras es lo que enseña cualquier sistema de gestión.
+
+      Lleva banda y casos porque el tipo `ForecastBlock` del producto obliga a
+      llevarlos, y la razón es la misma aquí: un número sin banda invita a
+      creerle de más.
+    */
+    smart: {
+      tag: "Inteligencia",
+      title: "Carga del mes que viene",
+      value: "214",
+      unit: "horas de servicio",
+      low: "186",
+      high: "248",
+      support: "24 meses de historia",
+      model: "servicio · v3",
+      foot: "Lo que estima el modelo, con la banda en la que se mueve y los casos que la sostienen. Sale del histórico del propio sistema: nadie captura un dato aparte para que esto exista.",
     },
   },
 
@@ -351,7 +390,7 @@ const en = {
   },
 
   hero: {
-    eyebrow: "ERP + Machine Learning",
+    eyebrow: "ERP + Machine Learning · for small and medium businesses",
     // Ver la nota del titular en español: primero qué es, después cómo se llama.
     h1a: "Your whole business in one system",
     h1em: "that learns from it",
@@ -362,11 +401,12 @@ const en = {
 
   product: {
     eyebrow: "The product",
-    title: "This is what you see when you sign in",
-    lede: "One screen with the whole company: what needs attention, what has been sold, what is owed. And next to it, the boards that read it for you.",
+    title: "The whole operation, on a single screen",
+    lede: "What needs attention, what has been sold, what is owed. And next to it, what the system measures — and what it estimates, the one thing here a traditional ERP cannot do.",
     shot: {
-      url: "evoelution.astraion.com/panel",
-      brand: "Evoelution",
+      url: "your-company.astraion.com/panel",
+      brand: "Your company",
+      mark: "Y",
       nav: [
         "Panel",
         "Service",
@@ -378,7 +418,7 @@ const en = {
         "Intelligence",
       ],
       powered: "Powered by Astraion",
-      hi: "Hi, Rubén",
+      hi: "Hi, Ana",
       sub: "The whole company, on arrival.",
       areas: {
         servicio: "Service",
@@ -411,13 +451,24 @@ const en = {
       ],
       states: { open: "Open", wait: "Waiting", done: "Closed" },
       caption:
-        "A company's panel on arrival. The Service and Clients figures are Evoelution's, the first client; Sales, Inventory and Purchasing are an example — those modules already exist and that company is not using them yet.",
+        "A company's panel on arrival. The Service and Clients figures come from a real company in operation; Sales, Inventory and Purchasing are an example, because those modules already exist and that company is not using them yet.",
     },
     board: {
       tag: "Board",
       title: "Load per technician",
       note: "630 service calls across six technicians; the four with the heaviest load are shown. It comes from the same tickets in the panel.",
       foot: "One of the 38 analyses in the catalogue. You place it by picking it from a list, and none of them asks for a new field: they all read what the operation already wrote down.",
+    },
+    smart: {
+      tag: "Intelligence",
+      title: "Next month's load",
+      value: "214",
+      unit: "service hours",
+      low: "186",
+      high: "248",
+      support: "24 months of history",
+      model: "service · v3",
+      foot: "What the model estimates, with the band it moves in and the cases that hold it up. It comes from the system's own history: nobody keys in anything extra for this to exist.",
     },
   },
 
