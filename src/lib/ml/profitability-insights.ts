@@ -80,8 +80,24 @@ const mes = etiquetaMes;
 
 /** 1 · La utilidad mes a mes. Historia real, nunca extrapolada. */
 export async function profitTrend(conexion?: DbOrTx): Promise<Block[]> {
-  const { monthly } = await overview(12, conexion);
+  const { monthly, totals } = await overview(12, conexion);
   if (monthly.length === 0) return [];
+  /*
+    El mismo guardia que `profitSplit`, y le faltaba a este.
+
+    Sin él, una empresa recién estrenada dibuja doce barras en CERO con la nota
+    puesta —«ingresos contra costos… valuadas con las tarifas vigentes»— y eso
+    se lee como «no ganamos nada», que es una afirmación falsa sobre su negocio.
+    La causa real es otra: no hay tarifas de mano de obra capturadas, o las
+    refacciones consumidas entraron sin precio. Medido contra producción el
+    2026-08-25: 3.032 horas de bitácora, tabla `settings` vacía, las 739 líneas
+    de refacción importadas sin `unit_price_mxn`. Ingreso calculado: cero.
+
+    Callarse es lo correcto: la caja vacía enseña `watching`, que dice qué
+    vigila este análisis, y eso orienta a configurar las tarifas. Un cero no
+    orienta a nada porque parece un dato.
+  */
+  if (totals.revenue <= 0) return [];
 
   const bloque: TrendBlock = {
     kind: "trend",

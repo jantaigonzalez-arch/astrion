@@ -139,8 +139,8 @@ export async function getForecastByMonth(pipelineId: string, ownerId?: string) {
 }
 
 /** Ranking de vendedores por monto ganado. */
-export async function getOwnerRanking(pipelineId: string) {
-  const db = await tenantDb();
+export async function getOwnerRanking(pipelineId: string, conexion?: DbOrTx) {
+  const db = conexion ?? (await tenantDb());
   return db
     .select({
       ownerId: crmDeals.ownerId,
@@ -159,8 +159,12 @@ export async function getOwnerRanking(pipelineId: string) {
 }
 
 /** Motivos de pérdida más frecuentes. */
-export async function getLostReasons(pipelineId: string, ownerId?: string) {
-  const db = await tenantDb();
+export async function getLostReasons(
+  pipelineId: string,
+  ownerId?: string,
+  conexion?: DbOrTx,
+) {
+  const db = conexion ?? (await tenantDb());
   return db
     .select({
       reason: crmDeals.lostReason,
@@ -182,8 +186,8 @@ export async function getLostReasons(pipelineId: string, ownerId?: string) {
 }
 
 /** Origen de los negocios (de dónde vienen las oportunidades). */
-export async function getSourceBreakdown(pipelineId: string) {
-  const db = await tenantDb();
+export async function getSourceBreakdown(pipelineId: string, conexion?: DbOrTx) {
+  const db = conexion ?? (await tenantDb());
   return db
     .select({
       source: crmDeals.source,
@@ -200,8 +204,12 @@ export async function getSourceBreakdown(pipelineId: string) {
  * Duración media (días) que tarda un negocio en cerrarse.
  * Solo considera negocios ya cerrados.
  */
-export async function getAvgCycleDays(pipelineId: string, ownerId?: string) {
-  const db = await tenantDb();
+export async function getAvgCycleDays(
+  pipelineId: string,
+  ownerId?: string,
+  conexion?: DbOrTx,
+) {
+  const db = conexion ?? (await tenantDb());
   const [row] = await db
     .select({
       days: sql<string>`coalesce(avg(extract(epoch from (${crmDeals.closedAt} - ${crmDeals.createdAt})) / 86400), 0)`,

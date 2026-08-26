@@ -22,12 +22,37 @@ import {
   topClients,
   worstServices,
 } from "@/lib/ml/profitability-insights";
-import { rottingDeals, salesFunnel, salesTrend } from "@/lib/ml/sales-insights";
+import {
+  rottingDeals,
+  salesByOwner,
+  salesBySource,
+  salesCycle,
+  salesFunnel,
+  salesLostReasons,
+  salesTrend,
+} from "@/lib/ml/sales-insights";
+import {
+  hoursByTech,
+  ticketsByCategory,
+  ticketsByClient,
+  ticketsByEquipment,
+  ticketsByTech,
+  ticketsVolume,
+} from "@/lib/ml/service-insights";
 import {
   clientConcentration,
+  contractsByRep,
   expiringContracts,
+  installedBase,
   quietClients,
 } from "@/lib/ml/client-insights";
+import {
+  movementsByActor,
+  partsConsumption,
+  payablesBySupplier,
+  purchasingByBuyer,
+  purchasingBySupplier,
+} from "@/lib/ml/supply-insights";
 
 /**
  * El vocabulario de análisis: qué puede decir el sistema, unidad por unidad.
@@ -347,6 +372,15 @@ export const ANALYSES: Analysis[] = [
     adminOnly: true,
     resolve: async () => payablesTrend(),
   },
+  {
+    id: "payables.by-supplier",
+    label: "A quién se le debe",
+    watching: ["Saldo pendiente por proveedor, y cuál tiene facturas vencidas"],
+    kind: "projection",
+    defaultOn: enModuloY("/admin/compras/cuentas-por-pagar", "pagos", 4, "half"),
+    adminOnly: true,
+    resolve: async (ctx) => payablesBySupplier(ctx.db),
+  },
 
   /* --- Ficha de proveedor --- */
   {
@@ -380,6 +414,23 @@ export const ANALYSES: Analysis[] = [
     defaultOn: enModuloY("/admin/compras", "compras", 0),
     resolve: async () => hallazgos(await purchasingInsights()),
   },
+  {
+    id: "purchasing.by-buyer",
+    label: "Quién levanta las compras",
+    watching: ["Órdenes en firme por quien las creó"],
+    kind: "projection",
+    defaultOn: [{ screen: dashboardScreen("compras"), position: 1, width: "half" }],
+    resolve: async (ctx) => purchasingByBuyer(ctx.db),
+  },
+  {
+    id: "purchasing.by-supplier",
+    label: "A qué proveedores se les compra",
+    watching: ["Importe comprometido en órdenes, por proveedor"],
+    kind: "projection",
+    defaultOn: [{ screen: dashboardScreen("compras"), position: 2, width: "half" }],
+    adminOnly: true,
+    resolve: async (ctx) => purchasingBySupplier(ctx.db),
+  },
 
   /* --- Refacciones --- */
   {
@@ -407,6 +458,24 @@ export const ANALYSES: Analysis[] = [
     subject: "part_consumption",
     resolve: async () => partsForecast(),
   },
+  {
+    id: "parts.consumption",
+    label: "Refacciones que más se consumen",
+    watching: ["Piezas gastadas en servicio, por número de parte"],
+    kind: "projection",
+    defaultOn: [{ screen: dashboardScreen("refacciones"), position: 2, width: "half" }],
+    resolve: async (ctx) => partsConsumption(ctx.db),
+  },
+  {
+    id: "parts.movements-by-actor",
+    label: "Quién mueve el almacén",
+    watching: ["Entradas, salidas y ajustes de inventario, por persona"],
+    kind: "projection",
+    defaultOn: [{ screen: dashboardScreen("refacciones"), position: 3, width: "half" }],
+    // Los ajustes manuales de inventario son material de control interno.
+    adminOnly: true,
+    resolve: async (ctx) => movementsByActor(ctx.db),
+  },
 
   /* --- Cola de servicio --- */
   {
@@ -425,6 +494,69 @@ export const ANALYSES: Analysis[] = [
     defaultOn: enModuloY("/admin/tickets", "servicio", 1),
     subject: "ticket",
     resolve: async () => ticketsForecast(),
+  },
+
+  /* --- Servicio: quién, en qué, cuándo y sobre qué ---
+   *
+   * Los seis van SOLO al tablero y no a la pantalla de trabajo, al revés que
+   * los dos de arriba. La cola de servicio es donde alguien atiende tickets: un
+   * reparto histórico por técnico ahí no ayuda a atender el siguiente, compite
+   * con él por la atención. La pregunta que contestan —cómo se está repartiendo
+   * el trabajo— se hace en un tablero, no entre dos visitas.
+   */
+  {
+    id: "service.by-tech",
+    label: "Carga por técnico",
+    watching: ["Cuántos servicios lleva cada técnico y cuántos siguen abiertos"],
+    kind: "projection",
+    defaultOn: [{ screen: dashboardScreen("servicio"), position: 2, width: "half" }],
+    resolve: async (ctx) => ticketsByTech(ctx.db),
+  },
+  {
+    id: "service.hours-by-tech",
+    label: "Horas efectivas por técnico",
+    watching: ["Horas registradas en la bitácora, por quien atendió"],
+    kind: "projection",
+    defaultOn: [{ screen: dashboardScreen("servicio"), position: 3, width: "half" }],
+    resolve: async (ctx) => hoursByTech(ctx.db),
+  },
+  {
+    id: "service.by-category",
+    label: "En qué se va el servicio",
+    watching: ["Reparto entre mantenimiento, calificación y soporte"],
+    kind: "projection",
+    defaultOn: [{ screen: dashboardScreen("servicio"), position: 4, width: "half" }],
+    resolve: async (ctx) => ticketsByCategory(ctx.db),
+  },
+  {
+    id: "service.volume",
+    label: "Servicios por mes",
+    watching: ["Cuántos servicios entran cada mes, doce meses móviles"],
+    kind: "trend",
+    defaultOn: [{ screen: dashboardScreen("servicio"), position: 5, width: "full" }],
+    resolve: async (ctx) => ticketsVolume(ctx.db),
+  },
+  {
+    id: "service.by-client",
+    label: "Laboratorios que más servicio piden",
+    watching: ["De qué clientes viene la carga de servicio"],
+    kind: "projection",
+    // Se coloca en el tablero de CLIENTES además del de servicio: es la misma
+    // afirmación leída con otra pregunta —allá, de quién depende la operación;
+    // acá, cómo se reparte el trabajo—.
+    defaultOn: [
+      { screen: dashboardScreen("servicio"), position: 6, width: "half" },
+      { screen: dashboardScreen("clientes"), position: 3, width: "half" },
+    ],
+    resolve: async (ctx) => ticketsByClient(ctx.db),
+  },
+  {
+    id: "service.by-equipment",
+    label: "Equipos que más servicio consumen",
+    watching: ["Qué equipos hubo que atender más veces"],
+    kind: "projection",
+    defaultOn: [{ screen: dashboardScreen("servicio"), position: 7, width: "half" }],
+    resolve: async (ctx) => ticketsByEquipment(ctx.db),
   },
   /* --- Ventas: el embudo, dicho en tres afirmaciones --- */
   {
@@ -457,6 +589,43 @@ export const ANALYSES: Analysis[] = [
     kind: "trend",
     defaultOn: enModuloY("/admin/crm", "ventas", 2, "half"),
     resolve: async (ctx) => salesTrend(ctx.db),
+  },
+
+  /* --- Ventas: lo que estaba encerrado en `/admin/crm/informes` ---
+
+     Los cuatro leen consultas que ya existían y solo salían por una página que
+     hay que saber que existe. Ver la nota al pie de `sales-insights.ts`. */
+  {
+    id: "sales.by-owner",
+    label: "Quién está vendiendo",
+    watching: ["Monto ganado por vendedor, y cuántos negocios lo sostienen"],
+    kind: "projection",
+    defaultOn: [{ screen: dashboardScreen("ventas"), position: 3, width: "half" }],
+    resolve: async (ctx) => salesByOwner(ctx.db),
+  },
+  {
+    id: "sales.lost-reasons",
+    label: "Por qué se pierden los negocios",
+    watching: ["Motivos de pérdida capturados, por frecuencia e importe"],
+    kind: "projection",
+    defaultOn: [{ screen: dashboardScreen("ventas"), position: 4, width: "half" }],
+    resolve: async (ctx) => salesLostReasons(ctx.db),
+  },
+  {
+    id: "sales.by-source",
+    label: "De dónde vienen las oportunidades",
+    watching: ["Origen de los negocios: referencia, web, campaña"],
+    kind: "projection",
+    defaultOn: [{ screen: dashboardScreen("ventas"), position: 5, width: "half" }],
+    resolve: async (ctx) => salesBySource(ctx.db),
+  },
+  {
+    id: "sales.cycle",
+    label: "Cuánto tarda en cerrarse un negocio",
+    watching: ["Días entre la creación y el cierre de los negocios ya cerrados"],
+    kind: "finding",
+    defaultOn: [{ screen: dashboardScreen("ventas"), position: 6, width: "full" }],
+    resolve: async (ctx) => salesCycle(ctx.db),
   },
 
   /* --- Clientes: la post-venta ---
@@ -497,6 +666,27 @@ export const ANALYSES: Analysis[] = [
     kind: "projection",
     defaultOn: [{ screen: dashboardScreen("clientes"), position: 2, width: "half" }],
     resolve: async () => clientConcentration(),
+  },
+  {
+    id: "clients.installed-base",
+    label: "De qué marcas es el parque instalado",
+    watching: ["Marcas de los equipos bajo cuidado de la empresa"],
+    kind: "projection",
+    defaultOn: [{ screen: dashboardScreen("clientes"), position: 4, width: "half" }],
+    resolve: async (ctx) => installedBase(ctx.db),
+  },
+  {
+    id: "clients.by-rep",
+    label: "Quién sostiene la cartera",
+    watching: ["Contratos vigentes por el vendedor que los firmó"],
+    kind: "projection",
+    // También en el tablero de Ventas: allá se lee como reparto de cuentas,
+    // acá como quién responde por la post-venta de cada laboratorio.
+    defaultOn: [
+      { screen: dashboardScreen("clientes"), position: 5, width: "half" },
+      { screen: dashboardScreen("ventas"), position: 7, width: "half" },
+    ],
+    resolve: async (ctx) => contractsByRep(ctx.db),
   },
 
   /* --- Rentabilidad: la pantalla, partida en piezas --- */

@@ -4,6 +4,10 @@ import type { Block, ProjectionBlock } from "@/lib/ml/blocks-types";
 import type { Insight } from "@/lib/ml/insights";
 import { getClients, type ClientRow } from "@/lib/data/crm";
 import { getContracts } from "@/lib/data/contracts";
+import { desc, eq, isNotNull, sql } from "drizzle-orm";
+import { tenantDb } from "@/lib/tenancy/context";
+import { contracts, equipment } from "@/lib/db/schema";
+import { users } from "@/lib/db/platform";
 import type { DbOrTx } from "@/lib/db";
 
 /**
@@ -230,5 +234,141 @@ export async function clientConcentration(): Promise<Block[]> {
     href: "/admin/clientes",
   };
 
+  return [bloque];
+}
+
+/* ------------------------- 4 · De qué es el parque instalado ------------------------- */
+
+/**
+ * Las marcas de los equipos que la empresa tiene bajo su cuidado.
+ *
+ * El «¿de qué?» de la post-venta, y en una empresa de cromatografía decide
+ * cosas concretas: a qué capacitación se manda al equipo, qué refacciones tiene
+ * sentido tener en almacén y con qué fabricante conviene negociar.
+ *
+ * Cuenta EQUIPOS y no módulos. Un equipo es lo que se atiende y lo que se
+ * contrata; los módulos son sus piezas, y contarlos pondría arriba a la marca
+ * que más piezas monta por sistema en vez de a la más instalada.
+ */
+export async function installedBase(conexion?: DbOrTx): Promise<Block[]> {
+  const db = conexion ?? (await tenantDb());
+
+  // Se agrupa por la marca EN MAYÚSCULAS y se etiqueta con la grafía más larga
+  // de cada grupo. Las altas manuales usan el catálogo `EQUIPMENT_BRANDS`, pero
+  // las importadas traen lo que viniera en el CSV, y «Waters» y «WATERS» como
+  // dos barras contiguas no son un dato: son la misma marca contada dos veces.
+  //
+  // No se va más allá de las mayúsculas a propósito. En esta base conviven
+  // «COPLEY» y «Copley Scientific», que un parecido difuso fusionaría — y el
+  // día que fusione dos marcas que sí son distintas, el error es invisible.
+  // Eso se corrige en el catálogo de equipos, no adivinando aquí.
+  const filas = await db
+    .select({
+      marca: sql<string>`max(${equipment.brand})`,
+      total: sql<number>`count(*)::int`,
+    })
+    .from(equipment)
+    .groupBy(sql`upper(${equipment.brand})`)
+    .orderBy(desc(sql`count(*)`))
+    .limit(8);
+
+  const conMarca = filas.filter((f) => f.marca && f.marca !== "N/D");
+  if (conMarca.length === 0) return [];
+
+  const total = conMarca.reduce((a, f) => a + f.total, 0);
+  const primera = conMarca[0];
+  const sinMarca = filas.filter((f) => !f.marca || f.marca === "N/D").reduce((a, f) => a + f.total, 0);
+
+  const bloque: ProjectionBlock = {
+    kind: "projection",
+    id: "clients.installed-base",
+    title: "De qué marcas es el parque instalado",
+    note:
+      `${total} equipo${total === 1 ? "" : "s"} con marca identificada. ` +
+      `${primera.marca} es ${Math.round((primera.total / total) * 100)} % del parque ` +
+      `(${primera.total}).` +
+      (sinMarca > 0 ? ` Otros ${sinMarca} no la traen capturada.` : ""),
+    bars: conMarca.map((f) => ({
+      key: f.marca ?? "—",
+      label: f.marca ?? "—",
+      value: f.total,
+    })),
+    total,
+    href: "/admin/equipos",
+  };
+  return [bloque];
+}
+
+/* ------------------------- 5 · Quién trajo la cartera ------------------------- */
+
+/**
+ * Los contratos vigentes, por el vendedor que los firmó.
+ *
+ * El «¿quién?» de la post-venta: quién sostiene la cartera, que no es lo mismo
+ * que quién vendió este trimestre —eso lo dice «quién está vendiendo», en el
+ * módulo de Ventas—. Un vendedor puede no cerrar nada nuevo y seguir siendo el
+ * responsable de la mitad de los contratos vivos.
+ *
+ * ── POR QUÉ HASTA HOY ESTABA MUDO ──────────────────────────────────────────
+ *
+ * `sales_rep_id` estaba en 0 de 54 contratos. El dato SÍ venía en el volcado
+ * del sistema anterior —la columna «Vendedor»— pero el importador lo escribía
+ * dentro de las NOTAS del contrato, como texto: «Vendedor: Rodrigo Montero
+ * Mondragón». Legible para una persona, invisible para una consulta.
+ *
+ * Es el mismo patrón que dejó 633 tickets sin técnico: la dimensión llegó como
+ * prosa y nunca se volvió columna. Se corrigió el 2026-08-25 en
+ * `scripts/import-legacy.ts`; este bloque empieza a hablar con la reimportación.
+ */
+export async function contractsByRep(conexion?: DbOrTx): Promise<Block[]> {
+  const db = conexion ?? (await tenantDb());
+
+  const filas = await db
+    .select({
+      id: contracts.salesRepId,
+      nombre: users.name,
+      total: sql<number>`count(*)::int`,
+      importe: sql<number>`coalesce(sum(${contracts.amountMxn}), 0)::float`,
+    })
+    .from(contracts)
+    .leftJoin(users, eq(contracts.salesRepId, users.id))
+    .where(isNotNull(contracts.salesRepId))
+    .groupBy(contracts.salesRepId, users.name)
+    .orderBy(desc(sql`count(*)`))
+    .limit(8);
+
+  if (filas.length === 0) return [];
+
+  const [{ huerfanos = 0 } = {}] = await db
+    .select({ huerfanos: sql<number>`count(*)::int` })
+    .from(contracts)
+    .where(sql`${contracts.salesRepId} is null`);
+
+  const total = filas.reduce((a, f) => a + f.total, 0);
+  const dinero = filas.reduce((a, f) => a + f.importe, 0);
+  const primero = filas[0];
+
+  const bloque: ProjectionBlock = {
+    kind: "projection",
+    id: "clients.by-rep",
+    title: "Quién sostiene la cartera",
+    note: [
+      `${total} contrato${total === 1 ? "" : "s"} con vendedor asignado` +
+        (dinero > 0 ? `, ${Math.round(dinero).toLocaleString("es-MX")} MXN` : "") +
+        `. ${primero.nombre ?? "—"} lleva ${primero.total}.`,
+      huerfanos > 0
+        ? `${huerfanos} contrato${huerfanos === 1 ? "" : "s"} sin vendedor no entra${huerfanos === 1 ? "" : "n"} en el reparto.`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    bars: filas.map((f) => ({
+      key: f.id ?? "—",
+      label: (f.nombre ?? "—").split(" ")[0],
+      value: f.total,
+    })),
+    total,
+    href: "/admin/contratos",
+  };
   return [bloque];
 }

@@ -3,9 +3,13 @@ import type { Block, ProjectionBlock, TrendBlock } from "@/lib/ml/blocks-types";
 import type { Insight } from "@/lib/ml/insights";
 import { getPipelines } from "@/lib/data/crm";
 import {
+  getAvgCycleDays,
   getFunnelByStage,
+  getLostReasons,
   getMonthlyClosed,
+  getOwnerRanking,
   getRottingDeals,
+  getSourceBreakdown,
 } from "@/lib/data/crm-insights";
 import { etiquetaMesISO } from "@/lib/ml/meses";
 import type { DbOrTx } from "@/lib/db";
@@ -208,5 +212,185 @@ export async function rottingDeals(conexion?: DbOrTx): Promise<Block[]> {
     href: "/admin/crm",
   };
 
+  return [{ kind: "finding", insight }];
+}
+
+/* =========================================================================
+ * Lo que estaba clavado en `/admin/crm/informes`
+ *
+ * Cuatro informes escritos hace tiempo, correctos, y encerrados en una página:
+ * ranking de vendedores, motivos de pérdida, origen de las oportunidades y
+ * duración del ciclo. Quien componía un tablero de Ventas no podía ponerlos, y
+ * quien los quería tenía que acordarse de que esa página existe.
+ *
+ * Es exactamente el caso que ya se resolvió con Rentabilidad —«cuatro gráficas
+ * clavadas en un archivo de 446 líneas»— y se resuelve igual: la consulta no se
+ * toca, se le pone nombre propio y se la deja colocar. La página sigue como
+ * está; estos bloques la leen, no la sustituyen.
+ * ========================================================================= */
+
+/* ------------------------- 4 · Quién vende ------------------------- */
+
+/**
+ * El ranking de vendedores por monto ganado.
+ *
+ * Primero de su clase en el catálogo junto con los de Servicio: hasta hoy
+ * ningún análisis agrupaba por persona. La consulta ya existía y llevaba meses
+ * contestando esta pregunta en una página que casi nadie abre.
+ *
+ * Ordena por MONTO y no por número de negocios, y la nota da los dos. Son
+ * rankings distintos —quien cierra muchos negocios pequeños no es quien más
+ * factura— y elegir uno solo para la gráfica obliga a decir cuál: el dinero,
+ * que es de lo que responde un vendedor.
+ */
+export async function salesByOwner(conexion?: DbOrTx): Promise<Block[]> {
+  const id = await pipelineId(conexion);
+  if (!id) return [];
+
+  const filas = await getOwnerRanking(id, conexion);
+  const conGanados = filas.filter((f) => Number(f.wonValue) > 0);
+  if (conGanados.length === 0) return [];
+
+  const total = conGanados.reduce((a, f) => a + Number(f.wonValue), 0);
+  const primero = conGanados[0];
+  const abiertos = filas.reduce((a, f) => a + f.openCount, 0);
+
+  const bloque: ProjectionBlock = {
+    kind: "projection",
+    title: "Quién está vendiendo",
+    id: "sales.by-owner",
+    note:
+      `${mxn(total)} MXN ganados entre ${conGanados.length} vendedor` +
+      `${conGanados.length === 1 ? "" : "es"}. ${primero.name ?? "Sin dueño"} lleva ` +
+      `${mxn(Number(primero.wonValue))} en ${primero.wonCount} negocio` +
+      `${primero.wonCount === 1 ? "" : "s"}.` +
+      (abiertos > 0 ? ` Quedan ${abiertos} negocios abiertos sin cerrar.` : ""),
+    bars: conGanados.map((f) => ({
+      key: f.ownerId ?? "—",
+      label: (f.name ?? "Sin dueño").split(" ")[0],
+      value: Math.round(Number(f.wonValue)),
+    })),
+    currency: "MXN",
+    total: Math.round(total),
+    href: "/admin/crm/informes",
+  };
+  return [bloque];
+}
+
+/* ------------------------- 5 · Por qué se pierde ------------------------- */
+
+/**
+ * Los motivos de pérdida, por frecuencia.
+ *
+ * Es el análisis más incómodo del módulo y por eso vale: un embudo enseña lo
+ * que entra, este enseña por dónde se va. La nota da el DINERO perdido además
+ * del conteo, porque diez negocios pequeños perdidos por precio y uno grande
+ * perdido por plazo piden decisiones opuestas.
+ *
+ * Solo cuenta los perdidos CON motivo capturado. Los que se cerraron sin
+ * escribir por qué no se reparten entre los motivos conocidos —sería inventar
+ * la razón— y la nota dice cuántos son: si son la mayoría, el bloque está
+ * describiendo una minoría y hay que saberlo.
+ */
+export async function salesLostReasons(conexion?: DbOrTx): Promise<Block[]> {
+  const id = await pipelineId(conexion);
+  if (!id) return [];
+
+  const filas = await getLostReasons(id, undefined, conexion);
+  if (filas.length === 0) return [];
+
+  const conMotivo = filas.reduce((a, f) => a + f.count, 0);
+  const dinero = filas.reduce((a, f) => a + Number(f.value), 0);
+  const primero = filas[0];
+
+  const bloque: ProjectionBlock = {
+    kind: "projection",
+    id: "sales.lost-reasons",
+    title: "Por qué se pierden los negocios",
+    note:
+      `${conMotivo} negocio${conMotivo === 1 ? "" : "s"} perdido` +
+      `${conMotivo === 1 ? "" : "s"} con motivo capturado, ${mxn(dinero)} MXN. ` +
+      `El más repetido es «${primero.reason}» (${primero.count}). ` +
+      "Los perdidos sin motivo escrito no se reparten aquí.",
+    bars: filas.map((f) => ({
+      key: f.reason ?? "—",
+      label: f.reason ?? "—",
+      value: f.count,
+      // Perder no es una serie más: se pinta como estado. Ver `Bar.alert`.
+      alert: true,
+    })),
+    href: "/admin/crm/informes",
+  };
+  return [bloque];
+}
+
+/* ------------------------- 6 · De dónde salen ------------------------- */
+
+/**
+ * De dónde vienen las oportunidades.
+ *
+ * Contesta la pregunta que decide el presupuesto de marketing: si el 70 % nace
+ * de referencias y nada de la web, el sitio no está trayendo negocio por más
+ * visitas que reporte.
+ */
+export async function salesBySource(conexion?: DbOrTx): Promise<Block[]> {
+  const id = await pipelineId(conexion);
+  if (!id) return [];
+
+  const filas = (await getSourceBreakdown(id, conexion)).filter((f) => f.source);
+  if (filas.length === 0) return [];
+
+  const total = filas.reduce((a, f) => a + f.count, 0);
+  const primero = filas[0];
+
+  const bloque: ProjectionBlock = {
+    kind: "projection",
+    id: "sales.by-source",
+    title: "De dónde vienen las oportunidades",
+    note:
+      `${total} negocio${total === 1 ? "" : "s"} con origen capturado. ` +
+      `${Math.round((primero.count / total) * 100)} % viene de «${primero.source}», ` +
+      `y suma ${mxn(Number(primero.value))} MXN.`,
+    bars: filas.map((f) => ({
+      key: f.source ?? "—",
+      label: f.source ?? "—",
+      value: f.count,
+    })),
+    href: "/admin/crm/informes",
+  };
+  return [bloque];
+}
+
+/* ------------------------- 7 · Cuánto tarda ------------------------- */
+
+/**
+ * Cuántos días tarda un negocio en cerrarse.
+ *
+ * Sale como HALLAZGO y no como gráfica porque es UN número, y un número solo no
+ * es una barra: dibujar una sola columna es enseñar un dato con la ceremonia de
+ * una serie. Como hallazgo se lee en una línea, que es lo que es.
+ *
+ * `tone: "neutral"` y no una alerta: no hay umbral que decida cuándo un ciclo
+ * es demasiado largo —depende del producto y del sector— y pintar de rojo un
+ * número sin criterio es inventar una alarma.
+ */
+export async function salesCycle(conexion?: DbOrTx): Promise<Block[]> {
+  const id = await pipelineId(conexion);
+  if (!id) return [];
+
+  const dias = await getAvgCycleDays(id, undefined, conexion);
+  if (dias <= 0) return [];
+
+  const insight: Insight = {
+    id: "sales.cycle",
+    headline: `Un negocio tarda ${dias} día${dias === 1 ? "" : "s"} en cerrarse, de media`,
+    because:
+      "Promedio entre la creación y el cierre de los negocios ya cerrados, " +
+      "ganados y perdidos. Es una media sobre hechos, no una estimación.",
+    tone: "neutral",
+    support: null,
+    value: { n: dias, unit: "días" },
+    href: "/admin/crm/informes",
+  };
   return [{ kind: "finding", insight }];
 }
