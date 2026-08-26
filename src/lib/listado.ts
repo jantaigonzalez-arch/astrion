@@ -155,3 +155,19 @@ export function queryLimpia(
   }
   return out;
 }
+
+/**
+ * Una opción de filtro: lo que va a la URL, cómo se lee y cuántas filas caen.
+ *
+ * Vive aquí y no junto a los componentes porque la usan los dos lados: el
+ * encabezado que la dibuja en el servidor y el desplegable que la enseña en el
+ * navegador. Un tipo compartido en el módulo de vocabulario, que no arrastra
+ * nada de React.
+ */
+export type OpcionFiltro = {
+  /** El valor que va a la URL. `undefined` es la opción de «todos». */
+  valor?: string;
+  label: string;
+  /** Cuántas filas caen aquí. Se enseña al lado. */
+  n?: number;
+};

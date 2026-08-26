@@ -14,11 +14,8 @@ import {
 import { parsePage } from "@/lib/pagination";
 import { INICIAL, parseFiltro, parseOrden, queryLimpia } from "@/lib/listado";
 import { Pagination } from "@/components/portal/pagination";
-import {
-  BarraFiltros,
-  FiltroFichas,
-  ThOrden,
-} from "@/components/portal/listado-controles";
+import { ResumenFiltros, ThOrden } from "@/components/portal/listado-controles";
+import { FiltroColumna } from "@/components/portal/filtro-columna";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "@/lib/nav";
@@ -117,52 +114,24 @@ export default async function EquiposPage({
       </div>
 
       <Card className="overflow-hidden">
-        {totalSinFiltros > 0 && (
-          <BarraFiltros hayFiltros={hayFiltros} basePath={BASE}>
-            <FiltroFichas
-              titulo="Marca"
-              clave="marca"
-              activo={filtros.marca}
-              basePath={BASE}
-              query={query}
-              opciones={[
-                { label: "Todas" },
-                ...conteos.marca.map((m) => ({ valor: m.k, label: m.k, n: m.n })),
-              ]}
-            />
-            <FiltroFichas
-              titulo="Contrato"
-              clave="contrato"
-              activo={filtros.contrato}
-              basePath={BASE}
-              query={query}
-              opciones={[
-                { label: "Todos" },
-                { valor: "con", label: "Amparados", n: conteos.contrato.get("con") ?? 0 },
-                // El que importa: equipo que se atiende sin contrato detrás.
-                { valor: "sin", label: "Sin contrato", n: conteos.contrato.get("sin") ?? 0 },
-              ]}
-            />
-            <FiltroFichas
-              titulo="Laboratorio"
-              clave="laboratorio"
-              activo={filtros.laboratorio}
-              basePath={BASE}
-              query={query}
-              opciones={[
-                { label: "Todos" },
-                // Los ocho con más equipo. Con veinticuatro laboratorios, la
-                // fila de fichas ocuparía media pantalla y dejaría de leerse;
-                // para los demás está el filtro desde su propia ficha.
-                ...conteos.laboratorio.slice(0, 8).map((l) => ({
-                  valor: l.id,
-                  label: l.nombre.split(" ").slice(0, 2).join(" "),
-                  n: l.n,
-                })),
-              ]}
-            />
-          </BarraFiltros>
-        )}
+        <ResumenFiltros
+          basePath={BASE}
+          query={query}
+          puestos={[
+            filtros.marca && { clave: "marca", titulo: "Marca", valor: filtros.marca },
+            filtros.contrato && {
+              clave: "contrato",
+              titulo: "Contrato",
+              valor: filtros.contrato === "con" ? "Amparados" : "Sin contrato",
+            },
+            filtros.laboratorio && {
+              clave: "laboratorio",
+              titulo: "Laboratorio",
+              valor:
+                conteos.laboratorio.find((l) => l.id === filtros.laboratorio)?.nombre ?? "—",
+            },
+          ].filter(Boolean as unknown as (v: unknown) => v is { clave: string; titulo: string; valor: string })}
+        />
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -171,10 +140,53 @@ export default async function EquiposPage({
                 <ThOrden campo="nombre" actual={orden} basePath={BASE} query={query}>
                   Equipo
                 </ThOrden>
-                <ThOrden campo="marca" actual={orden} basePath={BASE} query={query}>
+                <ThOrden
+                  campo="marca"
+                  actual={orden}
+                  basePath={BASE}
+                  query={query}
+                  filtro={
+                    <FiltroColumna
+                      titulo="Marca"
+                      clave="marca"
+                      activo={filtros.marca}
+                      basePath={BASE}
+                      query={query}
+                      opciones={[
+                        { label: "Todas" },
+                        ...conteos.marca.map((m) => ({ valor: m.k, label: m.k, n: m.n })),
+                      ]}
+                    />
+                  }
+                >
                   Marca
                 </ThOrden>
-                <ThOrden campo="laboratorio" actual={orden} basePath={BASE} query={query}>
+                <ThOrden
+                  campo="laboratorio"
+                  actual={orden}
+                  basePath={BASE}
+                  query={query}
+                  filtro={
+                    <FiltroColumna
+                      titulo="Laboratorio"
+                      clave="laboratorio"
+                      activo={filtros.laboratorio}
+                      basePath={BASE}
+                      query={query}
+                      // Los veinticuatro, no los ocho de antes: el desplegable
+                      // trae buscador y se desplaza, así que ya no hay motivo
+                      // para recortar la lista.
+                      opciones={[
+                        { label: "Todos" },
+                        ...conteos.laboratorio.map((l) => ({
+                          valor: l.id,
+                          label: l.nombre,
+                          n: l.n,
+                        })),
+                      ]}
+                    />
+                  }
+                >
                   Laboratorio
                 </ThOrden>
                 <ThOrden
@@ -195,7 +207,35 @@ export default async function EquiposPage({
                 >
                   Servicios
                 </ThOrden>
-                <th className="px-4 py-3 font-medium">Contrato</th>
+                <ThOrden
+                  basePath={BASE}
+                  query={query}
+                  filtro={
+                    <FiltroColumna
+                      titulo="Contrato"
+                      clave="contrato"
+                      activo={filtros.contrato}
+                      basePath={BASE}
+                      query={query}
+                      opciones={[
+                        { label: "Todos" },
+                        {
+                          valor: "con",
+                          label: "Amparados",
+                          n: conteos.contrato.get("con") ?? 0,
+                        },
+                        // El que importa: equipo que se atiende sin contrato.
+                        {
+                          valor: "sin",
+                          label: "Sin contrato",
+                          n: conteos.contrato.get("sin") ?? 0,
+                        },
+                      ]}
+                    />
+                  }
+                >
+                  Contrato
+                </ThOrden>
                 <ThOrden
                   campo="alta"
                   actual={orden}

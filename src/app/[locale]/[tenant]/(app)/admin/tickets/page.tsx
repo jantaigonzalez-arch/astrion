@@ -21,11 +21,8 @@ import {
   type Orden,
 } from "@/lib/listado";
 import { Pagination } from "@/components/portal/pagination";
-import {
-  BarraFiltros,
-  FiltroFichas,
-  ThOrden,
-} from "@/components/portal/listado-controles";
+import { ResumenFiltros, ThOrden } from "@/components/portal/listado-controles";
+import { FiltroColumna } from "@/components/portal/filtro-columna";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,6 +53,8 @@ import {
 
 type Row = Awaited<ReturnType<typeof getQueuePage>>[number];
 
+const BASE = "/admin/tickets";
+
 /**
  * Un encabezado de la cola: ordena SOLO cuando se le da el orden.
  *
@@ -76,21 +75,24 @@ function ThCola({
   orden,
   query,
   tipo = "texto",
+  filtro,
 }: {
-  campo: CampoOrdenCola;
+  /** Sin campo la columna no ordena; puede seguir alojando su filtro. */
+  campo?: CampoOrdenCola;
   children: React.ReactNode;
   orden?: Orden<CampoOrdenCola>;
   query?: Record<string, string | undefined>;
   tipo?: "texto" | "fecha" | "numero";
+  filtro?: React.ReactNode;
 }) {
-  if (!orden) return <th className="px-4 py-3 font-medium">{children}</th>;
   return (
     <ThOrden
-      campo={campo}
+      campo={orden ? campo : undefined}
       actual={orden}
       basePath="/admin/tickets"
       query={query}
       inicial={INICIAL[tipo]}
+      filtro={filtro}
     >
       {children}
     </ThOrden>
@@ -102,12 +104,24 @@ function TicketsTable({
   locale,
   orden,
   query,
+  filtros,
+  hayFiltros,
 }: {
   rows: Row[];
   locale: string;
-  /** Presente solo en la lista paginada. Ver la nota de `Th`. */
+  /** Presente solo en la lista paginada. Ver la nota de `ThCola`. */
   orden?: Orden<CampoOrdenCola>;
   query?: Record<string, string | undefined>;
+  /**
+   * Los desplegables de filtro, ya construidos, por columna.
+   *
+   * Llegan hechos y no como datos porque la bandeja de pendientes usa esta
+   * misma tabla y NO se filtra: son veinte filas ya recortadas, y ofrecer
+   * filtrarlas prometería acotar una lista que ya está acotada.
+   */
+  filtros?: Partial<Record<"categoria" | "prioridad" | "estado" | "tecnico", React.ReactNode>>;
+  /** Para distinguir «no hay ninguno» de «no hay con estos filtros». */
+  hayFiltros?: boolean;
 }) {
   /*
     `now` se calcula UNA vez para toda la tabla.
@@ -128,11 +142,25 @@ function TicketsTable({
             <ThCola campo="asunto" orden={orden} query={query}>Asunto</ThCola>
             <th className="px-4 py-3 font-medium">Cliente</th>
             <th className="px-4 py-3 font-medium">Tipo</th>
-            <th className="px-4 py-3 font-medium">Categoría</th>
-            <ThCola campo="prioridad" tipo="numero" orden={orden} query={query}>Prioridad</ThCola>
-            <ThCola campo="estado" orden={orden} query={query}>Estado</ThCola>
+            <ThCola orden={orden} query={query} filtro={filtros?.categoria}>
+              Categoría
+            </ThCola>
+            <ThCola
+              campo="prioridad"
+              tipo="numero"
+              orden={orden}
+              query={query}
+              filtro={filtros?.prioridad}
+            >
+              Prioridad
+            </ThCola>
+            <ThCola campo="estado" orden={orden} query={query} filtro={filtros?.estado}>
+              Estado
+            </ThCola>
             <ThCola campo="sla" tipo="fecha" orden={orden} query={query}>SLA</ThCola>
-            <th className="px-4 py-3 font-medium">Asignado</th>
+            <ThCola orden={orden} query={query} filtro={filtros?.tecnico}>
+              Asignado
+            </ThCola>
             <ThCola campo="creado" tipo="fecha" orden={orden} query={query}>Creado</ThCola>
           </tr>
         </thead>
@@ -195,7 +223,9 @@ function TicketsTable({
           {rows.length === 0 && (
             <tr>
               <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground">
-                No hay tickets con estos filtros.
+                {hayFiltros
+                  ? "Ningún ticket coincide con estos filtros."
+                  : "No hay tickets."}
               </td>
             </tr>
           )}
@@ -343,79 +373,117 @@ export default async function AdminTicketsPage({
 
       <Card className="overflow-hidden">
         {/*
-          Los filtros van DENTRO de la tarjeta y pegados a la tabla, no sueltos
-          arriba: pertenecen a esta lista y no a la pantalla —que además tiene
-          otra tabla, la de pendientes, a la que no aplican—.
+          Lo que está filtrado, en una línea y solo cuando lo hay. Los filtros en
+          sí viven en los encabezados; esto contesta «¿por qué veo 12 filas?»
+          sin obligar a revisar columna por columna.
         */}
-        <BarraFiltros hayFiltros={hayFiltros} basePath="/admin/tickets">
-          <FiltroFichas
-            titulo="Estado"
-            clave="estado"
-            activo={filtros.estado}
-            basePath="/admin/tickets"
-            query={query}
-            opciones={[
-              { label: "Todos" },
-              ...STAFF_SETTABLE_STATUSES.map((v) => ({
-                valor: v,
-                label: label(STATUS_LABELS, v, locale),
-                n: conteos.estado.get(v) ?? 0,
-              })),
-            ]}
-          />
-          <FiltroFichas
-            titulo="Prioridad"
-            clave="prioridad"
-            activo={filtros.prioridad}
-            basePath="/admin/tickets"
-            query={query}
-            opciones={[
-              { label: "Todas" },
-              ...TICKET_PRIORITIES.map((v) => ({
-                valor: v,
-                label: label(PRIORITY_LABELS, v, locale),
-                n: conteos.prioridad.get(v) ?? 0,
-              })),
-            ]}
-          />
-          <FiltroFichas
-            titulo="Categoría"
-            clave="categoria"
-            activo={filtros.categoria}
-            basePath="/admin/tickets"
-            query={query}
-            opciones={[
-              { label: "Todas" },
-              // Las vacías las esconde `FiltroFichas`, con la misma regla para
-              // los once listados.
-              ...TICKET_CATEGORIES.map((v) => ({
-                valor: v,
-                label: label(CATEGORY_LABELS, v, locale),
-                n: conteos.categoria.get(v) ?? 0,
-              })),
-            ]}
-          />
-          <FiltroFichas
-            titulo="Técnico"
-            clave="tecnico"
-            activo={filtros.tecnico}
-            basePath="/admin/tickets"
-            query={query}
-            opciones={[
-              { label: "Todos" },
-              ...agentes.map((a) => ({
-                valor: a.id,
-                // Solo el nombre de pila: seis fichas con el nombre completo no
-                // caben en una línea, y en un equipo de seis nadie duda de quién
-                // se habla.
-                label: (a.name ?? a.email ?? "—").split(" ")[0],
-                n: conteos.tecnico.get(a.id) ?? 0,
-              })),
-              { valor: "sin", label: "Sin asignar", n: conteos.tecnico.get("sin") ?? 0 },
-            ]}
-          />
-        </BarraFiltros>
-        <TicketsTable rows={rows} locale={locale} orden={orden} query={query} />
+        <ResumenFiltros
+          basePath={BASE}
+          query={query}
+          puestos={[
+            filtros.estado && {
+              clave: "estado",
+              titulo: "Estado",
+              valor: label(STATUS_LABELS, filtros.estado, locale),
+            },
+            filtros.prioridad && {
+              clave: "prioridad",
+              titulo: "Prioridad",
+              valor: label(PRIORITY_LABELS, filtros.prioridad, locale),
+            },
+            filtros.categoria && {
+              clave: "categoria",
+              titulo: "Categoría",
+              valor: label(CATEGORY_LABELS, filtros.categoria, locale),
+            },
+            filtros.tecnico && {
+              clave: "tecnico",
+              titulo: "Técnico",
+              valor:
+                filtros.tecnico === "sin"
+                  ? "Sin asignar"
+                  : (agentes.find((a) => a.id === filtros.tecnico)?.name ?? "—"),
+            },
+          ].filter(Boolean as unknown as (v: unknown) => v is { clave: string; titulo: string; valor: string })}
+        />
+        <TicketsTable
+          rows={rows}
+          locale={locale}
+          orden={orden}
+          query={query}
+          hayFiltros={hayFiltros}
+          filtros={{
+            estado: (
+              <FiltroColumna
+                titulo="Estado"
+                clave="estado"
+                activo={filtros.estado}
+                basePath={BASE}
+                query={query}
+                opciones={[
+                  { label: "Todos" },
+                  ...STAFF_SETTABLE_STATUSES.map((v) => ({
+                    valor: v,
+                    label: label(STATUS_LABELS, v, locale),
+                    n: conteos.estado.get(v) ?? 0,
+                  })),
+                ]}
+              />
+            ),
+            prioridad: (
+              <FiltroColumna
+                titulo="Prioridad"
+                clave="prioridad"
+                activo={filtros.prioridad}
+                basePath={BASE}
+                query={query}
+                opciones={[
+                  { label: "Todas" },
+                  ...TICKET_PRIORITIES.map((v) => ({
+                    valor: v,
+                    label: label(PRIORITY_LABELS, v, locale),
+                    n: conteos.prioridad.get(v) ?? 0,
+                  })),
+                ]}
+              />
+            ),
+            categoria: (
+              <FiltroColumna
+                titulo="Categoría"
+                clave="categoria"
+                activo={filtros.categoria}
+                basePath={BASE}
+                query={query}
+                opciones={[
+                  { label: "Todas" },
+                  ...TICKET_CATEGORIES.map((v) => ({
+                    valor: v,
+                    label: label(CATEGORY_LABELS, v, locale),
+                    n: conteos.categoria.get(v) ?? 0,
+                  })),
+                ]}
+              />
+            ),
+            tecnico: (
+              <FiltroColumna
+                titulo="Técnico"
+                clave="tecnico"
+                activo={filtros.tecnico}
+                basePath={BASE}
+                query={query}
+                opciones={[
+                  { label: "Todos" },
+                  ...agentes.map((a) => ({
+                    valor: a.id,
+                    label: a.name ?? a.email ?? "—",
+                    n: conteos.tecnico.get(a.id) ?? 0,
+                  })),
+                  { valor: "sin", label: "Sin asignar", n: conteos.tecnico.get("sin") ?? 0 },
+                ]}
+              />
+            ),
+          }}
+        />
         <Pagination
           {...pageParams}
           total={queueTotal}

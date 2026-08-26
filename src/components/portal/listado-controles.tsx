@@ -1,7 +1,13 @@
-import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, X } from "lucide-react";
 import { Link } from "@/lib/nav";
 import { cn } from "@/lib/utils";
-import { filtroHref, ordenHref, type Direccion, type Orden } from "@/lib/listado";
+import {
+  filtroHref,
+  ordenHref,
+  type Direccion,
+  type OpcionFiltro,
+  type Orden,
+} from "@/lib/listado";
 
 /**
  * Los controles de un listado: encabezados que ordenan y fichas que filtran.
@@ -39,45 +45,128 @@ export function ThOrden<K extends string>({
   query,
   inicial = "asc",
   className,
+  filtro,
 }: {
-  campo: K;
+  /** Sin campo, la columna no ordena: solo aloja su filtro. */
+  campo?: K;
   children: React.ReactNode;
-  actual: Orden<K>;
+  actual?: Orden<K>;
   basePath: string;
   query?: Record<string, string | undefined>;
   inicial?: Direccion;
   className?: string;
+  /**
+   * El desplegable de filtro de esta columna, si lo tiene.
+   *
+   * Entra como nodo y no como datos porque quien lo dibuja es un componente de
+   * CLIENTE —abrir y cerrar necesita estado— y este encabezado es de servidor.
+   * Pasarlo así deja que cada pantalla decida qué columnas filtran sin que este
+   * archivo tenga que conocer sus dimensiones.
+   */
+  filtro?: React.ReactNode;
 }) {
-  const activo = actual.campo === campo;
-  const Icono = !activo ? ChevronsUpDown : actual.dir === "asc" ? ArrowUp : ArrowDown;
+  const activo = Boolean(campo && actual && actual.campo === campo);
+  const Icono = !activo
+    ? ChevronsUpDown
+    : actual!.dir === "asc"
+      ? ArrowUp
+      : ArrowDown;
 
   return (
     <th
       className={cn("px-4 py-3 font-medium", className)}
       // Lo que un lector de pantalla necesita para anunciar el estado de la
       // columna. Sin esto, la flecha es información que solo existe si ves.
-      aria-sort={activo ? (actual.dir === "asc" ? "ascending" : "descending") : "none"}
+      aria-sort={
+        !campo || !actual
+          ? undefined
+          : activo
+            ? actual.dir === "asc"
+              ? "ascending"
+              : "descending"
+            : "none"
+      }
     >
-      <Link
-        href={ordenHref(basePath, campo, actual, query, inicial)}
-        className={cn(
-          "group inline-flex items-center gap-1 whitespace-nowrap rounded-sm transition-colors hover:text-foreground",
-          activo && "text-foreground",
+      <span className="inline-flex items-center gap-1">
+        {campo && actual ? (
+          <Link
+            href={ordenHref(basePath, campo, actual, query, inicial)}
+            className={cn(
+              "group inline-flex items-center gap-1 whitespace-nowrap rounded-sm transition-colors hover:text-foreground",
+              activo && "text-foreground",
+            )}
+            // El encabezado ya dice el nombre de la columna; el título explica
+            // qué hace pulsarlo, que es lo que no se ve.
+            title={activo ? "Cambiar el sentido del orden" : "Ordenar por esta columna"}
+          >
+            {children}
+            <Icono
+              className={cn(
+                "size-3 shrink-0 transition-opacity",
+                activo ? "opacity-100" : "opacity-30 group-hover:opacity-70",
+              )}
+              aria-hidden="true"
+            />
+          </Link>
+        ) : (
+          <span className="whitespace-nowrap">{children}</span>
         )}
-        // El encabezado ya dice el nombre de la columna; el título explica qué
-        // hace pulsarlo, que es lo que no se ve.
-        title={activo ? "Cambiar el sentido del orden" : "Ordenar por esta columna"}
-      >
-        {children}
-        <Icono
-          className={cn(
-            "size-3 shrink-0 transition-opacity",
-            activo ? "opacity-100" : "opacity-30 group-hover:opacity-70",
-          )}
-          aria-hidden="true"
-        />
-      </Link>
+        {filtro}
+      </span>
     </th>
+  );
+}
+
+/**
+ * Lo que está filtrado ahora mismo, en una línea.
+ *
+ * Con los filtros metidos en los encabezados se gana sitio y se pierde una
+ * cosa: de un vistazo ya no se ve por qué la tabla enseña 12 filas en vez de
+ * 633 — hay que ir columna por columna buscando el embudo encendido.
+ *
+ * Esta línea lo dice, y solo aparece cuando hay algo que decir. Un control
+ * permanentemente vacío enseña a ignorar el sitio donde vive.
+ */
+export function ResumenFiltros({
+  puestos,
+  basePath,
+  query,
+}: {
+  /** Los filtros activos: qué dimensión, qué valor y con qué clave quitarlo. */
+  puestos: Array<{ clave: string; titulo: string; valor: string }>;
+  basePath: string;
+  query?: Record<string, string | undefined>;
+}) {
+  if (puestos.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b border-border bg-secondary/30 px-4 py-2 text-xs">
+      <span className="uppercase tracking-wide text-muted-foreground">Filtrado por</span>
+      {puestos.map((p) => (
+        <span
+          key={p.clave}
+          className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 py-0.5 pl-2.5 pr-1"
+        >
+          <span className="text-muted-foreground">{p.titulo}:</span>
+          <span className="font-medium">{p.valor}</span>
+          {/* La equis quita ESE filtro y conserva los demás: quien puso tres y
+              quiere soltar uno no debería tener que rehacer los otros dos. */}
+          <Link
+            href={filtroHref(basePath, p.clave, undefined, query)}
+            aria-label={`Quitar el filtro de ${p.titulo}`}
+            className="inline-flex size-4 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-primary/20 hover:text-foreground"
+          >
+            <X className="size-3" aria-hidden="true" />
+          </Link>
+        </span>
+      ))}
+      <Link
+        href={basePath}
+        className="ml-auto text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+      >
+        Quitar todos
+      </Link>
+    </div>
   );
 }
 
@@ -142,13 +231,7 @@ export function OrdenFichas<K extends string>({
 
 /* ------------------------- Fichas que filtran ------------------------- */
 
-export type OpcionFiltro = {
-  /** El valor que va a la URL. `undefined` es la ficha de «todos». */
-  valor?: string;
-  label: string;
-  /** Cuántas filas caen aquí. Se enseña al lado. */
-  n?: number;
-};
+export type { OpcionFiltro };
 
 /**
  * Una fila de fichas para filtrar por un campo.
