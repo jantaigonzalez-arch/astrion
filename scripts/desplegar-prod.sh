@@ -85,9 +85,31 @@ else
 fi
 
 if [ "$sin_preguntar" = 0 ]; then
+  # Sin terminal delante no hay a quién preguntar, y ahí un `read` recibe fin de
+  # archivo al instante: se leería como un «no» y el script se iría diciendo
+  # «Cancelado» sin que nadie haya cancelado nada. Pasó de verdad el 2026-08-26
+  # —el despliegue se lanzó desde un contexto no interactivo y no llegó nada al
+  # servidor— y el síntoma no se parecía a la causa.
+  #
+  # Tampoco se asume el sí: desplegar a producción sin que nadie lo confirme es
+  # exactamente lo que la pregunta existe para evitar. Se dice qué pasó y cómo
+  # seguir.
+  if [ ! -t 0 ]; then
+    echo
+    echo "No hay terminal interactiva, así que no puedo preguntarte si seguimos." >&2
+    echo "Corré esto en una Terminal de verdad, o repetilo con --si:" >&2
+    echo "    npm run deploy:prod -- --si" >&2
+    exit 2
+  fi
   printf "\n¿Seguimos? [s/N] "
   read -r r
-  case "$r" in s|S|si|SI|sí|Sí) ;; *) echo "Cancelado."; exit 1 ;; esac
+  # Se aceptan «y» e «yes» además de «s» y «sí»: el prompt dice [s/N] pero la
+  # costumbre teclea «y», y rechazarlo obliga a repetir el despliegue entero
+  # para descubrir que la respuesta estaba bien y el idioma mal.
+  case "$r" in
+    s|S|si|SI|Si|sí|Sí|SÍ|y|Y|yes|YES|Yes) ;;
+    *) echo "Cancelado."; exit 1 ;;
+  esac
 fi
 
 # ── Desplegar ────────────────────────────────────────────────────────────────
