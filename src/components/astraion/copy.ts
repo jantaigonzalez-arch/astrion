@@ -21,15 +21,101 @@ const es = {
 
   hero: {
     eyebrow: "ERP + Machine Learning",
-    // El titular dice qué es y para quién. Es lo único que abre la página: la
-    // tesis («una pyme no decide peor…») y el duelo de las dos respuestas
-    // vivían aquí y se retiraron — el «para una PYME» del titular ya carga con
-    // esa idea sin gastar media pantalla.
-    h1a: "El primer ERP con",
-    h1em: "machine learning adentro",
-    h1b: "para una PYME",
+    /*
+      El titular dice qué es y para quién. Es lo único que abre la página: la
+      tesis («una pyme no decide peor…») y el duelo de las dos respuestas
+      vivían aquí y se retiraron.
+
+      Decía «El primer ERP con machine learning adentro para una PYME», y el
+      problema no era la frase sino la primera palabra: ERP. Quien no sabe qué
+      significa —que es justo el dueño de la empresa pequeña al que va dirigida
+      la página— se quedaba sin entender el titular, y un titular que hay que
+      buscar en Google no es un titular.
+
+      Ahora el titular no usa una sola palabra técnica y el término aparece
+      DEFINIDO en la línea de abajo, en el sitio donde ya se entendió la idea.
+      El orden importa: primero qué es, después cómo se llama. Al revés no
+      funciona, porque nadie retiene la definición de algo que todavía no sabe
+      para qué sirve.
+
+      El término no se borra: es lo que busca quien sí lo conoce, sigue en el
+      antetítulo y en el <title> de la página.
+    */
+    h1a: "Todo tu negocio en un sistema",
+    h1em: "que aprende de él",
+    h1b: "y te dice qué sigue",
     claim:
-      "No un módulo de IA colgado encima: tres capas en un solo sistema —datos, historia e inteligencia—.",
+      "Servicio, ventas, clientes, inventario y compras en el mismo lugar —a eso se le llama ERP—. El nuestro es el primero que trae machine learning adentro, no un módulo de IA colgado encima.",
+  },
+
+  /*
+    El producto, enseñado.
+
+    La página argumentaba muy bien y no enseñaba una sola pantalla. Va justo
+    después del titular a propósito: la afirmación de arriba —«todo tu negocio
+    en un sistema»— se comprueba antes de pedirle a nadie que lea sobre capas.
+
+    Las cifras y por qué unas son reales y otras no: ver `panel-preview.tsx`.
+  */
+  product: {
+    eyebrow: "El producto",
+    title: "Esto es lo que ves al entrar",
+    lede: "Una sola pantalla con la empresa entera: lo que hay que atender, lo que está vendido, lo que se debe. Y al lado, los tableros que la leen por vos.",
+    shot: {
+      url: "evoelution.astraion.com/panel",
+      brand: "Evoelution",
+      nav: [
+        "Panel",
+        "Servicio",
+        "Ventas",
+        "Clientes",
+        "Inventario",
+        "Compras",
+        "Análisis",
+        "Inteligencia",
+      ],
+      powered: "Powered by Astraion",
+      hi: "Hola, Rubén",
+      sub: "La empresa entera, al entrar.",
+      areas: {
+        servicio: "Servicio",
+        ventas: "Ventas",
+        clientes: "Clientes",
+        inventario: "Inventario",
+        compras: "Compras",
+      },
+      figures: {
+        tickets: "Tickets",
+        abiertos: "Abiertos",
+        sinAsignar: "Sin asignar",
+        enJuego: "En juego",
+        ganados: "Ganados",
+        clientes: "Clientes",
+        contratos: "Contratos",
+        porVencer: "Por vencer",
+        refacciones: "Refacciones",
+        sinExistencia: "Sin existencia",
+        ordenes: "Órdenes",
+        porPagar: "Por pagar",
+      },
+      listTitle: "Tickets recientes",
+      listMore: "Ver todos",
+      subjects: [
+        "La pantalla del equipo parpadea al encender",
+        "Sin reproducibilidad en el detector de fluorescencia",
+        "Mantenimiento preventivo y cambio de fuentes",
+        "Mantenimiento preventivo anual",
+      ],
+      states: { open: "Abierto", wait: "En espera", done: "Cerrado" },
+      caption:
+        "El panel de una empresa al entrar. Las cifras de Servicio y Clientes son las de Evoelution, el primer cliente; las de Ventas, Inventario y Compras son de ejemplo —esos módulos ya existen y esa empresa todavía no los usa—.",
+    },
+    board: {
+      tag: "Tablero",
+      title: "Carga por técnico",
+      note: "630 servicios repartidos entre seis técnicos; se enseñan los cuatro con más carga. Sale de los mismos tickets del panel.",
+      foot: "Uno de los 38 análisis del catálogo. Se coloca eligiéndolo de una lista, y ninguno pide capturar un dato nuevo: todos leen lo que la operación ya dejó escrito.",
+    },
   },
 
   forecast: {
@@ -73,7 +159,7 @@ const es = {
 
   modules: {
     eyebrow: "La capa 1",
-    title: "El ERP completo",
+    title: "El sistema completo",
     lede: "Ya construido y corriendo.",
     groups: [
       {
@@ -115,7 +201,7 @@ const es = {
       },
     ],
     proof:
-      "Corriendo hoy en Evoelution, el primer cliente: 602 tickets · 257 equipos · 161 clientes · 2 766 horas.",
+      "Corriendo hoy en Evoelution, el primer cliente: 633 tickets · 97 equipos · 161 clientes · 3 032 horas.",
   },
 
   gap: {
@@ -266,11 +352,73 @@ const en = {
 
   hero: {
     eyebrow: "ERP + Machine Learning",
-    h1a: "The first ERP with",
-    h1em: "machine learning inside",
-    h1b: "for a small business",
+    // Ver la nota del titular en español: primero qué es, después cómo se llama.
+    h1a: "Your whole business in one system",
+    h1em: "that learns from it",
+    h1b: "and tells you what comes next",
     claim:
-      "Not an AI module bolted on top: three layers in a single system — data, history and intelligence.",
+      "Service, sales, clients, inventory and purchasing in the same place — that is what an ERP is. Ours is the first one with machine learning inside, not an AI module bolted on top.",
+  },
+
+  product: {
+    eyebrow: "The product",
+    title: "This is what you see when you sign in",
+    lede: "One screen with the whole company: what needs attention, what has been sold, what is owed. And next to it, the boards that read it for you.",
+    shot: {
+      url: "evoelution.astraion.com/panel",
+      brand: "Evoelution",
+      nav: [
+        "Panel",
+        "Service",
+        "Sales",
+        "Clients",
+        "Inventory",
+        "Purchasing",
+        "Analysis",
+        "Intelligence",
+      ],
+      powered: "Powered by Astraion",
+      hi: "Hi, Rubén",
+      sub: "The whole company, on arrival.",
+      areas: {
+        servicio: "Service",
+        ventas: "Sales",
+        clientes: "Clients",
+        inventario: "Inventory",
+        compras: "Purchasing",
+      },
+      figures: {
+        tickets: "Tickets",
+        abiertos: "Open",
+        sinAsignar: "Unassigned",
+        enJuego: "In play",
+        ganados: "Won",
+        clientes: "Clients",
+        contratos: "Contracts",
+        porVencer: "Expiring",
+        refacciones: "Parts",
+        sinExistencia: "Out of stock",
+        ordenes: "Orders",
+        porPagar: "Payable",
+      },
+      listTitle: "Recent tickets",
+      listMore: "See all",
+      subjects: [
+        "The instrument display flickers on start-up",
+        "No reproducibility on the fluorescence detector",
+        "Preventive maintenance and power supply swap",
+        "Annual preventive maintenance",
+      ],
+      states: { open: "Open", wait: "Waiting", done: "Closed" },
+      caption:
+        "A company's panel on arrival. The Service and Clients figures are Evoelution's, the first client; Sales, Inventory and Purchasing are an example — those modules already exist and that company is not using them yet.",
+    },
+    board: {
+      tag: "Board",
+      title: "Load per technician",
+      note: "630 service calls across six technicians; the four with the heaviest load are shown. It comes from the same tickets in the panel.",
+      foot: "One of the 38 analyses in the catalogue. You place it by picking it from a list, and none of them asks for a new field: they all read what the operation already wrote down.",
+    },
   },
 
   forecast: {
@@ -314,7 +462,7 @@ const en = {
 
   modules: {
     eyebrow: "Layer 1",
-    title: "The full ERP",
+    title: "The complete system",
     lede: "Already built and running.",
     groups: [
       {
@@ -356,7 +504,7 @@ const en = {
       },
     ],
     proof:
-      "Running today at Evoelution, the first client: 602 tickets · 257 machines · 161 clients · 2,766 hours.",
+      "Running today at Evoelution, the first client: 633 tickets · 97 machines · 161 clients · 3,032 hours.",
   },
 
   gap: {

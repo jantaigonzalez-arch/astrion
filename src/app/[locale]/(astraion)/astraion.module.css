@@ -1142,3 +1142,426 @@
     animation: none;
   }
 }
+
+/* ============================================================
+   El producto, visto
+   ============================================================
+   La página explicaba qué es Astraion —tres capas, un pronóstico, una lista
+   de módulos— y no lo ENSEÑABA nunca. Quien llega sin saber qué es un ERP se
+   iba sin haber visto una sola pantalla del sistema que se le ofrece.
+
+   Va renderizado en HTML y no como captura de pantalla, y no es por comodidad:
+
+     · La copia local de la base es producción. Una captura real llevaría
+       razones sociales, RFC e importes de contrato de clientes reales a una
+       página pública. Aquí se controla exactamente qué se enseña.
+     · Un PNG queda fijo en un ancho y en un idioma. Esto se reajusta, se
+       traduce con el resto de la página y se lee nítido en cualquier pantalla.
+     · Una captura envejece el día que cambia el producto y nadie se entera.
+
+   Y va en el TEMA OSCURO del portal, que existe de verdad: es la misma
+   pantalla que ve el usuario de noche. Una lámina clara aquí sería un
+   rectángulo blanco de lado a lado —justo lo que la nota de arriba dice que
+   convierte un acento en el tema— y rompería el cielo.
+
+   La regla de color se respeta: el azul es el campo, el cálido marca lo que
+   pide una decisión (lo que está sin asignar, lo que vence) y el frío marca
+   lo medido. Nada más se colorea.
+   ============================================================ */
+
+.product {
+  display: grid;
+  gap: 22px;
+}
+@media (min-width: 1100px) {
+  .product {
+    /* La ventana manda y el tablero la acompaña: es una pieza del panel, no
+       su igual. Por eso no van al 50/50. */
+    grid-template-columns: minmax(0, 1.62fr) minmax(300px, 1fr);
+    align-items: start;
+  }
+}
+
+/* ---------------- La ventana ---------------- */
+.shot {
+  margin: 0;
+}
+
+/* El marco es un hijo de la figura y no la figura misma.
+   Estaban fusionados, y como el marco lleva `overflow: hidden` y fondo propio,
+   el pie de foto caía DENTRO de la ventana: el texto que explica la lámina se
+   leía como parte del producto, con el borde cruzándolo. */
+.shotFrame {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+  /* Una superficie encendida en la noche: el borde superior recoge luz y la
+     sombra la separa del fondo sin abrir un escalón de color. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 24px 60px -28px rgba(0, 0, 0, 0.85);
+}
+
+.shotBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--void);
+}
+.shotDots {
+  display: flex;
+  gap: 6px;
+}
+.shotDots i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.shotUrl {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  padding: 3px 12px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shotBody {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 640px) {
+  .shotBody {
+    grid-template-columns: 148px minmax(0, 1fr);
+  }
+}
+
+/* ---------------- Barra lateral ---------------- */
+.shotNav {
+  display: none;
+  border-right: 1px solid var(--line-soft);
+  padding: 14px 10px;
+  background: var(--void);
+}
+@media (min-width: 640px) {
+  /* Bajo ese ancho la barra lateral se come media ventana y el panel deja de
+     leerse. En el producto real pasa lo mismo: se pliega. */
+  .shotNav {
+    display: block;
+  }
+}
+.shotBrand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 12px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.shotBrandMark {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--void);
+  background: var(--cool-lit);
+}
+.shotBrandName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.shotNavList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+}
+.shotNavItem {
+  font-size: 11.5px;
+  color: var(--muted);
+  padding: 5px 8px;
+  border-radius: 5px;
+}
+.shotNavOn {
+  color: var(--text);
+  background: var(--panel-2);
+}
+.shotPowered {
+  margin: 14px 0 0;
+  padding: 0 8px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--line);
+}
+
+/* ---------------- Cuerpo del panel ---------------- */
+.shotMain {
+  padding: 16px 16px 18px;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.shotHi {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.shotSub {
+  margin: -10px 0 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.shotAreas {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+}
+@media (min-width: 640px) {
+  /*
+    Son CINCO áreas en tres columnas, así que la segunda fila quedaba con un
+    hueco a la derecha — y un hueco en una maqueta se lee como algo que falta,
+    no como el final de la lista.
+
+    Sobre seis columnas, las tres primeras ocupan dos cada una y las dos
+    últimas tres cada una: las dos filas se llenan enteras y el reparto parece
+    decidido en vez de sobrante.
+  */
+  .shotAreas {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .shotArea {
+    grid-column: span 2;
+  }
+  .shotAreaWide {
+    grid-column: span 3;
+  }
+}
+.shotArea {
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel-2);
+  padding: 9px 10px;
+  min-width: 0;
+}
+.shotAreaName {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin: 0 0 7px;
+}
+.shotFigs {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+}
+.shotFig {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.shotFigLabel {
+  font-size: 10.5px;
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shotFigVal {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+/* Lo que pide una decisión. Único cálido de la ventana: en cuanto se
+   coloreara una cifra más, dejaría de significar. */
+.shotAlert {
+  color: var(--accent-lit);
+}
+
+/* ---------------- Lista de tickets ---------------- */
+.shotList {
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.shotListHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.shotListMore {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--cool);
+}
+.shotRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 11px;
+  border-top: 1px solid var(--line-soft);
+}
+.shotRow:first-of-type {
+  border-top: 0;
+}
+.shotRef {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.shotSubject {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shotBadge {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.badgeOpen {
+  color: var(--cool-lit);
+  border-color: color-mix(in srgb, var(--cool) 45%, transparent);
+}
+.badgeDone {
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
+}
+.badgeWait {
+  color: var(--accent-lit);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* ---------------- El tablero que acompaña ---------------- */
+.board {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 16px 16px 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 20px 46px -26px rgba(0, 0, 0, 0.8);
+}
+.boardHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.boardTitle {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.02rem;
+  color: var(--text);
+}
+.boardTag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  flex-shrink: 0;
+}
+.boardNote {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.boardBars {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+.boardBar {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 9px;
+}
+.boardBarLabel {
+  font-size: 11px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.boardBarTrack {
+  height: 8px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.boardBarFill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  /* Frío: es lo medido, no lo estimado. El pronóstico —lo cálido— ya tiene su
+     figura propia en la sección de las capas. */
+  background: linear-gradient(90deg, var(--cool), var(--cool-lit));
+}
+.boardBarVal {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.boardFoot {
+  margin: 14px 0 0;
+  padding-top: 11px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.shotCap {
+  margin: 14px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 68ch;
+}

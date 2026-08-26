@@ -6,6 +6,7 @@ import { Starfield } from "@/components/astraion/starfield";
 import { GapMeter } from "@/components/astraion/gap-meter";
 import { DecisionForecast } from "@/components/astraion/decision-forecast";
 import { LayerDeck, LayerRows } from "@/components/astraion/layer-stack";
+import { PanelPreview } from "@/components/astraion/panel-preview";
 import { SignupForm } from "@/components/astraion/signup-form";
 import s from "./astraion.module.css";
 
@@ -108,6 +109,22 @@ export default async function PlataformaPage({
 
         </div>
       </header>
+
+      {/* ---------------- El producto ----------------
+          Va aquí y no más abajo: el titular acaba de afirmar que todo el
+          negocio cabe en un sistema, y esto lo comprueba antes de pedirle a
+          nadie que lea sobre arquitectura. */}
+      <section className={s.section} id="producto">
+        <div className={s.wrap}>
+          <div className={s.secHead}>
+            <p className={s.eyebrow}>{t.product.eyebrow}</p>
+            <h2>{t.product.title}</h2>
+            <p>{t.product.lede}</p>
+          </div>
+
+          <PanelPreview styles={s} copy={t.product} />
+        </div>
+      </section>
 
       {/* ---------------- Las tres capas ---------------- */}
       <section className={s.section} id="capas">
