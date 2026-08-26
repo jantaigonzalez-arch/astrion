@@ -1,10 +1,11 @@
 import "server-only";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
 import { tickets, ticketComments, leads } from "@/lib/db/schema";
 import { listTenantMembers } from "@/lib/data/people";
 import { ACTIVE_STATUSES, QUEUE_STATUSES } from "@/lib/tickets";
 import type { MembershipRole } from "@/lib/db/platform";
+import type { Orden } from "@/lib/listado";
 
 /**
  * Columnas mínimas de una fila de lista.
@@ -134,29 +135,138 @@ export async function getPendingReviewTickets(limit = 20) {
  * enseñarlas dos veces hacía que el operador atendiera la misma solicitud desde
  * dos sitios.
  */
+/**
+ * Por qué columnas se puede ordenar la cola.
+ *
+ * Es una lista BLANCA y ése es su único trabajo: lo que llega en `?orden=` es
+ * texto de fuera, y aquí se convierte en una columna de verdad o no se
+ * convierte en nada. Ver la cabecera de `lib/listado.ts`.
+ *
+ * Son columnas de `tickets` y ninguna de una tabla relacionada. Ordenar por el
+ * nombre del cliente exigiría un join que hoy resuelve el cargador de
+ * relaciones, y la operación que de verdad se hace con un cliente no es
+ * ordenar sino FILTRAR — que sí está.
+ */
+const ORDEN_COLA = {
+  folio: tickets.reference,
+  asunto: tickets.subject,
+  prioridad: tickets.priority,
+  estado: tickets.status,
+  sla: tickets.slaDueAt,
+  creado: tickets.createdAt,
+} as const;
+
+export type CampoOrdenCola = keyof typeof ORDEN_COLA;
+export const CAMPOS_ORDEN_COLA = Object.keys(ORDEN_COLA) as CampoOrdenCola[];
+
+/**
+ * Cómo se ve la cola cuando nadie ha pedido nada: lo más reciente primero.
+ *
+ * Vive aquí y no en la pantalla para que el listado, su conteo y cualquier
+ * script que lea la cola coincidan sin acordarlo.
+ */
+export const ORDEN_COLA_DEFECTO: Orden<CampoOrdenCola> = { campo: "creado", dir: "desc" };
+
+export type FiltrosCola = {
+  estado?: string;
+  prioridad?: string;
+  categoria?: string;
+  /** Id de la persona, o `"sin"` para lo que no tiene dueño. */
+  tecnico?: string;
+  /** Solo lo que ya incumplió el compromiso de primera respuesta. */
+  onlyBreached?: boolean;
+};
+
+/**
+ * La condición de la cola, en UN solo sitio.
+ *
+ * La comparten la página, el conteo del paginador y los conteos de las fichas
+ * de filtro. Que sea una función y no tres copias es lo que impide el fallo que
+ * ya advertía el comentario anterior: si la lista y su cifra divergen, dicen
+ * cosas distintas sobre lo mismo y nadie vuelve a creerle al tablero.
+ *
+ * `salvo` deja fuera una dimensión al construir la condición, y existe para los
+ * conteos de las fichas: el número que va junto a «Urgente» tiene que contar
+ * los urgentes que quedarían con los DEMÁS filtros puestos, no los que quedan
+ * ya filtrando por urgente —que sería el total de la lista actual, siempre—.
+ */
+function whereCola(f: FiltrosCola, salvo?: keyof FiltrosCola) {
+  const cond: SQL[] = [];
+
+  // Las pendientes de revisión tienen su propia sección arriba; enseñarlas
+  // también aquí hacía que la misma solicitud se atendiera desde dos sitios.
+  // El filtro de incumplidos es la excepción: ahí sí cuentan, porque el reloj
+  // de primera respuesta corre desde que el cliente la manda.
+  if (f.onlyBreached) {
+    cond.push(sql`${tickets.slaDueAt} is not null
+      and ${tickets.firstRespondedAt} is null
+      and ${tickets.slaDueAt} < now()
+      and ${tickets.status} in ('pending_review','open','in_progress','waiting')`);
+  } else {
+    cond.push(sql`${tickets.status} <> 'pending_review'`);
+  }
+
+  if (f.estado && salvo !== "estado") {
+    cond.push(sql`${tickets.status} = ${f.estado}::ticket_status`);
+  }
+  if (f.prioridad && salvo !== "prioridad") {
+    cond.push(sql`${tickets.priority} = ${f.prioridad}::ticket_priority`);
+  }
+  if (f.categoria && salvo !== "categoria") {
+    cond.push(sql`${tickets.category} = ${f.categoria}::ticket_category`);
+  }
+  if (f.tecnico && salvo !== "tecnico") {
+    cond.push(
+      f.tecnico === "sin"
+        ? sql`${tickets.assignedToId} is null`
+        : sql`${tickets.assignedToId} = ${f.tecnico}::uuid`,
+    );
+  }
+
+  return sql.join(cond, sql` and `);
+}
+
+/**
+ * Cómo se ordena, traducido a SQL.
+ *
+ * Dos decisiones que no se ven pero se notan:
+ *
+ *  · SIEMPRE se añade `id` como último criterio. Ordenar por una columna con
+ *    repetidos —estado, prioridad— deja el orden de los empates a merced del
+ *    plan de Postgres, y en una lista PAGINADA eso no es un detalle estético:
+ *    dos páginas pedidas por separado pueden repetir una fila y saltarse otra,
+ *    y quien hojea no ve nada raro.
+ *
+ *  · `nulls last` en las dos direcciones. La mitad de los tickets no tiene
+ *    plazo de SLA, así que ordenar por esa columna hacia abajo empezaría por
+ *    doscientos huecos. Lo vacío va al final se mire como se mire.
+ */
+function orderByCola(orden: Orden<CampoOrdenCola>) {
+  const col = ORDEN_COLA[orden.campo];
+  const dir = orden.dir === "asc" ? sql`asc` : sql`desc`;
+  return [sql`${col} ${dir} nulls last`, desc(tickets.id)];
+}
+
+/**
+ * La cola propiamente dicha: todo lo que NO espera revisión, por página.
+ *
+ * El orden por omisión sigue siendo lo más reciente primero, que es como se
+ * mira una cola cuando no se está buscando nada en concreto.
+ */
 export async function getQueuePage({
   limit,
   offset,
-  onlyBreached = false,
+  orden = ORDEN_COLA_DEFECTO,
+  ...filtros
 }: {
   limit: number;
   offset: number;
-  /** Solo lo que ya incumplió el compromiso de primera respuesta. */
-  onlyBreached?: boolean;
-}) {
+  orden?: Orden<CampoOrdenCola>;
+} & FiltrosCola) {
   const db = await tenantDb();
   return db.query.tickets.findMany({
-    // El filtro de incumplidos repite la MISMA condición que el conteo del
-    // encabezado. Si divergieran, la cifra de arriba y la lista de abajo
-    // dirían cosas distintas sobre lo mismo, que es la forma más rápida de que
-    // nadie vuelva a creerle al tablero.
-    where: onlyBreached
-      ? sql`${tickets.slaDueAt} is not null
-            and ${tickets.firstRespondedAt} is null
-            and ${tickets.slaDueAt} < now()
-            and ${tickets.status} in ('pending_review','open','in_progress','waiting')`
-      : sql`${tickets.status} <> 'pending_review'`,
-    orderBy: [desc(tickets.createdAt)],
+    where: whereCola(filtros),
+    orderBy: orderByCola(orden),
     with: {
       createdBy: { columns: { name: true, email: true, company: true } },
       assignedTo: { columns: { name: true, email: true } },
@@ -164,6 +274,53 @@ export async function getQueuePage({
     limit,
     offset,
   });
+}
+
+/** Cuántas filas tiene la cola CON los filtros puestos. Para el paginador. */
+export async function countQueue(filtros: FiltrosCola): Promise<number> {
+  const db = await tenantDb();
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(tickets)
+    .where(whereCola(filtros));
+  return row?.n ?? 0;
+}
+
+/**
+ * Cuántas filas caería en cada opción de cada filtro.
+ *
+ * Se enseña junto a cada ficha para que un filtro que lleva a cero se vea antes
+ * de pulsarlo. Cada dimensión se cuenta con los demás filtros aplicados y sin
+ * el suyo —ver `salvo` en `whereCola`—, así que los números cambian al filtrar
+ * por otra cosa, que es justamente lo que los hace útiles.
+ */
+export async function conteosCola(filtros: FiltrosCola) {
+  const db = await tenantDb();
+  const porColumna = async (col: typeof tickets.status | typeof tickets.priority | typeof tickets.category, salvo: keyof FiltrosCola) => {
+    const filas = await db
+      .select({ k: sql<string>`${col}::text`, n: sql<number>`count(*)::int` })
+      .from(tickets)
+      .where(whereCola(filtros, salvo))
+      .groupBy(sql`${col}`);
+    return new Map(filas.map((f) => [f.k, f.n]));
+  };
+
+  const [estado, prioridad, categoria, tecnico] = await Promise.all([
+    porColumna(tickets.status, "estado"),
+    porColumna(tickets.priority, "prioridad"),
+    porColumna(tickets.category, "categoria"),
+    db
+      .select({
+        k: sql<string>`coalesce(${tickets.assignedToId}::text, 'sin')`,
+        n: sql<number>`count(*)::int`,
+      })
+      .from(tickets)
+      .where(whereCola(filtros, "tecnico"))
+      .groupBy(sql`coalesce(${tickets.assignedToId}::text, 'sin')`)
+      .then((filas) => new Map(filas.map((f) => [f.k, f.n]))),
+  ]);
+
+  return { estado, prioridad, categoria, tecnico };
 }
 
 export async function getTicketById(id: string) {

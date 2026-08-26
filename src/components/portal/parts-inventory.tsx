@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ThLocal, useOrdenLocal } from "@/components/portal/orden-local";
 import { AlertTriangle, PackageX, Search, Truck, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -47,6 +48,36 @@ const fecha = (iso: string) => {
 
 type StockFilter = "all" | "low" | "out" | "over" | "incoming";
 
+/**
+ * Qué significa ordenar por cada columna del inventario.
+ *
+ * `margen` se calcula aquí y no se lee de una columna: es precio menos costo, y
+ * ordenar por él es la forma de encontrar lo que se está vendiendo por debajo
+ * de lo que cuesta. Una refacción sin precio o sin costo capturado no tiene
+ * margen que comparar —no es margen cero— y va al final.
+ */
+const num = (v: string | null) => {
+  if (!v) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+const VALORES_PARTE = {
+  parte: (p: Row) => p.partNumber,
+  descripcion: (p: Row) => p.description,
+  marca: (p: Row) => p.brand,
+  costo: (p: Row) => num(p.costMxn),
+  precio: (p: Row) => num(p.priceMxn),
+  margen: (p: Row) => {
+    const c = num(p.costMxn);
+    const v = num(p.priceMxn);
+    return c === null || v === null ? null : v - c;
+  },
+  existencias: (p: Row) => p.stock,
+} as const;
+
+type CampoParte = keyof typeof VALORES_PARTE;
+
 export function PartsInventory({ parts }: { parts: Row[] }) {
   const [q, setQ] = useState("");
   const [brand, setBrand] = useState("all");
@@ -57,7 +88,7 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
     [parts],
   );
 
-  const filtered = useMemo(() => {
+  const filtradas = useMemo(() => {
     const term = q.trim().toLowerCase();
     return parts.filter((p) => {
       if (brand !== "all" && p.brand !== brand) return false;
@@ -71,6 +102,23 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
         .includes(term);
     });
   }, [parts, q, brand, stock]);
+
+  /*
+    Arranca por EXISTENCIAS de menor a mayor, y es el único de los tres
+    listados en memoria que no arranca alfabético.
+
+    Un inventario no se abre para buscar una refacción concreta —para eso está
+    el buscador de arriba— sino para ver qué falta. Con el orden por número de
+    parte, lo que está en cero queda repartido por toda la lista y hay que
+    filtrar para verlo; ordenado así, el problema está en la primera fila.
+    Los sobregiros, que son negativos, quedan incluso antes: correcto, porque
+    son peores que un cero.
+  */
+  const { orden, pulsar, ordenadas: filtered } = useOrdenLocal<Row, CampoParte>(
+    filtradas,
+    VALORES_PARTE,
+    { campo: "existencias", dir: "asc" },
+  );
 
   const lowCount = parts.filter((p) => p.stock > 0 && p.stock <= 3).length;
   const outCount = parts.filter((p) => p.stock === 0).length;
@@ -254,13 +302,27 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
             <table className="w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 font-medium"># Parte</th>
-                  <th className="px-4 py-3 font-medium">Descripción</th>
-                  <th className="px-4 py-3 font-medium">Marca</th>
-                  <th className="px-4 py-3 font-medium">Costo actual (MXN)</th>
-                  <th className="px-4 py-3 font-medium">Precio venta</th>
-                  <th className="px-4 py-3 font-medium">Margen</th>
-                  <th className="px-4 py-3 font-medium">Existencias</th>
+                  <ThLocal campo="parte" orden={orden} onPulsar={pulsar}>
+                    # Parte
+                  </ThLocal>
+                  <ThLocal campo="descripcion" orden={orden} onPulsar={pulsar}>
+                    Descripción
+                  </ThLocal>
+                  <ThLocal campo="marca" orden={orden} onPulsar={pulsar}>
+                    Marca
+                  </ThLocal>
+                  <ThLocal campo="costo" orden={orden} onPulsar={pulsar} inicial="desc">
+                    Costo actual (MXN)
+                  </ThLocal>
+                  <ThLocal campo="precio" orden={orden} onPulsar={pulsar} inicial="desc">
+                    Precio venta
+                  </ThLocal>
+                  <ThLocal campo="margen" orden={orden} onPulsar={pulsar} inicial="asc">
+                    Margen
+                  </ThLocal>
+                  <ThLocal campo="existencias" orden={orden} onPulsar={pulsar} inicial="asc">
+                    Existencias
+                  </ThLocal>
                   <th className="px-4 py-3 font-medium">Estado</th>
                   <th className="px-4 py-3 font-medium">Acciones</th>
                 </tr>

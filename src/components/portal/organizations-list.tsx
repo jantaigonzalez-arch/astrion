@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { OrdenChipsLocal, useOrdenLocal } from "@/components/portal/orden-local";
 import { Building2, Search, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +53,24 @@ type Filter = "all" | "clients" | "leads" | "deals" | "unassigned";
  * es instantáneo y no cuesta un viaje al servidor por tecla. Si el padrón
  * crece a miles, esto pasa a ser una consulta con índice sobre `name`/`tax_id`.
  */
+/**
+ * Qué significa ordenar por cada ficha.
+ *
+ * `abierto` es el importe de los negocios abiertos y `negocios` su número:
+ * ordenar por dinero y por cantidad no da la misma lista, y en una cartera con
+ * una oportunidad grande y veinte pequeñas esa diferencia es la decisión de a
+ * quién llamar hoy.
+ */
+const VALORES_ORG = {
+  nombre: (o: OrganizationRow) => o.name,
+  abierto: (o: OrganizationRow) => (o.openDeals > 0 ? o.openValue : null),
+  negocios: (o: OrganizationRow) => (o.openDeals > 0 ? o.openDeals : null),
+  contactos: (o: OrganizationRow) => (o.contacts > 0 ? o.contacts : null),
+  responsable: (o: OrganizationRow) => o.ownerName,
+} as const;
+
+type CampoOrg = keyof typeof VALORES_ORG;
+
 export function OrganizationsList({
   orgs,
   locale,
@@ -62,7 +81,7 @@ export function OrganizationsList({
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
 
-  const filtered = useMemo(() => {
+  const filtrados = useMemo(() => {
     // Sin acentos y en minúsculas: "farmacéutica" debe encontrarse escribiendo
     // "farmaceutica", que es como se teclea con prisa.
     const norm = (s: string) =>
@@ -81,6 +100,13 @@ export function OrganizationsList({
       ).includes(term);
     });
   }, [orgs, q, filter]);
+
+  // Alfabético de arranque: este listado se usa para BUSCAR una organización.
+  // Quien viene a ver dónde está el dinero abierto pulsa «Abierto».
+  const { orden, pulsar, ordenadas: filtered } = useOrdenLocal<
+    OrganizationRow,
+    CampoOrg
+  >(filtrados, VALORES_ORG, { campo: "nombre", dir: "asc" });
 
   const clientCount = orgs.filter((o) => o.kind === "client").length;
   const leadCount = orgs.filter((o) => o.kind === "lead").length;
@@ -156,6 +182,20 @@ export function OrganizationsList({
               Sin responsable ({unassignedCount})
             </button>
           )}
+        </div>
+
+        <div className="mt-3">
+          <OrdenChipsLocal
+            orden={orden}
+            onPulsar={pulsar}
+            campos={[
+              { campo: "nombre", label: "Nombre" },
+              { campo: "abierto", label: "Abierto", inicial: "desc" },
+              { campo: "negocios", label: "Negocios", inicial: "desc" },
+              { campo: "contactos", label: "Contactos", inicial: "desc" },
+              { campo: "responsable", label: "Responsable" },
+            ]}
+          />
         </div>
 
         <p className="mt-3 text-xs text-muted-foreground">

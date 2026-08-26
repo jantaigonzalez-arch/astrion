@@ -2,9 +2,22 @@ import { setRequestLocale } from "next-intl/server";
 import { ArrowRight, Boxes, FileSignature, Pencil, UserRound } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { isAdminRole } from "@/lib/roles";
-import { countContracts, getContracts } from "@/lib/data/contracts";
+import {
+  CAMPOS_ORDEN_CONTRATOS,
+  ORDEN_CONTRATOS_DEFECTO,
+  VIGENCIAS,
+  conteosContratos,
+  countContracts,
+  getContracts,
+} from "@/lib/data/contracts";
 import { parsePage } from "@/lib/pagination";
+import { parseFiltro, parseOrden, queryLimpia } from "@/lib/listado";
 import { Pagination } from "@/components/portal/pagination";
+import {
+  BarraFiltros,
+  FiltroFichas,
+  OrdenFichas,
+} from "@/components/portal/listado-controles";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,7 +40,14 @@ export default async function ContractsPage({
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string; por?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    por?: string;
+    orden?: string;
+    dir?: string;
+    vigencia?: string;
+    vendedor?: string;
+  }>;
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
@@ -36,17 +56,44 @@ export default async function ContractsPage({
   const admin = isAdminRole(await currentRole());
   // El vendedor ve solo sus contratos; el admin, todos.
   const deQuien = admin ? undefined : session!.user.id;
-  const pageParams = parsePage(await searchParams);
+  const sp = await searchParams;
+  const pageParams = parsePage(sp);
+
+  const orden = parseOrden(sp, CAMPOS_ORDEN_CONTRATOS, ORDEN_CONTRATOS_DEFECTO);
+  const filtros = {
+    vigencia: parseFiltro(sp.vigencia, VIGENCIAS),
+    // El filtro por vendedor solo tiene sentido para quien ve los de todos: a
+    // un vendedor ya se le acotó la lista a los suyos, y ofrecerle filtrar por
+    // otro sería ofrecerle una lista vacía.
+    vendedor: admin ? sp.vendedor : undefined,
+  };
+  const query = queryLimpia({
+    vigencia: filtros.vigencia,
+    vendedor: filtros.vendedor,
+    orden: orden.campo,
+    dir: orden.dir,
+    por: sp.por,
+  });
 
   // El total sale de su propia consulta porque el encabezado dice cuántos hay
   // EN TOTAL, no cuántos caben en la página. Van en paralelo.
-  const [list, total] = await Promise.all([
-    getContracts(deQuien, undefined, {
-      limit: pageParams.perPage,
-      offset: pageParams.offset,
-    }),
+  const [list, total, conteos, totalSinFiltros] = await Promise.all([
+    getContracts(
+      deQuien,
+      undefined,
+      { limit: pageParams.perPage, offset: pageParams.offset },
+      orden,
+      filtros,
+    ),
+    countContracts(deQuien, undefined, filtros),
+    conteosContratos(deQuien, filtros),
     countContracts(deQuien),
   ]);
+
+  const hayFiltros =
+    Boolean(filtros.vigencia || filtros.vendedor) ||
+    orden.campo !== ORDEN_CONTRATOS_DEFECTO.campo ||
+    orden.dir !== ORDEN_CONTRATOS_DEFECTO.dir;
 
   const fmtDate = (d: string | null) =>
     d ? new Date(d + "T00:00:00").toLocaleDateString(locale === "en" ? "en-US" : "es-MX") : "—";
@@ -71,11 +118,74 @@ export default async function ContractsPage({
         )}
       </div>
 
+      {totalSinFiltros > 0 && (
+        <BarraFiltros
+          hayFiltros={hayFiltros}
+          basePath="/admin/contratos"
+          className="rounded-lg border border-border bg-card"
+        >
+          <FiltroFichas
+            titulo="Vigencia"
+            clave="vigencia"
+            activo={filtros.vigencia}
+            basePath="/admin/contratos"
+            query={query}
+            opciones={[
+              { label: "Todos" },
+              { valor: "vigente", label: "Vigentes", n: conteos.vigencia.get("vigente") ?? 0 },
+              {
+                valor: "por-vencer",
+                label: "Por vencer (60 d)",
+                n: conteos.vigencia.get("por-vencer") ?? 0,
+              },
+              { valor: "vencido", label: "Vencidos", n: conteos.vigencia.get("vencido") ?? 0 },
+            ]}
+          />
+          {admin && (
+            <FiltroFichas
+              titulo="Vendedor"
+              clave="vendedor"
+              activo={filtros.vendedor}
+              basePath="/admin/contratos"
+              query={query}
+              opciones={[
+                { label: "Todos" },
+                ...conteos.vendedor.map((v) => ({
+                  valor: v.id,
+                  label: v.id === "sin" ? v.nombre : v.nombre.split(" ")[0],
+                  n: v.n,
+                })),
+              ]}
+            />
+          )}
+          <OrdenFichas
+            actual={orden}
+            basePath="/admin/contratos"
+            query={query}
+            campos={[
+              { campo: "numero", label: "Número" },
+              { campo: "monto", label: "Monto", inicial: "desc" },
+              { campo: "inicio", label: "Inicio", inicial: "desc" },
+              { campo: "fin", label: "Vencimiento", inicial: "asc" },
+              { campo: "creado", label: "Alta", inicial: "desc" },
+            ]}
+          />
+        </BarraFiltros>
+      )}
+
       {total === 0 ? (
         <Card className="flex flex-col items-center gap-3 border-dashed py-14 text-center">
           <FileSignature className="size-10 text-primary" />
           <p className="max-w-sm text-sm text-muted-foreground">
-            Aún no hay contratos registrados.
+            {/*
+              Dos vacíos distintos que antes decían lo mismo. «No hay ninguno»
+              se resuelve dando de alta un contrato; «no hay con estos filtros»
+              se resuelve quitándolos, y confundirlos manda a la persona al sitio
+              equivocado.
+            */}
+            {hayFiltros
+              ? "Ningún contrato coincide con estos filtros."
+              : "Aún no hay contratos registrados."}
           </p>
         </Card>
       ) : (
@@ -163,6 +273,7 @@ export default async function ContractsPage({
             {...pageParams}
             total={total}
             basePath="/admin/contratos"
+            query={query}
             className="rounded-lg border border-border bg-card"
           />
         </div>

@@ -1,8 +1,10 @@
 import "server-only";
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
 import { equipment, equipmentModules, tickets } from "@/lib/db/schema";
 import { getTenantMember, listTenantMembers } from "@/lib/data/people";
+import { users } from "@/lib/db/platform";
+import type { Orden } from "@/lib/listado";
 
 // Null si el id es de alguien de OTRA empresa: el uuid viaja en la URL, así que
 // sin esta comprobación la ficha de un cliente ajeno estaba a un cambio de
@@ -100,4 +102,149 @@ export async function getEquipmentTree(ownerId: string) {
       },
     },
   });
+}
+
+/* ===================== El parque completo, en una lista ===================== */
+
+/**
+ * El inventario de equipos de TODA la empresa, no el de un cliente.
+ *
+ * Faltaba, y se notaba de una forma concreta: `/admin/equipos` daba 404 y tres
+ * análisis enlazaban ahí —«equipos próximos a requerir servicio», «de qué
+ * marcas es el parque instalado» y «equipos que más servicio consumen»—. El
+ * único inventario que existía era el de la ficha de cada laboratorio, así que
+ * para responder «¿cuántos Waters tenemos?» había que abrir los veinticuatro.
+ *
+ * Se consulta con un `select` a mano y no con el API relacional porque hay que
+ * ORDENAR por el nombre del laboratorio, que vive en otra tabla: el cargador de
+ * relaciones trae los datos pero no deja ordenar por ellos.
+ */
+const ORDEN_EQUIPOS = {
+  nombre: equipment.name,
+  marca: equipment.brand,
+  laboratorio: users.name,
+  modulos: sql`count(distinct ${equipmentModules.id})`,
+  servicios: sql`count(distinct ${tickets.id})`,
+  alta: equipment.createdAt,
+} as const;
+
+export type CampoOrdenEquipos = keyof typeof ORDEN_EQUIPOS;
+export const CAMPOS_ORDEN_EQUIPOS = Object.keys(ORDEN_EQUIPOS) as CampoOrdenEquipos[];
+
+/** Los que más servicio consumen primero: es la pregunta que trae a esta lista. */
+export const ORDEN_EQUIPOS_DEFECTO: Orden<CampoOrdenEquipos> = {
+  campo: "servicios",
+  dir: "desc",
+};
+
+export type FiltrosEquipos = {
+  marca?: string;
+  laboratorio?: string;
+  /** `con` = amparado por algún contrato; `sin` = a la intemperie. */
+  contrato?: "con" | "sin";
+};
+
+export const CONTRATO_FILTROS = ["con", "sin"] as const;
+
+function whereEquipos(f: FiltrosEquipos) {
+  const cond: SQL[] = [];
+  if (f.marca) cond.push(sql`${equipment.brand} = ${f.marca}`);
+  if (f.laboratorio) cond.push(sql`${equipment.ownerId} = ${f.laboratorio}::uuid`);
+  if (f.contrato) {
+    const existe = sql`exists (select 1 from contract_equipment ce where ce.equipment_id = ${equipment.id})`;
+    cond.push(f.contrato === "con" ? existe : sql`not ${existe}`);
+  }
+  return cond.length ? sql.join(cond, sql` and `) : undefined;
+}
+
+export async function getEquipmentList({
+  limit,
+  offset,
+  orden = ORDEN_EQUIPOS_DEFECTO,
+  filtros = {},
+}: {
+  limit: number;
+  offset: number;
+  orden?: Orden<CampoOrdenEquipos>;
+  filtros?: FiltrosEquipos;
+}) {
+  const db = await tenantDb();
+  const col = ORDEN_EQUIPOS[orden.campo];
+  return db
+    .select({
+      id: equipment.id,
+      name: equipment.name,
+      brand: equipment.brand,
+      model: equipment.model,
+      createdAt: equipment.createdAt,
+      ownerId: equipment.ownerId,
+      ownerName: users.name,
+      modulos: sql<number>`count(distinct ${equipmentModules.id})::int`,
+      servicios: sql<number>`count(distinct ${tickets.id})::int`,
+      // Amparado por contrato: se resuelve en la misma pasada con un `exists`
+      // en vez de un join más, que multiplicaría filas antes de agrupar.
+      enContrato: sql<boolean>`exists (
+        select 1 from contract_equipment ce where ce.equipment_id = ${equipment.id})`,
+    })
+    .from(equipment)
+    .leftJoin(users, eq(users.id, equipment.ownerId))
+    .leftJoin(equipmentModules, eq(equipmentModules.equipmentId, equipment.id))
+    .leftJoin(tickets, eq(tickets.equipmentId, equipment.id))
+    .where(whereEquipos(filtros))
+    .groupBy(equipment.id, users.name)
+    // `id` de desempate: sin él, dos equipos con el mismo número de servicios
+    // pueden intercambiarse entre páginas. Ver la nota de la cola de servicio.
+    .orderBy(sql`${col} ${orden.dir === "asc" ? sql`asc` : sql`desc`} nulls last`, desc(equipment.id))
+    .limit(limit)
+    .offset(offset);
+}
+
+export async function countEquipment(filtros: FiltrosEquipos = {}): Promise<number> {
+  const db = await tenantDb();
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(equipment)
+    .where(whereEquipos(filtros));
+  return row?.n ?? 0;
+}
+
+/** Las opciones de cada filtro con su conteo, cada una sin su propio filtro. */
+export async function conteosEquipos(filtros: FiltrosEquipos) {
+  const db = await tenantDb();
+
+  const [marca, laboratorio, contrato] = await Promise.all([
+    db
+      .select({ k: sql<string>`coalesce(${equipment.brand}, '—')`, n: sql<number>`count(*)::int` })
+      .from(equipment)
+      .where(whereEquipos({ ...filtros, marca: undefined }))
+      .groupBy(sql`1`)
+      .orderBy(desc(sql`count(*)`)),
+    db
+      .select({
+        k: sql<string>`${equipment.ownerId}::text`,
+        nombre: sql<string | null>`max(${users.name})`,
+        n: sql<number>`count(*)::int`,
+      })
+      .from(equipment)
+      .leftJoin(users, eq(users.id, equipment.ownerId))
+      .where(whereEquipos({ ...filtros, laboratorio: undefined }))
+      .groupBy(sql`1`)
+      .orderBy(desc(sql`count(*)`)),
+    db
+      .select({
+        k: sql<string>`case when exists (
+          select 1 from contract_equipment ce where ce.equipment_id = ${equipment.id}
+        ) then 'con' else 'sin' end`,
+        n: sql<number>`count(*)::int`,
+      })
+      .from(equipment)
+      .where(whereEquipos({ ...filtros, contrato: undefined }))
+      .groupBy(sql`1`),
+  ]);
+
+  return {
+    marca,
+    laboratorio: laboratorio.map((l) => ({ id: l.k, nombre: l.nombre ?? "—", n: l.n })),
+    contrato: new Map(contrato.map((c) => [c.k, c.n])),
+  };
 }

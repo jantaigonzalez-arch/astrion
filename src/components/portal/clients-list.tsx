@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ThLocal, useOrdenLocal } from "@/components/portal/orden-local";
 import { AlertTriangle, Building2, Search, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +43,30 @@ export type ClientListRow = {
 
 type Filter = "all" | "conAbiertos" | "sinPortal";
 
+/**
+ * Qué significa ordenar por cada columna.
+ *
+ * `tickets` ordena por los ABIERTOS y desempata por el total: quien tiene tres
+ * abiertos pide atención antes que quien acumuló doscientos cerrados, y esa es
+ * la pregunta que trae a alguien a ordenar esta columna.
+ *
+ * Las columnas que se dibujan «—» para quien no tiene cuenta de portal ordenan
+ * por `null` en ese caso, no por cero: sin cuenta no es que tenga cero equipos,
+ * es que no hay por dónde saberlo, y `useOrdenLocal` manda lo vacío al final.
+ */
+const VALORES = {
+  nombre: (c: ClientListRow) => c.name,
+  contratos: (c: ClientListRow) => (c.hasPortal ? c.contracts : null),
+  equipos: (c: ClientListRow) => (c.hasPortal ? c.equipment : null),
+  tickets: (c: ClientListRow) =>
+    c.hasPortal ? c.openTickets * 10_000 + c.totalTickets : null,
+  ultimo: (c: ClientListRow) => (c.hasPortal ? c.lastTicketAt : null),
+  comprado: (c: ClientListRow) => (c.wonDeals > 0 ? c.wonValue : null),
+  responsable: (c: ClientListRow) => c.ownerName,
+} as const;
+
+type CampoCliente = keyof typeof VALORES;
+
 const norm = (s: string) =>
   s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
@@ -55,7 +80,7 @@ export function ClientsList({
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
 
-  const filtered = useMemo(() => {
+  const filtrados = useMemo(() => {
     const term = norm(q.trim());
     return clients.filter((c) => {
       if (filter === "conAbiertos" && c.openTickets === 0) return false;
@@ -66,6 +91,20 @@ export function ClientsList({
       );
     });
   }, [clients, q, filter]);
+
+  /*
+    El orden se aplica DESPUÉS de filtrar, y sobre la lista entera: aquí no hay
+    paginación, así que ordenar no esconde nada. Ver `useOrdenLocal`.
+
+    Arranca por nombre y no por volumen de tickets porque este listado se usa
+    sobre todo para BUSCAR a alguien, y para eso el alfabeto gana a cualquier
+    ranking. Quien viene a ver quién pesa más pulsa la columna.
+  */
+  const { orden, pulsar, ordenadas: filtered } = useOrdenLocal<ClientListRow, CampoCliente>(
+    filtrados,
+    VALORES,
+    { campo: "nombre", dir: "asc" },
+  );
 
   const conAbiertos = clients.filter((c) => c.openTickets > 0).length;
   const sinPortal = clients.filter((c) => !c.hasPortal).length;
@@ -146,13 +185,33 @@ export function ClientsList({
             <table className="w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Cliente</th>
-                  <th className="px-4 py-3 font-medium">Contratos</th>
-                  <th className="px-4 py-3 font-medium">Equipos</th>
-                  <th className="px-4 py-3 font-medium">Tickets</th>
-                  <th className="px-4 py-3 font-medium">Último servicio</th>
-                  <th className="px-4 py-3 text-right font-medium">Comprado</th>
-                  <th className="px-4 py-3 font-medium">Responsable</th>
+                  <ThLocal campo="nombre" orden={orden} onPulsar={pulsar}>
+                    Cliente
+                  </ThLocal>
+                  <ThLocal campo="contratos" orden={orden} onPulsar={pulsar} inicial="desc">
+                    Contratos
+                  </ThLocal>
+                  <ThLocal campo="equipos" orden={orden} onPulsar={pulsar} inicial="desc">
+                    Equipos
+                  </ThLocal>
+                  <ThLocal campo="tickets" orden={orden} onPulsar={pulsar} inicial="desc">
+                    Tickets
+                  </ThLocal>
+                  <ThLocal campo="ultimo" orden={orden} onPulsar={pulsar} inicial="desc">
+                    Último servicio
+                  </ThLocal>
+                  <ThLocal
+                    campo="comprado"
+                    orden={orden}
+                    onPulsar={pulsar}
+                    inicial="desc"
+                    className="text-right"
+                  >
+                    Comprado
+                  </ThLocal>
+                  <ThLocal campo="responsable" orden={orden} onPulsar={pulsar}>
+                    Responsable
+                  </ThLocal>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">

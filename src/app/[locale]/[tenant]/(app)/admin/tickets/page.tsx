@@ -2,12 +2,30 @@ import { Suspense } from "react";
 import { setRequestLocale } from "next-intl/server";
 import { AlarmClock, ClipboardPlus, Hourglass } from "lucide-react";
 import {
+  CAMPOS_ORDEN_COLA,
+  ORDEN_COLA_DEFECTO,
+  conteosCola,
+  countQueue,
+  getAgents,
   getPendingReviewTickets,
   getQueueCounts,
   getQueuePage,
+  type CampoOrdenCola,
 } from "@/lib/data/tickets";
 import { parsePage } from "@/lib/pagination";
+import {
+  INICIAL,
+  parseFiltro,
+  parseOrden,
+  queryLimpia,
+  type Orden,
+} from "@/lib/listado";
 import { Pagination } from "@/components/portal/pagination";
+import {
+  BarraFiltros,
+  FiltroFichas,
+  ThOrden,
+} from "@/components/portal/listado-controles";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +38,11 @@ import {
 } from "@/components/portal/analysis-section";
 import {
   CATEGORY_LABELS,
+  PRIORITY_LABELS,
+  STAFF_SETTABLE_STATUSES,
+  STATUS_LABELS,
+  TICKET_CATEGORIES,
+  TICKET_PRIORITIES,
   SLA_LABELS,
   SLA_STYLES,
   TYPE_LABELS,
@@ -33,7 +56,59 @@ import {
 
 type Row = Awaited<ReturnType<typeof getQueuePage>>[number];
 
-function TicketsTable({ rows, locale }: { rows: Row[]; locale: string }) {
+/**
+ * Un encabezado de la cola: ordena SOLO cuando se le da el orden.
+ *
+ * La misma tabla sirve a dos listas: la cola paginada, que se ordena en la
+ * base, y la bandeja de pendientes, que son las veinte más recientes y ya
+ * vienen ordenadas. Poner enlaces en la segunda ofrecería ordenar veinte filas
+ * de una lista recortada — el orden cambiaría lo que se ve pero no CUÁLES
+ * veinte se ven, que es la clase de mentira que este componente no debe contar.
+ *
+ * Vive fuera del render de `TicketsTable` a propósito: definido dentro, React
+ * ve un tipo de componente NUEVO en cada pasada y desmonta el subárbol en vez
+ * de actualizarlo. Cuesta unas props más en cada llamada y ahorra un fallo que
+ * solo se manifiesta como parpadeo.
+ */
+function ThCola({
+  campo,
+  children,
+  orden,
+  query,
+  tipo = "texto",
+}: {
+  campo: CampoOrdenCola;
+  children: React.ReactNode;
+  orden?: Orden<CampoOrdenCola>;
+  query?: Record<string, string | undefined>;
+  tipo?: "texto" | "fecha" | "numero";
+}) {
+  if (!orden) return <th className="px-4 py-3 font-medium">{children}</th>;
+  return (
+    <ThOrden
+      campo={campo}
+      actual={orden}
+      basePath="/admin/tickets"
+      query={query}
+      inicial={INICIAL[tipo]}
+    >
+      {children}
+    </ThOrden>
+  );
+}
+
+function TicketsTable({
+  rows,
+  locale,
+  orden,
+  query,
+}: {
+  rows: Row[];
+  locale: string;
+  /** Presente solo en la lista paginada. Ver la nota de `Th`. */
+  orden?: Orden<CampoOrdenCola>;
+  query?: Record<string, string | undefined>;
+}) {
   /*
     `now` se calcula UNA vez para toda la tabla.
 
@@ -43,20 +118,22 @@ function TicketsTable({ rows, locale }: { rows: Row[]; locale: string }) {
     justo el tipo de incoherencia que hace dudar de todo el tablero.
   */
   const now = new Date();
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
-            <th className="px-4 py-3 font-medium">Folio</th>
-            <th className="px-4 py-3 font-medium">Asunto</th>
+            <ThCola campo="folio" orden={orden} query={query}>Folio</ThCola>
+            <ThCola campo="asunto" orden={orden} query={query}>Asunto</ThCola>
             <th className="px-4 py-3 font-medium">Cliente</th>
             <th className="px-4 py-3 font-medium">Tipo</th>
             <th className="px-4 py-3 font-medium">Categoría</th>
-            <th className="px-4 py-3 font-medium">Prioridad</th>
-            <th className="px-4 py-3 font-medium">Estado</th>
-            <th className="px-4 py-3 font-medium">SLA</th>
+            <ThCola campo="prioridad" tipo="numero" orden={orden} query={query}>Prioridad</ThCola>
+            <ThCola campo="estado" orden={orden} query={query}>Estado</ThCola>
+            <ThCola campo="sla" tipo="fecha" orden={orden} query={query}>SLA</ThCola>
             <th className="px-4 py-3 font-medium">Asignado</th>
+            <ThCola campo="creado" tipo="fecha" orden={orden} query={query}>Creado</ThCola>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -106,12 +183,19 @@ function TicketsTable({ rows, locale }: { rows: Row[]; locale: string }) {
               <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
                 {tk.assignedTo?.name ?? tk.assignedTo?.email ?? "—"}
               </td>
+              <td className="whitespace-nowrap px-4 py-3 text-muted-foreground tabular-nums">
+                {tk.createdAt.toLocaleDateString(locale === "en" ? "en-US" : "es-MX", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "2-digit",
+                })}
+              </td>
             </tr>
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={9} className="px-4 py-12 text-center text-muted-foreground">
-                No hay tickets.
+              <td colSpan={10} className="px-4 py-12 text-center text-muted-foreground">
+                No hay tickets con estos filtros.
               </td>
             </tr>
           )}
@@ -126,7 +210,17 @@ export default async function AdminTicketsPage({
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string; por?: string; sla?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    por?: string;
+    sla?: string;
+    orden?: string;
+    dir?: string;
+    estado?: string;
+    prioridad?: string;
+    categoria?: string;
+    tecnico?: string;
+  }>;
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
@@ -134,21 +228,60 @@ export default async function AdminTicketsPage({
   const pageParams = parsePage(sp);
   const onlyBreached = sp.sla === "vencido";
 
+  const orden = parseOrden(sp, CAMPOS_ORDEN_COLA, ORDEN_COLA_DEFECTO);
+  const filtros = {
+    estado: parseFiltro(sp.estado, STAFF_SETTABLE_STATUSES),
+    prioridad: parseFiltro(sp.prioridad, TICKET_PRIORITIES),
+    categoria: parseFiltro(sp.categoria, TICKET_CATEGORIES),
+    tecnico: sp.tecnico,
+    onlyBreached,
+  };
+
+  /*
+    Lo que hay que arrastrar en cada enlace de la pantalla —paginador,
+    encabezados y fichas— para no perder lo que el usuario eligió.
+
+    Se arma UNA vez y se pasa a los tres. Construirlo en cada sitio es cómo se
+    acaba con un paginador que conserva los filtros y unos encabezados que no,
+    o al revés: el fallo aparece dos pantallas después y nadie lo relaciona.
+  */
+  const query = queryLimpia({
+    sla: onlyBreached ? "vencido" : undefined,
+    estado: filtros.estado,
+    prioridad: filtros.prioridad,
+    categoria: filtros.categoria,
+    tecnico: filtros.tecnico,
+    orden: orden.campo,
+    dir: orden.dir,
+    por: sp.por,
+  });
+
   // Los conteos del encabezado hablan de TODA la empresa, así que se preguntan
   // aparte: derivarlos de la página que se está viendo diría "25 en total".
-  const [counts, pending, rows] = await Promise.all([
+  //
+  // El total del paginador, en cambio, tiene que respetar los filtros, y por eso
+  // ahora sale de su propia consulta en vez de restarse a mano de los conteos
+  // globales: con un filtro puesto, aquella resta daba el total sin filtrar y el
+  // paginador ofrecía páginas vacías.
+  const [counts, pending, rows, queueTotal, conteos, agentes] = await Promise.all([
     getQueueCounts(),
     getPendingReviewTickets(),
     getQueuePage({
       limit: pageParams.perPage,
       offset: pageParams.offset,
-      onlyBreached,
+      orden,
+      ...filtros,
     }),
+    countQueue(filtros),
+    conteosCola(filtros),
+    getAgents(),
   ]);
 
-  // El total de la tabla paginada excluye las pendientes, que tienen su propia
-  // sección: si no se restaran, la última página saldría vacía.
-  const queueTotal = onlyBreached ? counts.slaBreached : counts.total - counts.pending;
+  const hayFiltros =
+    Boolean(filtros.estado || filtros.prioridad || filtros.categoria || filtros.tecnico) ||
+    onlyBreached ||
+    orden.campo !== ORDEN_COLA_DEFECTO.campo ||
+    orden.dir !== ORDEN_COLA_DEFECTO.dir;
 
   return (
     <div className="space-y-6">
@@ -209,12 +342,85 @@ export default async function AdminTicketsPage({
       )}
 
       <Card className="overflow-hidden">
-        <TicketsTable rows={rows} locale={locale} />
+        {/*
+          Los filtros van DENTRO de la tarjeta y pegados a la tabla, no sueltos
+          arriba: pertenecen a esta lista y no a la pantalla —que además tiene
+          otra tabla, la de pendientes, a la que no aplican—.
+        */}
+        <BarraFiltros hayFiltros={hayFiltros} basePath="/admin/tickets">
+          <FiltroFichas
+            titulo="Estado"
+            clave="estado"
+            activo={filtros.estado}
+            basePath="/admin/tickets"
+            query={query}
+            opciones={[
+              { label: "Todos" },
+              ...STAFF_SETTABLE_STATUSES.map((v) => ({
+                valor: v,
+                label: label(STATUS_LABELS, v, locale),
+                n: conteos.estado.get(v) ?? 0,
+              })),
+            ]}
+          />
+          <FiltroFichas
+            titulo="Prioridad"
+            clave="prioridad"
+            activo={filtros.prioridad}
+            basePath="/admin/tickets"
+            query={query}
+            opciones={[
+              { label: "Todas" },
+              ...TICKET_PRIORITIES.map((v) => ({
+                valor: v,
+                label: label(PRIORITY_LABELS, v, locale),
+                n: conteos.prioridad.get(v) ?? 0,
+              })),
+            ]}
+          />
+          <FiltroFichas
+            titulo="Categoría"
+            clave="categoria"
+            activo={filtros.categoria}
+            basePath="/admin/tickets"
+            query={query}
+            opciones={[
+              { label: "Todas" },
+              // Las vacías las esconde `FiltroFichas`, con la misma regla para
+              // los once listados.
+              ...TICKET_CATEGORIES.map((v) => ({
+                valor: v,
+                label: label(CATEGORY_LABELS, v, locale),
+                n: conteos.categoria.get(v) ?? 0,
+              })),
+            ]}
+          />
+          <FiltroFichas
+            titulo="Técnico"
+            clave="tecnico"
+            activo={filtros.tecnico}
+            basePath="/admin/tickets"
+            query={query}
+            opciones={[
+              { label: "Todos" },
+              ...agentes.map((a) => ({
+                valor: a.id,
+                // Solo el nombre de pila: seis fichas con el nombre completo no
+                // caben en una línea, y en un equipo de seis nadie duda de quién
+                // se habla.
+                label: (a.name ?? a.email ?? "—").split(" ")[0],
+                n: conteos.tecnico.get(a.id) ?? 0,
+              })),
+              { valor: "sin", label: "Sin asignar", n: conteos.tecnico.get("sin") ?? 0 },
+            ]}
+          />
+        </BarraFiltros>
+        <TicketsTable rows={rows} locale={locale} orden={orden} query={query} />
         <Pagination
           {...pageParams}
           total={queueTotal}
           basePath="/admin/tickets"
-          query={{ sla: onlyBreached ? "vencido" : undefined }}
+          query={query}
         />
       </Card>
       {/* Debajo de la cola: primero lo que hay que atender hoy, después lo
