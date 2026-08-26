@@ -16,7 +16,9 @@
     "db:seed:crm": "tsx scripts/seed-crm.ts",
     "typecheck:probes": "tsc --noEmit -p tsconfig.check.json",
     "check:requisitions": "tsx --tsconfig tsconfig.scripts.json scripts/check-requisitions.ts",
-    "db:seed:orders": "tsx --tsconfig tsconfig.scripts.json scripts/seed-orders.ts"
+    "db:seed:orders": "tsx --tsconfig tsconfig.scripts.json scripts/seed-orders.ts",
+    "sync:prod": "bash scripts/sync-desde-prod.sh",
+    "deploy:prod": "bash scripts/desplegar-prod.sh"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",

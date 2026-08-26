@@ -27,12 +27,38 @@ cp .env.example .env.local        # define DATABASE_URL y AUTH_SECRET
 npx auth secret                   # genera AUTH_SECRET
 
 # 4. Base de datos (requiere Postgres)
-npm run db:push                   # crea las tablas desde el schema
+npm run db:migrate                # plano de control (public)
+npx tsx scripts/tenant.ts migrate # esquema de cada empresa
 npm run db:seed                   # datos demo + usuarios
 
 # 5. Desarrollo
 npm run dev                       # http://localhost:3000
 ```
+
+> `db:push` sincroniza por diferencia, sin historial: sirve para tantear un
+> cambio de schema, nunca para poner una base al día. Lo que corre en el
+> servidor es `db:migrate`, así que es lo que hay que correr aquí.
+
+## Entornos: dónde estás parado
+
+Este proyecto **está en producción**, con clientes dentro. Hay dos entornos y
+uno solo tiene datos reales:
+
+| | DEV (tu máquina) | PROD (Hetzner) |
+|---|---|---|
+| Se llega por | `astraion.test:3002` | https://2-29-3-213.sslip.io |
+| Datos | copia de producción, desarmada | los de verdad |
+| Se distingue porque | el comando NO lleva `ssh` | lleva `ssh astrion-srv` o `docker compose` |
+
+```bash
+npm run sync:prod      # trae producción a local (solo lectura allá) y ensaya
+                       # encima las migraciones pendientes
+npm run deploy:prod    # lleva a producción lo que ya funcionó aquí
+```
+
+Cómo se pasa de uno a otro, qué desarma la sincronización y por qué, y qué
+hacer si un despliegue sale mal: **[`docs/ENTORNOS.md`](docs/ENTORNOS.md)**.
+Las reglas en versión corta, para agentes, en [`AGENTS.md`](AGENTS.md).
 
 > El sitio público y el login funcionan **sin** base de datos. El formulario de
 > contacto degrada con elegancia (acepta el lead sin persistir) hasta configurar
@@ -99,6 +125,8 @@ Preparado, no conectado aún:
 | `npm run dev`      | Servidor de desarrollo                   |
 | `npm run build`    | Build de producción                      |
 | `npm run typecheck`| `tsc --noEmit`                           |
-| `npm run db:push`  | Sincroniza el schema con la DB           |
+| `npm run db:migrate`| Aplica las migraciones a `public`       |
 | `npm run db:seed`  | Datos demo                               |
 | `npm run db:studio`| Drizzle Studio (explorador de datos)     |
+| `npm run sync:prod`| Trae la base de producción a local       |
+| `npm run deploy:prod`| Despliega al servidor                  |
