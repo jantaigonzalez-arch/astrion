@@ -17,6 +17,8 @@ import {
   TrendCard,
 } from "@/components/portal/assistant-blocks";
 import type { Block } from "@/lib/ml/blocks-types";
+import type { Forma } from "@/lib/ml/formas";
+import { estiloCaja, estiloLienzo } from "@/components/portal/dashboard-grid";
 import { cn } from "@/lib/utils";
 
 /**
@@ -85,7 +87,12 @@ export default async function DashboardPage({
 
   const resueltos = await Promise.allSettled(
     visibles.map(async (b) => ({
-      width: b.width,
+      caja: b.caja,
+      // La forma que eligió quien compuso. Sin validar: `formaEfectiva` degrada
+      // a la recomendada si el nombre no se conoce o si dejó de ser apta para
+      // los datos de hoy, que es justo lo que tiene que pasar en una vista de
+      // lectura — antes que enseñar un hueco.
+      viz: b.viz as Forma | null,
       id: b.analysis.id,
       bloques: await resolveAnalysis(b.analysis, {}),
     })),
@@ -154,18 +161,27 @@ export default async function DashboardPage({
           )}
         </Card>
       ) : (
-        // Rejilla de dos columnas: los de media fila caben de a dos y los de
-        // fila completa la ocupan entera. Es todo lo que hace falta para que el
-        // ancho signifique algo, sin un motor de rejilla.
-        <div className="grid gap-4 lg:grid-cols-2">
+        /*
+          El lienzo, tal cual quedó compuesto. El MISMO que usa el compositor
+          —ver `dashboard-grid`—: componer viendo un layout y publicar otro
+          sería peor que no poder componerlo.
+
+          Los bloques se pintan en orden de `position`, y ese orden no es
+          decorativo: es lo que se lee en un teléfono, donde el lienzo se apila
+          porque las posiciones fijas no caben. Ver `.lienzo` en `globals.css`.
+        */
+        <div className="lienzo" style={estiloLienzo(conContenido.map((p) => p.caja))}>
           {conContenido.map((p) => (
             <div
               key={p.id}
-              className={cn("space-y-3", p.width === "full" && "lg:col-span-2")}
+              className="bloque"
+              style={estiloCaja(p.caja)}
             >
-              {p.bloques.map((b) => (
-                <Pieza key={llave(b)} block={b} />
-              ))}
+              <div className="contenido space-y-3">
+                {p.bloques.map((b) => (
+                  <Pieza key={llave(b)} block={b} viz={p.viz} />
+                ))}
+              </div>
             </div>
           ))}
         </div>
@@ -174,14 +190,14 @@ export default async function DashboardPage({
   );
 }
 
-function Pieza({ block }: { block: Block }) {
+function Pieza({ block, viz }: { block: Block; viz: Forma | null }) {
   switch (block.kind) {
     case "finding":
       return <InsightItem insight={block.insight} />;
     case "projection":
-      return <ProjectionCard block={block} />;
+      return <ProjectionCard block={block} viz={viz} />;
     case "trend":
-      return <TrendCard block={block} />;
+      return <TrendCard block={block} viz={viz} />;
     case "forecast":
       return <ForecastCard block={block} />;
   }

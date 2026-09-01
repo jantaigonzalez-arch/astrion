@@ -1,15 +1,15 @@
 "use client";
 
-import { useState } from "react";
 import { FlaskConical } from "lucide-react";
 import type {
-  Bar,
   ForecastBlock,
   ProjectionBlock,
   TrendBlock,
 } from "@/lib/ml/blocks-types";
+import { formaEfectiva, type Forma } from "@/lib/ml/formas";
+import { Chart, money } from "@/components/portal/block-charts";
 import { ForecastChart } from "@/components/portal/forecast-chart";
-import { SERIE, SERIE_ALERTA } from "@/components/portal/purchasing/chart-palette";
+import { SERIE } from "@/components/portal/purchasing/chart-palette";
 import { Link } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
@@ -17,27 +17,27 @@ import { cn } from "@/lib/utils";
  * Los tres tipos que no son un hallazgo, dibujados.
  *
  * Cada uno se ve distinto a propósito: la clasificación no sirve de nada si los
- * cuatro tipos acaban pareciendo la misma tarjeta. La proyección y la tendencia
- * son barras planas; el pronóstico es lo único que lleva banda, y la lleva
- * SIEMPRE — el tipo no deja construirlo sin ella.
+ * cuatro tipos acaban pareciendo la misma tarjeta. El pronóstico es lo único
+ * que lleva banda, y la lleva SIEMPRE — el tipo no deja construirlo sin ella.
+ *
+ * QUÉ forma toma una proyección o una tendencia ya no se decide aquí: lo
+ * decide `formaEfectiva` a partir de los datos y de lo que alguien haya
+ * elegido, y lo dibuja `@/components/portal/block-charts`. Antes esta decisión
+ * estaba implícita —se llamaba a `Barras` y punto—, y por eso durante mucho
+ * tiempo todo fue una columna vertical.
  */
-
-const money = (n: number, currency?: string, exacto = false) =>
-  new Intl.NumberFormat("es-MX", {
-    style: currency ? "currency" : "decimal",
-    currency: currency ?? undefined,
-    currencyDisplay: "code",
-    maximumFractionDigits: exacto ? 2 : 0,
-  }).format(n);
 
 /* ------------------------- 2 · Proyección ------------------------- */
 
 export function ProjectionCard({
   block,
   compact = false,
+  viz = null,
 }: {
   block: ProjectionBlock;
   compact?: boolean;
+  /** La forma elegida para ESTA colocación. `null` = la recomendada. */
+  viz?: Forma | null;
 }) {
   return (
     <Marco
@@ -59,7 +59,12 @@ export function ProjectionCard({
           {money(block.total, block.currency)}
         </p>
       ) : (
-        <Barras bars={block.bars} currency={block.currency} />
+        <Chart
+          forma={formaEfectiva(block, viz)}
+          axis={block.axis}
+          bars={block.bars}
+          currency={block.currency}
+        />
       )}
     </Marco>
   );
@@ -67,20 +72,26 @@ export function ProjectionCard({
 
 /* ------------------------- 3 · Tendencia ------------------------- */
 
-export function TrendCard({ block }: { block: TrendBlock }) {
-  const hayApilado = block.bars.some((b) => (b.stacked ?? 0) > 0);
-
+export function TrendCard({
+  block,
+  viz = null,
+}: {
+  block: TrendBlock;
+  /** La forma elegida para ESTA colocación. `null` = la recomendada. */
+  viz?: Forma | null;
+}) {
   return (
     <Marco title={block.title} note={block.note} href={block.href}>
-      {block.legend && hayApilado && (
-        // Con dos series la leyenda es obligatoria: la identidad no puede
-        // depender solo del color.
-        <div className="mb-3 flex flex-wrap gap-4 text-xs">
-          <Clave clase={SERIE.a} texto={block.legend[0]} />
-          <Clave clase={SERIE.b} texto={block.legend[1]} />
-        </div>
-      )}
-      <Barras bars={block.bars} currency={block.currency} apilado />
+      {/* La leyenda ya no se pinta aquí: cada forma sabe si le hace falta y
+          dónde va —al lado de las porciones en un pastel, encima en unas
+          columnas— y una leyenda fija arriba sobraba en la mitad de ellas. */}
+      <Chart
+        forma={formaEfectiva(block, viz)}
+        axis={block.axis}
+        bars={block.bars}
+        currency={block.currency}
+        legend={block.legend}
+      />
     </Marco>
   );
 }
@@ -123,12 +134,15 @@ export function ForecastCard({
       <div className="mt-3">
         <div className="relative h-1.5 rounded-full bg-border">
           <div
-            className={cn("absolute h-full rounded-full opacity-40", SERIE.a)}
-            style={{ left: 0, right: 0, background: "currentColor" }}
+            className="absolute h-full rounded-full opacity-40"
+            style={{ left: 0, right: 0, background: SERIE.a }}
           />
           <div
-            className={cn("absolute top-1/2 size-2.5 -translate-y-1/2 rounded-full ring-2 ring-card", SERIE.a)}
-            style={{ left: `calc(${Math.min(100, Math.max(0, pos))}% - 5px)`, background: "currentColor" }}
+            className="absolute top-1/2 size-2.5 -translate-y-1/2 rounded-full ring-2 ring-card"
+            style={{
+              left: `calc(${Math.min(100, Math.max(0, pos))}% - 5px)`,
+              background: SERIE.a,
+            }}
           />
         </div>
         <div className="mt-1.5 flex justify-between text-xs tabular-nums text-muted-foreground">
@@ -172,7 +186,7 @@ export function ForecastCard({
   );
 }
 
-/* ------------------------- Piezas ------------------------- */
+/* ------------------------- El marco común ------------------------- */
 
 function Marco({
   title,
@@ -193,9 +207,13 @@ function Marco({
   children: React.ReactNode;
 }) {
   return (
+    // `viz-root` es lo que pone en pie los `--series-N`. Va en la tarjeta y no
+    // más arriba a propósito: una tarjeta es una superficie de gráfica, y así
+    // un bloque suelto —el globo del asistente, la vista previa del
+    // compositor— trae sus colores puestos sin depender de dónde lo cuelguen.
     <section
       className={cn(
-        "rounded-lg border border-border bg-secondary/25",
+        "viz-root rounded-lg border border-border bg-secondary/25",
         compact ? "p-3" : "p-4",
       )}
     >
@@ -209,10 +227,9 @@ function Marco({
         )}
       </div>
       {/* El «porqué» va antes del dibujo: una gráfica sin su motivo se mira, no
-          se lee. Es el mismo papel que `because` en un hallazgo. */}
-      {/* El motivo se recorta en compacto, no se quita: una gráfica sin su
-          porqué se mira y no se lee, y eso vale igual para una cifra sola. Tres
-          líneas caben; el texto entero empujaría la cifra fuera del globo. */}
+          se lee. Es el mismo papel que `because` en un hallazgo. Se recorta en
+          compacto, no se quita: tres líneas caben y el texto entero empujaría
+          la cifra fuera del globo. */}
       <p
         className={cn(
           "mb-3 text-xs leading-relaxed text-muted-foreground",
@@ -231,114 +248,5 @@ function Marco({
         </Link>
       )}
     </section>
-  );
-}
-
-function Barras({
-  bars,
-  currency,
-  apilado,
-}: {
-  bars: Bar[];
-  currency?: string;
-  apilado?: boolean;
-}) {
-  const [hover, setHover] = useState<string | null>(null);
-  const max = Math.max(...bars.map((b) => b.value + (b.stacked ?? 0)), 1);
-
-  return (
-    <div>
-      <div className="flex items-end gap-1.5" style={{ height: 132 }}>
-        {bars.map((b) => {
-          const activo = hover === b.key;
-          const total = b.value + (b.stacked ?? 0);
-          const hv = (b.value / max) * 108;
-          const hs = ((b.stacked ?? 0) / max) * 108;
-          return (
-            <div
-              key={b.key}
-              className="relative flex min-w-0 flex-1 flex-col items-center justify-end"
-              onMouseEnter={() => setHover(b.key)}
-              onMouseLeave={() => setHover(null)}
-            >
-              {activo && total > 0 && (
-                <div className="absolute bottom-full z-10 mb-1.5 whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 text-xs shadow-md">
-                  <p className="font-medium">{money(total, currency, true)}</p>
-                  {(b.stacked ?? 0) > 0 && (
-                    <p className="text-muted-foreground">
-                      {money(b.value, currency)} + {money(b.stacked!, currency)}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              <div
-                className={cn(
-                  "flex w-full flex-col justify-end transition-opacity",
-                  hover && !activo && "opacity-50",
-                )}
-                style={{ height: 108 }}
-              >
-                {apilado && (b.stacked ?? 0) > 0 && (
-                  <div
-                    className={cn("w-full rounded-t", SERIE.b)}
-                    style={{
-                      height: Math.max(3, hs),
-                      background: "currentColor",
-                      // 2 px de superficie: sin el hueco, dos rellenos contiguos
-                      // se leen como una sola barra.
-                      marginBottom: b.value > 0 ? 2 : 0,
-                    }}
-                    aria-hidden="true"
-                  />
-                )}
-                {total > 0 ? (
-                  <div
-                    className={cn(
-                      "w-full",
-                      apilado && (b.stacked ?? 0) > 0 ? "" : "rounded-t",
-                      b.alert ? SERIE_ALERTA : SERIE.a,
-                    )}
-                    style={{ height: Math.max(3, hv), background: "currentColor" }}
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <div className="w-full rounded-t bg-border" style={{ height: 2 }} />
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="mt-1.5 flex gap-1.5">
-        {bars.map((b) => (
-          <span
-            key={b.key}
-            className={cn(
-              "min-w-0 flex-1 truncate text-center text-[10px]",
-              // El estado va escrito además de coloreado.
-              b.alert ? "font-medium text-destructive" : "text-muted-foreground",
-            )}
-          >
-            {b.label}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Clave({ clase, texto }: { clase: string; texto: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span
-        className={cn("size-2.5 rounded-sm", clase)}
-        style={{ background: "currentColor" }}
-        aria-hidden="true"
-      />
-      {/* El texto en tinta de texto, nunca en el color de la serie. */}
-      <span className="text-muted-foreground">{texto}</span>
-    </span>
   );
 }

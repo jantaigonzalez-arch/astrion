@@ -161,6 +161,7 @@ export async function salesTrend(conexion?: DbOrTx): Promise<Block[]> {
         ? `, una tasa de cierre del ${Math.round((ganados / cerrados) * 100)} %.`
         : ".") +
       " Las barras son solo lo ganado; lo perdido no tiene un importe comparable.",
+    axis: "time",
     bars: meses.map((m) => ({
       key: m.month,
       label: etiquetaMesISO(m.month),

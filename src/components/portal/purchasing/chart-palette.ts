@@ -1,32 +1,52 @@
 /**
- * Los pasos de color para marcas de datos.
+ * Los colores de las marcas de datos, por su PAPEL.
  *
- * NO son los tokens de la aplicación. `--signal` da 1.89:1 sobre blanco y su
- * luminosidad queda fuera de banda: sirve para un acento o un borde, no para un
- * relleno que hay que leer. Los de abajo salieron de derivar pasos del mismo
- * tono y pasarlos por el comprobador de paleta —banda de luminosidad, piso de
- * croma, separación bajo daltonismo, piso de visión normal y contraste contra
- * la superficie— en los DOS modos:
+ * ── ESTO YA NO ES UNA PALETA ───────────────────────────────────────────────
  *
- *   claro   serie A #0462d3   serie B #0095a5   ΔE normal 17.4
- *   oscuro  serie A #1b6ad4   serie B #00ab9c   ΔE normal 22.4
+ * Lo fue, y ahí estaba el problema: declaraba sus propios pasos —azul #0462d3 y
+ * teal #0095a5— mientras `globals.css` declaraba otros —azul #2a78d6 y naranja
+ * #eb6834— y las dos se describían como «la validada». Las usaban superficies
+ * distintas de la MISMA pantalla: los bloques de un tablero pintaban la segunda
+ * serie en teal, y la gráfica de rentabilidad de abajo la pintaba en naranja.
+ * Dos archivos con la verdad es ninguno.
  *
- * El paso oscuro no es el claro aclarado: es un escalón elegido contra su
- * propia superficie. Si se tocan estos valores hay que volver a pasarlos por el
- * comprobador, no ajustarlos a ojo.
+ * Ahora los valores viven en un solo sitio, `--series-N` en `globals.css`, y
+ * esto solo les pone nombre según para qué se usan. Sobrevivió aquella paleta
+ * porque sus pasos ya eran los slots 1 y 2 de la referencia; ésta no lo era.
  *
- * Viven en un módulo aparte porque los usan la pantalla de análisis y el panel
- * del asistente, y dos copias divergen en el primer retoque.
+ * ── SON VALORES DE COLOR, NO CLASES ────────────────────────────────────────
+ *
+ * Antes eran clases de Tailwind (`text-[#0462d3]`) que se pintaban con el truco
+ * de `background: currentColor`. Ese rodeo existía solo para poder escribir el
+ * modo oscuro con `dark:`; con un token que ya sabe cambiar de modo, sobra.
+ *
+ * Van en `style`, no en `className`, y hay un motivo para no volver atrás: una
+ * clase arbitraria de Tailwind con `var()` dentro se compila mal según cómo se
+ * escriba, y esto es justo la clase de detalle que se rompe en silencio.
+ *
+ * OJO: `var(--series-N)` solo resuelve dentro de un `.viz-root`. Quien dibuje
+ * con estos valores tiene que estar debajo de uno.
  */
+
+/** Slots categóricos, en el orden en que se asignan. Nunca en ciclo. */
 export const SERIE = {
   /** Serie principal. Pagos, importes, la magnitud que se lee primero. */
-  a: "text-[#0462d3] dark:text-[#1b6ad4]",
+  a: "var(--series-1)",
   /** Serie secundaria. Anticipos, el segundo componente de una barra apilada. */
-  b: "text-[#0095a5] dark:text-[#00ab9c]",
+  b: "var(--series-2)",
+  c: "var(--series-3)",
+  d: "var(--series-4)",
+  e: "var(--series-5)",
+  f: "var(--series-6)",
 } as const;
+
+/** Los seis, en orden, para asignar por índice. */
+export const SERIES = [SERIE.a, SERIE.b, SERIE.c, SERIE.d, SERIE.e, SERIE.f] as const;
 
 /**
  * Un tramo en ESTADO —vencido, en falta— no es una serie más: lleva el color de
  * estado y siempre va acompañado de su etiqueta escrita, nunca del color solo.
+ * Por eso está fuera de `SERIES`: que no lo alcance nunca una asignación por
+ * índice, o un «serie 7» acabaría pintado de rojo de alerta.
  */
-export const SERIE_ALERTA = "text-destructive";
+export const SERIE_ALERTA = "var(--color-destructive)";

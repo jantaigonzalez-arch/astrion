@@ -84,7 +84,11 @@ export default async function ComponerPage({
     kind: b.analysis.kind,
     watching: b.analysis.watching,
     active: b.active,
-    width: b.width,
+    caja: b.caja,
+    // Sin validar contra el catálogo de formas: una fila con un nombre que esta
+    // versión no conoce degrada a recomendación en `formaEfectiva`, y eso es lo
+    // correcto — no tumbar el compositor por una cadena.
+    viz: (b.viz as BloqueView["viz"]) ?? null,
     source: b.source,
     preview: vista.get(b.analysis.id) ?? [],
   }));

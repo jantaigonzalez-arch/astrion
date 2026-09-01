@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useMemo, useRef, useState } from "react";
 import {
   Check,
   EyeOff,
@@ -8,8 +8,6 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
-  Rows3,
-  Columns2,
   LayoutDashboard,
   Send,
   Trash2,
@@ -34,7 +32,20 @@ import {
   ProjectionCard,
   TrendCard,
 } from "@/components/portal/assistant-blocks";
-import type { Block } from "@/lib/ml/blocks-types";
+import type {
+  Block,
+  ProjectionBlock,
+  TrendBlock,
+} from "@/lib/ml/blocks-types";
+import type { Forma } from "@/lib/ml/formas";
+import type { Caja } from "@/lib/ml/placements";
+import {
+  COLS,
+  aReticula,
+  estiloCaja,
+  estiloLienzo,
+} from "@/components/portal/dashboard-grid";
+import { FormaPicker } from "@/components/portal/forma-picker";
 import { cn } from "@/lib/utils";
 
 const inicial: DashState = { ok: false };
@@ -56,7 +67,16 @@ export type BloqueView = {
   kind: string;
   watching: string[];
   active: boolean;
-  width: "full" | "half";
+  /** Dónde y cuánto ocupa en el lienzo. Ver `Caja`. */
+  caja: Caja;
+  /**
+   * La forma fijada a mano, o `null` para «la que recomiende el sistema».
+   *
+   * Nace `null` en todo, y esa es la diferencia que hace que un bloque siga a
+   * sus datos: fijarla es una decisión explícita de quien compone, y hasta que
+   * la tome la forma se recalcula sola. Ver la migración 0020.
+   */
+  viz: Forma | null;
   source: "user" | "system" | "factory";
   /**
    * Lo que este análisis enseña HOY, ya resuelto en el servidor.
@@ -157,7 +177,15 @@ export function DashboardBuilder({
     id: string;
     desde: "tablero" | "disponible" | "quitado";
   } | null>(null);
-  const [sobre, setSobre] = useState<string | null>(null);
+  /*
+    La rejilla, para poder medirla al redimensionar.
+
+    El tirador necesita saber cuánto mide UNA columna, y eso solo lo sabe el
+    contenedor: depende del ancho de la ventana y de si el panel está plegado.
+    Calcularlo de una constante habría dado un salto en cuanto alguien pliega el
+    panel, que es justo cuando más se acomoda un tablero.
+  */
+  const rejilla = useRef<HTMLDivElement>(null);
 
   /*
     El panel plegado, para trabajar a pantalla completa.
@@ -219,7 +247,12 @@ export function DashboardBuilder({
     kind: d.kind,
     watching: d.watching,
     active: true,
-    width: "full",
+    // Nace a media hoja, y DEBAJO de todo lo que ya hay: en un lienzo, caer
+    // encima de un bloque existente es lo peor que puede hacer algo que acabás
+    // de soltar — tapa lo que estabas mirando.
+    caja: { x: 0, y: 0, w: 12, h: 8 },
+    // Nace sin forma fijada: se recomienda. Elegir es un acto explícito.
+    viz: null,
     source: "user",
     preview: d.preview,
   });
@@ -240,53 +273,46 @@ export function DashboardBuilder({
   const cambiar = (id: string, parche: Partial<BloqueView>) =>
     setLista((xs) => xs.map((x) => (x.analysis === id ? { ...x, ...parche } : x)));
 
-  /** Lo pone al final del tablero, encendido, venga de donde venga. */
-  function alFinal(id: string) {
-    setLista((xs) => {
-      const ya = xs.find((x) => x.analysis === id);
-      if (ya) return [...xs.filter((x) => x.analysis !== id), { ...ya, active: true }];
-      const nuevo = disponibles.find((d) => d.id === id);
-      return nuevo ? [...xs, comoBloque(nuevo)] : xs;
-    });
-    setArrastrando(null);
-    setSobre(null);
+  /**
+   * Coloca un bloque en el punto del lienzo donde se soltó.
+   *
+   * En una rejilla de flujo esto era «ponelo al final» porque no había dónde
+   * más. Aquí hay coordenada, así que soltar significa exactamente lo que
+   * parece: el bloque queda donde estaba el cursor. Es la diferencia entera
+   * entre un lienzo y una lista.
+   */
+  /**
+   * La primera fila libre por debajo de todo. Es donde cae lo que se agrega
+   * con el «+», que no tiene coordenada porque no hubo gesto que la diera.
+   *
+   * Debajo y no encima: en un lienzo, un bloque nuevo que aparece sobre otro
+   * tapa justo lo que la persona estaba mirando, y como no se reacomoda nada,
+   * ahí se queda hasta que alguien lo note.
+   */
+  function libreAbajo(): number {
+    return lista
+      .filter((b) => b.active)
+      .reduce((max, b) => Math.max(max, b.caja.y + b.caja.h), 0);
   }
 
-  /**
-   * Suelta lo que se arrastra EN el sitio de `hasta`.
-   *
-   * Reordenar e insertar son la misma operación desde el punto de vista de
-   * quien arrastra —«esto va aquí»— y por eso salen del mismo sitio: la
-   * diferencia es solo si el bloque ya estaba en la lista.
-   */
-  function soltarEn(hasta: string) {
-    const a = arrastrando;
-    setArrastrando(null);
-    setSobre(null);
-    if (!a || a.id === hasta) return;
-
+  function colocar(id: string, cx: number, cy: number) {
     setLista((xs) => {
-      const j = xs.findIndex((x) => x.analysis === hasta);
-      if (j < 0) return xs;
+      // La caja se centra en el cursor y se acota al lienzo: nace a media hoja,
+      // así que soltando cerca del borde derecho se saldría.
+      const w = 12;
+      const x = Math.min(COLS - w, Math.max(0, cx - Math.floor(w / 2)));
+      const y = Math.max(0, cy);
 
-      const ya = xs.find((x) => x.analysis === a.id);
-      const copia = ya
-        ? xs.filter((x) => x.analysis !== a.id)
-        : [...xs];
-      const pieza = ya
-        ? { ...ya, active: true }
-        : (() => {
-            const d = disponibles.find((x) => x.id === a.id);
-            return d ? comoBloque(d) : null;
-          })();
-      if (!pieza) return xs;
-
-      // El destino se vuelve a buscar sobre la copia: si lo que se movía estaba
-      // ANTES, quitarlo corrió todos los índices una posición.
-      const k = copia.findIndex((x) => x.analysis === hasta);
-      copia.splice(k < 0 ? copia.length : k, 0, pieza);
-      return copia;
+      const ya = xs.find((v) => v.analysis === id);
+      if (ya) {
+        return xs.map((v) =>
+          v.analysis === id ? { ...v, active: true, caja: { ...v.caja, x, y } } : v,
+        );
+      }
+      const nuevo = disponibles.find((d) => d.id === id);
+      return nuevo ? [...xs, { ...comoBloque(nuevo), caja: { x, y, w, h: 8 } }] : xs;
     });
+    setArrastrando(null);
   }
 
   return (
@@ -309,37 +335,78 @@ export function DashboardBuilder({
       )}
     >
       {/* ───────────────── ESPACIO DE TRABAJO ───────────────── */}
-      <div>
+      {/*
+        LA COLUMNA ENTERA ACEPTA LO QUE SE SUELTE.
+
+        Antes solo aceptaban los bloques y la caja del final, y eso dejaba
+        rechazando el arrastre a todo lo demás: los huecos de la rejilla, el
+        espacio bajo el último bloque, el margen. Como la caja de herramientas
+        está a la DERECHA y el tablero a la izquierda, el recorrido natural del
+        ratón cruza justo por ese hueco — soltabas ahí, no pasaba nada, y la
+        conclusión razonable era que el arrastre no funciona. Por eso se acababa
+        usando el «+», que sí acierta siempre.
+
+        Ahora el destino por omisión es «al final», y afinar la posición es
+        soltar sobre un bloque concreto. Quien suelta en el sitio equivocado
+        consigue algo razonable en vez de nada.
+      */}
+      <div
+        onDragOver={(e) => {
+          // Lo que viene del propio tablero NO se recoge aquí: reordenar exige
+          // un destino, y tragarse esa soltada lo mandaría al final cada vez
+          // que alguien apunta un poco largo.
+          if (!arrastrando) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+        }}
+        onDrop={(e) => {
+          if (!arrastrando) return;
+          e.preventDefault();
+          const id = e.dataTransfer.getData("text/plain") || arrastrando.id;
+          // El punto de soltada, en unidades del lienzo, medido contra el
+          // CONTENEDOR del lienzo y no contra esta columna: son cajas distintas
+          // y usar la de aquí desplazaría todo lo que se suelte.
+          const cont = rejilla.current;
+          if (!cont) return;
+          const r = cont.getBoundingClientRect();
+          const p = aReticula(r, e.clientX - r.left, e.clientY - r.top);
+          colocar(id, p.cx, p.cy);
+        }}
+        // Mientras viene algo de la caja, la columna entera se marca como
+        // destino. Es la mitad que faltaba: aceptar la soltada sin decirlo deja
+        // la misma duda de antes —el cursor tampoco lo cuenta— y quien arrastra
+        // necesita ver DÓNDE puede soltar antes de soltar, no después.
+        className={cn(
+          "rounded-xl transition-colors",
+          arrastrando &&
+            "outline-dashed outline-2 outline-offset-4 outline-primary/40",
+        )}
+      >
         {enTablero.length === 0 ? (
           <ZonaVacia
             activa={Boolean(arrastrando) && arrastrando?.desde !== "tablero"}
-            onSoltar={() => arrastrando && alFinal(arrastrando.id)}
+            onSoltar={(soltado) => {
+              const id = soltado || arrastrando?.id;
+              if (id) colocar(id, 6, 0);
+            }}
           />
         ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div
+            className="lienzo"
+            ref={rejilla}
+            style={estiloLienzo(enTablero.map((b) => b.caja))}
+          >
             {enTablero.map((b) => (
               <BloqueEditable
                 key={b.analysis}
                 b={b}
-                arrastrado={arrastrando?.id === b.analysis}
-                sobre={sobre === b.analysis}
-                onArrastrar={(id) =>
-                  setArrastrando(id ? { id, desde: "tablero" } : null)
-                }
-                onSobre={setSobre}
-                onSoltar={() => soltarEn(b.analysis)}
-                onAncho={(w) => cambiar(b.analysis, { width: w })}
+                rejilla={rejilla}
+                onCaja={(c) => cambiar(b.analysis, { caja: c })}
+                onForma={(f) => cambiar(b.analysis, { viz: f })}
                 onQuitar={() => cambiar(b.analysis, { active: false })}
               />
             ))}
 
-            {/* Cola del tablero: soltar aquí lo pone al final. Sin esta zona el
-                último puesto solo se alcanzaría soltando sobre el último
-                bloque, que lo insertaría ANTES. */}
-            <ZonaFinal
-              activa={Boolean(arrastrando)}
-              onSoltar={() => arrastrando && alFinal(arrastrando.id)}
-            />
           </div>
         )}
 
@@ -463,8 +530,9 @@ export function DashboardBuilder({
                 value={JSON.stringify(
                   lista.map((b) => ({
                     analysis: b.analysis,
-                    width: b.width,
+                    ...b.caja,
                     active: b.active,
+                    viz: b.viz,
                   })),
                 )}
               />
@@ -596,6 +664,7 @@ export function DashboardBuilder({
             kind: d.kind,
             watching: d.watching,
             piezas: d.preview.length,
+            preview: d.preview,
           }))}
           quitados={quitados.map((b) => ({
             id: b.analysis,
@@ -603,9 +672,10 @@ export function DashboardBuilder({
             kind: b.kind,
             watching: b.watching,
             piezas: b.preview.length,
+            preview: b.preview,
           }))}
           quitando={arrastrando?.desde === "tablero"}
-          onAgregar={(id) => alFinal(id)}
+          onAgregar={(id) => colocar(id, 6, libreAbajo())}
           onArrastrar={(id, desde) => setArrastrando(desde ? { id, desde } : null)}
         />
 
@@ -661,52 +731,37 @@ export function DashboardBuilder({
  */
 function BloqueEditable({
   b,
-  arrastrado,
-  sobre,
-  onArrastrar,
-  onSobre,
-  onSoltar,
-  onAncho,
+  rejilla,
+  onCaja,
+  onForma,
   onQuitar,
 }: {
   b: BloqueView;
-  arrastrado: boolean;
-  sobre: boolean;
-  onArrastrar: (id: string | null) => void;
-  onSobre: (id: string | null) => void;
-  onSoltar: () => void;
-  onAncho: (w: "full" | "half") => void;
+  rejilla: React.RefObject<HTMLDivElement | null>;
+  onCaja: (c: Caja) => void;
+  onForma: (f: Forma | null) => void;
   onQuitar: () => void;
 }) {
+  const dibujable = conFormas(b.preview);
   return (
+    /*
+      Ya no es `draggable`.
+
+      El arrastre nativo de HTML5 sirve para «esto va DENTRO de aquello» y por
+      eso servía cuando mover un bloque significaba reordenarlo. En un lienzo
+      mover significa «ponelo en esta coordenada», y para eso hace falta la
+      posición continua del puntero, que `dragstart`/`drop` no dan. La mudanza
+      la lleva ahora el asa —ver `Tiradores`—.
+
+      El bloque tampoco es zona de soltada: no hay «insertar antes de éste».
+      Lo que venga de la caja de herramientas cae donde se suelte, y de eso se
+      encarga el lienzo entero.
+    */
     <div
-      draggable
-      onDragStart={(e) => {
-        onArrastrar(b.analysis);
-        e.dataTransfer.effectAllowed = "move";
-        e.dataTransfer.setData("text/plain", b.analysis);
-      }}
-      onDragEnd={() => {
-        onArrastrar(null);
-        onSobre(null);
-      }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        if (!sobre) onSobre(b.analysis);
-      }}
-      onDragLeave={() => onSobre(null)}
-      onDrop={(e) => {
-        e.preventDefault();
-        onSoltar();
-      }}
+      style={estiloCaja(b.caja)}
       className={cn(
-        "group relative rounded-xl border transition-all",
-        b.width === "full" && "lg:col-span-2",
-        arrastrado && "opacity-40",
-        sobre && !arrastrado
-          ? "border-primary ring-2 ring-primary/30"
-          : "border-transparent",
+        "bloque group relative rounded-xl border border-transparent transition-colors",
+        "hover:border-border",
       )}
     >
       {/* La barra de controles flota encima del bloque en vez de empujarlo:
@@ -718,23 +773,27 @@ function BloqueEditable({
           "opacity-0 group-hover:opacity-100 focus-within:opacity-100",
         )}
       >
-        {(["full", "half"] as const).map((w) => (
-          <button
-            key={w}
-            type="button"
-            onClick={() => onAncho(w)}
-            title={w === "full" ? "Fila completa" : "Media fila"}
-            aria-pressed={b.width === w}
-            className={cn(
-              "rounded p-1 transition-colors",
-              b.width === w
-                ? "bg-secondary text-foreground"
-                : "text-muted-foreground hover:bg-secondary/60",
-            )}
-          >
-            {w === "full" ? <Rows3 className="size-3.5" /> : <Columns2 className="size-3.5" />}
-          </button>
-        ))}
+        {/* El selector de forma va PRIMERO y con texto, no con un icono: es la
+            única decisión de esta barra que no se adivina de un símbolo, y la
+            que hace falta leer para saber qué está puesto ahora. Solo aparece
+            si el bloque tiene algo que dibujar. */}
+        {dibujable && (
+          <FormaPicker
+            bars={dibujable.bars}
+            axis={dibujable.axis}
+            total={dibujable.kind === "projection" ? dibujable.total : undefined}
+            valor={b.viz}
+            onElegir={onForma}
+          />
+        )}
+        {/* El tamaño ESCRITO, además del tirador.
+            Arrastrar una esquina no deja rastro de en qué quedó, y «3 de 4
+            columnas» es la diferencia entre acomodar a ojo y saber qué se
+            guardó. También es lo que anuncia el tirador a un lector de
+            pantalla. */}
+        <span className="px-1 font-mono text-[10px] tabular-nums text-muted-foreground">
+          {b.caja.w}×{b.caja.h} · {b.caja.x},{b.caja.y}
+        </span>
         <button
           type="button"
           onClick={onQuitar}
@@ -745,21 +804,17 @@ function BloqueEditable({
         </button>
       </div>
 
-      <div className="absolute left-2 top-2 z-10 cursor-grab rounded p-1 text-muted-foreground opacity-40 transition-opacity group-hover:opacity-100 active:cursor-grabbing">
-        <GripVertical className="size-4" />
-      </div>
-
       {/* Lo que este bloque enseña HOY. Vacío no es un fallo: el análisis está
           vigilando y hoy no encontró nada. Se dice, en vez de dejar un hueco
           que parece un error de carga. */}
       {b.preview.length > 0 ? (
-        <div className="space-y-3">
+        <div className="contenido space-y-3">
           {b.preview.map((x) => (
-            <Pieza key={llave(x)} block={x} />
+            <Pieza key={llave(x)} block={x} viz={b.viz} />
           ))}
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed border-border p-5">
+        <div className="contenido rounded-xl border border-dashed border-border p-5">
           <p className="text-sm font-medium">{b.label}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Hoy no encontró nada que reportar. Sigue vigilando:
@@ -771,36 +826,151 @@ function BloqueEditable({
           </ul>
         </div>
       )}
+
+      <Tiradores caja={b.caja} rejilla={rejilla} onCaja={onCaja} />
     </div>
   );
 }
 
-/** La cola del tablero: acepta lo que se suelte y lo pone al final. */
-function ZonaFinal({ activa, onSoltar }: { activa: boolean; onSoltar: () => void }) {
-  const [sobre, setSobre] = useState(false);
-  if (!activa) return null;
+/**
+ * Los tiradores de una caja: mover y redimensionar sobre el lienzo.
+ *
+ * ── UN LIENZO NO REACOMODA, Y ESO CAMBIA EL GESTO ─────────────────────────
+ *
+ * Con la rejilla de flujo, arrastrar un bloque significaba «ponelo ANTES de
+ * aquel» y el navegador recolocaba el resto. Aquí no hay resto que recolocar:
+ * arrastrar significa «ponelo AHÍ», en la columna y la fila donde se suelte.
+ * Por eso el arrastre nativo de HTML5 —que sirve para «esto va dentro de
+ * aquello»— se cambió por eventos de puntero, que son los que dan la posición
+ * continua que hace falta para mover algo.
+ *
+ * ── SE PUEDEN SOLAPAR, A PROPÓSITO ────────────────────────────────────────
+ *
+ * No hay detección de colisiones ni empujones. Es lo que se pidió y es lo que
+ * hace PowerBI: si alguien quiere una tarjeta encima de otra, la pone. Empujar
+ * al vecino convierte cada movimiento en una cascada que nadie predijo, y es
+ * justo lo que el flujo automático ya hacía y que este modelo vino a quitar.
+ */
+function Tiradores({
+  caja,
+  rejilla,
+  onCaja,
+}: {
+  caja: Caja;
+  rejilla: React.RefObject<HTMLDivElement | null>;
+  onCaja: (c: Caja) => void;
+}) {
+  const [gesto, setGesto] = useState<"mover" | "medir" | null>(null);
+
+  /**
+   * Convierte el puntero en una caja nueva.
+   *
+   * `origen` es la caja al empezar y `desde` el punto donde se agarró: sin los
+   * dos, el bloque saltaría para poner su esquina bajo el cursor en el primer
+   * movimiento. Con ellos se mueve lo mismo que se movió la mano.
+   */
+  function arrastrar(modo: "mover" | "medir", e: React.PointerEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const cont = rejilla.current;
+    if (!cont) return;
+    const rect = cont.getBoundingClientRect();
+    const origen = { ...caja };
+    const desde = { x: e.clientX, y: e.clientY };
+    setGesto(modo);
+    e.currentTarget.setPointerCapture(e.pointerId);
+
+    const mover = (ev: PointerEvent) => {
+      const d = aReticula(rect, ev.clientX - desde.x, ev.clientY - desde.y);
+      if (modo === "mover") {
+        onCaja({
+          ...origen,
+          // Acotado al lienzo: un bloque arrastrado fuera por la derecha
+          // quedaría invisible y sin forma de recuperarlo con el ratón.
+          x: Math.min(COLS - origen.w, Math.max(0, origen.x + d.cx)),
+          y: Math.max(0, origen.y + d.cy),
+        });
+      } else {
+        onCaja({
+          ...origen,
+          w: Math.min(COLS - origen.x, Math.max(2, origen.w + d.cx)),
+          h: Math.max(4, origen.h + d.cy),
+        });
+      }
+    };
+    const soltar = () => {
+      setGesto(null);
+      window.removeEventListener("pointermove", mover);
+      window.removeEventListener("pointerup", soltar);
+    };
+    window.addEventListener("pointermove", mover);
+    window.addEventListener("pointerup", soltar);
+  }
+
+  /** Las flechas mueven; con Shift, miden. Ver el porqué en el asa. */
+  const teclas = (modo: "mover" | "medir") => (e: React.KeyboardEvent) => {
+    const paso: Record<string, [number, number]> = {
+      ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1],
+    };
+    const d = paso[e.key];
+    if (!d) return;
+    e.preventDefault();
+    if (modo === "mover") {
+      onCaja({
+        ...caja,
+        x: Math.min(COLS - caja.w, Math.max(0, caja.x + d[0])),
+        y: Math.max(0, caja.y + d[1]),
+      });
+    } else {
+      onCaja({
+        ...caja,
+        w: Math.min(COLS - caja.x, Math.max(2, caja.w + d[0])),
+        h: Math.max(4, caja.h + d[1]),
+      });
+    }
+  };
+
   return (
-    <div
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        setSobre(true);
-      }}
-      onDragLeave={() => setSobre(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setSobre(false);
-        onSoltar();
-      }}
-      className={cn(
-        "flex min-h-24 items-center justify-center rounded-xl border-2 border-dashed text-xs",
-        sobre
-          ? "border-primary bg-primary/5 text-primary"
-          : "border-border text-muted-foreground",
-      )}
-    >
-      Soltar al final
-    </div>
+    <>
+      {/* El asa de MOVER, arriba a la izquierda, donde ya estaba la de
+          arrastrar. Es enfocable y entiende las flechas: mover un bloque
+          decide qué se lee primero, y dejar esa decisión solo al ratón la
+          pone fuera del alcance de quien no puede usarlo. */}
+      <button
+        type="button"
+        aria-label={`Mover. Columna ${caja.x}, fila ${caja.y}. Flechas para moverlo.`}
+        onPointerDown={(e) => arrastrar("mover", e)}
+        onKeyDown={teclas("mover")}
+        title="Arrastrá para mover"
+        className={cn(
+          "absolute left-2 top-2 z-20 rounded p-1 text-muted-foreground",
+          "transition-opacity focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary",
+          gesto === "mover" ? "cursor-grabbing opacity-100" : "cursor-grab opacity-40 group-hover:opacity-100",
+        )}
+      >
+        <GripVertical className="size-4" />
+      </button>
+
+      {/* El de MEDIR, en la esquina inferior derecha. */}
+      <button
+        type="button"
+        aria-label={`Tamaño: ${caja.w} de 24 columnas, ${caja.h} filas. Flechas para cambiarlo.`}
+        onPointerDown={(e) => arrastrar("medir", e)}
+        onKeyDown={teclas("medir")}
+        title="Arrastrá para cambiar el tamaño"
+        className={cn(
+          "absolute bottom-1 right-1 z-20 size-5 cursor-nwse-resize rounded-sm",
+          "transition-opacity focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-primary",
+          gesto === "medir" ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+        )}
+      >
+        {/* Dos rayas en diagonal: el gesto universal de «esto se estira». */}
+        <svg viewBox="0 0 12 12" className="size-full text-muted-foreground">
+          <path d="M11 4 L4 11 M11 8 L8 11" stroke="currentColor" strokeWidth="1.5"
+            strokeLinecap="round" fill="none" />
+        </svg>
+      </button>
+    </>
   );
 }
 
@@ -810,7 +980,7 @@ function ZonaVacia({
   onSoltar,
 }: {
   activa: boolean;
-  onSoltar: () => void;
+  onSoltar: (soltado: string | null) => void;
 }) {
   const [sobre, setSobre] = useState(false);
   return (
@@ -824,7 +994,7 @@ function ZonaVacia({
       onDrop={(e) => {
         e.preventDefault();
         setSobre(false);
-        onSoltar();
+        onSoltar(e.dataTransfer.getData("text/plain") || null);
       }}
       className={cn(
         "flex min-h-64 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-8 text-center",
@@ -843,17 +1013,37 @@ function ZonaVacia({
   );
 }
 
-function Pieza({ block }: { block: Block }) {
+function Pieza({ block, viz }: { block: Block; viz: Forma | null }) {
   switch (block.kind) {
     case "finding":
       return <InsightItem insight={block.insight} />;
     case "projection":
-      return <ProjectionCard block={block} />;
+      return <ProjectionCard block={block} viz={viz} />;
     case "trend":
-      return <TrendCard block={block} />;
+      return <TrendCard block={block} viz={viz} />;
     case "forecast":
       return <ForecastCard block={block} />;
   }
+}
+
+/**
+ * El bloque de este análisis que ADMITE elegir forma, si lo hay.
+ *
+ * Un análisis puede resolver a varios bloques —un hallazgo y una tendencia, por
+ * ejemplo— y la elección de forma es UNA por colocación, porque la fila de la
+ * base es una. Se toma el primero dibujable: en la práctica los análisis que
+ * producen gráfica producen una sola, y ofrecer un selector por bloque exigiría
+ * una fila por bloque para guardar algo que nadie ha pedido distinto.
+ *
+ * Devuelve `null` cuando el análisis solo produce hallazgos o pronósticos: ahí
+ * no hay nada que elegir, y el selector no debe aparecer. Enseñar un menú que
+ * no aplica es peor que no tenerlo.
+ */
+function conFormas(preview: Block[]): ProjectionBlock | TrendBlock | null {
+  for (const b of preview) {
+    if (b.kind === "projection" || b.kind === "trend") return b;
+  }
+  return null;
 }
 
 /** Los hallazgos llevan su id dentro del `insight`; el resto, suelto. */

@@ -14,6 +14,7 @@ import {
   reorderDashboard,
   unpublishDashboard,
 } from "@/lib/ml/dashboards";
+import { caja, type Caja } from "@/lib/ml/placements";
 
 /**
  * Acciones del compositor de tableros.
@@ -49,7 +50,12 @@ export async function reorderDashboardAction(
   if (no) return { ok: false, error: no };
 
   const slug = String(form.get("slug") ?? "");
-  let orden: Array<{ analysis: string; width: "full" | "half"; active: boolean }>;
+  let orden: Array<{
+    analysis: string;
+    caja: Caja;
+    active: boolean;
+    viz: string | null;
+  }>;
 
   try {
     const crudo = JSON.parse(String(form.get("orden") ?? "[]")) as unknown;
@@ -59,8 +65,27 @@ export async function reorderDashboardAction(
       if (typeof o.analysis !== "string" || !o.analysis) throw new Error("sin análisis");
       return {
         analysis: o.analysis,
-        width: o.width === "half" ? "half" : "full",
+        // Saneada y no validada: viene de un campo oculto, o sea de fuera. Un
+        // valor imposible cae en el más cercano; fallar el guardado del tablero
+        // entero por un número raro sería peor que recolocar un bloque.
+        caja: caja({
+          x: Number(o.x),
+          y: Number(o.y),
+          w: Number(o.w),
+          h: Number(o.h),
+        }),
         active: o.active !== false,
+        // Se acepta cualquier cadena corta y NO se valida contra el catálogo de
+        // formas: la aptitud depende de los datos del bloque, que aquí no están
+        // resueltos, y comprobarla exigiría volver a ejecutar el análisis
+        // entero en cada guardado. Un nombre desconocido degrada a
+        // recomendación al dibujar —ver `formaEfectiva`—, que es el
+        // comportamiento seguro. El límite de 16 es el de la columna: sin él,
+        // una cadena larga tumbaría el guardado del tablero completo.
+        viz:
+          typeof o.viz === "string" && o.viz.length > 0 && o.viz.length <= 16
+            ? o.viz
+            : null,
       };
     });
   } catch {

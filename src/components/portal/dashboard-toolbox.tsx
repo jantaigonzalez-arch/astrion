@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { GripVertical, Plus, Search, Undo2, X } from "lucide-react";
+import type { Bar, Block } from "@/lib/ml/blocks-types";
+import { recomendada } from "@/lib/ml/formas";
+import { SERIE, SERIE_ALERTA } from "@/components/portal/purchasing/chart-palette";
 import { cn } from "@/lib/utils";
 
 export type HerramientaItem = {
@@ -11,6 +14,16 @@ export type HerramientaItem = {
   watching: string[];
   /** Cuántos bloques produce hoy. Cero = configurado pero sin nada que decir. */
   piezas: number;
+  /**
+   * Lo que este análisis enseña HOY, ya resuelto en el servidor.
+   *
+   * Es el MISMO array que el compositor pinta al soltar el bloque: llega hasta
+   * aquí desde `componer/page.tsx`, que resuelve todo el catálogo de una vez.
+   * Antes se recibía y se tiraba —solo sobrevivía su `.length`, como `piezas`—
+   * y la tarjeta se quedaba en tres líneas de texto. Dibujarlo no cuesta una
+   * consulta más: el dato ya estaba en el cliente.
+   */
+  preview: Block[];
 };
 
 const KIND_LABEL: Record<string, string> = {
@@ -168,6 +181,176 @@ export function DashboardToolbox({
   );
 }
 
+/**
+ * La forma que va a tener el bloque, en 28 px de alto.
+ *
+ * ── PARA QUÉ ───────────────────────────────────────────────────────────────
+ *
+ * La tarjeta decía el TIPO —«Cómo viene»— y no la FORMA. Dos análisis del mismo
+ * tipo pueden ser doce barras mensuales o tres categorías, y eso decide si el
+ * bloque va a media fila o a fila entera; era justo lo que había que
+ * imaginarse antes de arrastrar. Con la miniatura, la decisión de ancho se toma
+ * mirando.
+ *
+ * ── ES UN ADORNO HONESTO, Y POR ESO VA `aria-hidden` ───────────────────────
+ *
+ * A este tamaño no caben ejes, etiquetas ni valores, y una marca de color sin
+ * etiqueta no puede cargar identidad —es la regla que obliga a que las barras
+ * de verdad lleven su cifra escrita—. Aquí no la carga: lo que significa cada
+ * cosa sigue estando en el texto de al lado (el tipo, qué vigila, cuántas
+ * piezas), y esto solo enseña el CONTORNO. Por eso no se anuncia a quien usa
+ * lector de pantalla: no añade información, la repetiría peor.
+ *
+ * No se dibuja para un hallazgo. Un hallazgo es texto —un aviso con su motivo—
+ * y no tiene contorno que enseñar; inventarle uno sería dibujar una gráfica que
+ * el bloque nunca va a tener.
+ */
+function Miniatura({ preview }: { preview: Block[] }) {
+  const b = preview[0];
+  if (!b || b.kind === "finding") return null;
+
+  if (b.kind === "forecast") {
+    const serie = [
+      ...(b.history ?? []).map((p) => p.value),
+      ...(b.series ?? []).map((p) => p.value),
+    ];
+    // Un pronóstico de un solo caso —«esta visita llevará 5 h»— no tiene serie
+    // que dibujar, y dos puntos no hacen una línea legible.
+    if (serie.length < 3) return null;
+    const corte = (b.history ?? []).length;
+    return <Linea valores={serie} corte={corte} />;
+  }
+
+  // La MISMA regla que usa la tarjeta de verdad, no una parecida: la miniatura
+  // existe para que soltar el bloque no sorprenda, y dos reglas que se parecen
+  // acaban divergiendo justo en el caso raro.
+  switch (recomendada(b)) {
+    case "ranking":
+      return <Tiritas bars={b.bars} />;
+    case "linea":
+      return <Linea valores={b.bars.map((x) => x.value)} corte={b.bars.length} />;
+    default:
+      return <Barritas bars={b.bars} />;
+  }
+}
+
+/** El contorno de un ranking: unas cuantas barras horizontales. */
+function Tiritas({ bars }: { bars: Bar[] }) {
+  const primeras = bars.slice(0, 4);
+  if (primeras.length === 0) return null;
+  const max = Math.max(...primeras.map((x) => Math.abs(x.value)), 1);
+
+  return (
+    <div className="viz-root mt-2 space-y-1" aria-hidden="true">
+      {primeras.map((x) => (
+        <div key={x.key} className="h-1 w-full overflow-hidden rounded-full"
+          style={{ background: "var(--viz-track)" }}>
+          <div
+            className="h-full rounded-full"
+            style={{
+              width: `${Math.max(4, (Math.abs(x.value) / max) * 100)}%`,
+              background: x.alert ? SERIE_ALERTA : SERIE.a,
+            }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** El contorno de unas barras. Apiladas si el bloque lo está. */
+function Barritas({ bars }: { bars: Bar[] }) {
+  // Las últimas, no las primeras: en una serie temporal lo reciente es lo que
+  // dice qué forma tiene ahora, y a este ancho no caben doce sin volverse una
+  // trama gris.
+  const ultimas = bars.slice(-12);
+  if (ultimas.length === 0) return null;
+  const max = Math.max(...ultimas.map((x) => x.value + (x.stacked ?? 0)), 1);
+
+  return (
+    <div className="viz-root mt-2 flex h-7 items-end gap-px" aria-hidden="true">
+      {ultimas.map((x) => {
+        const hv = (x.value / max) * 100;
+        const hs = ((x.stacked ?? 0) / max) * 100;
+        return (
+          <div key={x.key} className="flex h-full min-w-0 flex-1 flex-col justify-end">
+            {hs > 0 && (
+              <div
+                style={{
+                  height: `${Math.max(2, hs)}%`,
+                  background: SERIE.b,
+                  // El mismo hueco de 2 px que llevan las barras de verdad. Sin
+                  // él los dos tramos se leen como uno solo, que es la lectura
+                  // que la miniatura tiene que evitar.
+                  marginBottom: x.value > 0 ? 2 : 0,
+                }}
+              />
+            )}
+            <div
+              className="rounded-t-[1px]"
+              style={{
+                height: `${Math.max(2, hv)}%`,
+                background: x.alert ? SERIE_ALERTA : SERIE.a,
+              }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * El contorno de una serie, con la frontera entre lo ocurrido y lo estimado.
+ *
+ * La parte estimada va punteada y no de otro color: la distinción es «esto ya
+ * pasó / esto es una estimación», y confiarla a un segundo tono la volvería una
+ * serie más. Es la misma frontera que el bloque grande dibuja con su banda.
+ */
+function Linea({ valores, corte }: { valores: number[]; corte: number }) {
+  const max = Math.max(...valores);
+  const min = Math.min(...valores);
+  const rango = max - min || 1;
+  const W = 100;
+  const H = 28;
+  const punto = (v: number, i: number) =>
+    `${(i / (valores.length - 1)) * W},${H - ((v - min) / rango) * (H - 4) - 2}`;
+
+  const pasado = valores.slice(0, Math.max(corte, 0)).map(punto);
+  // El primer punto estimado se repite en las dos líneas: sin ese solape queda
+  // un hueco justo en la frontera, que es donde peor se ve.
+  const futuro = valores.slice(Math.max(corte - 1, 0)).map((v, i) => punto(v, i + Math.max(corte - 1, 0)));
+
+  return (
+    <svg
+      className="viz-root mt-2 h-7 w-full"
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
+    >
+      {pasado.length > 1 && (
+        <polyline
+          points={pasado.join(" ")}
+          fill="none"
+          stroke={SERIE.a}
+          strokeWidth="2"
+          vectorEffect="non-scaling-stroke"
+        />
+      )}
+      {futuro.length > 1 && (
+        <polyline
+          points={futuro.join(" ")}
+          fill="none"
+          stroke={SERIE.a}
+          strokeWidth="2"
+          strokeDasharray="3 2"
+          vectorEffect="non-scaling-stroke"
+        />
+      )}
+    </svg>
+  );
+}
+
 /** Minúsculas y sin acentos, a los dos lados de la comparación. */
 function normalizar(s: string): string {
   return s
@@ -244,6 +427,9 @@ function Seccion({
                     · {a.watching[0]}
                   </p>
                 )}
+                {/* Debajo del texto y no al lado: a lo ancho competiría con el
+                    nombre, que es lo primero que se lee. */}
+                <Miniatura preview={a.preview} />
               </div>
               <button
                 type="button"

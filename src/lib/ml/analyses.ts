@@ -47,6 +47,10 @@ import {
   quietClients,
 } from "@/lib/ml/client-insights";
 import {
+  contractRevenueByClient,
+  contractRevenueSchedule,
+} from "@/lib/ml/contract-insights";
+import {
   movementsByActor,
   partsConsumption,
   payablesBySupplier,
@@ -262,8 +266,13 @@ export type Analysis = {
     screen: string;
     /** Su sitio dentro de esa pantalla. Menor primero. */
     position: number;
-    /** Cuánto ocupa. Solo cuenta en un dashboard. */
-    width?: "full" | "half";
+    /** Dónde y cuánto ocupa en el lienzo. Solo cuenta en un dashboard. */
+    x?: number;
+    y?: number;
+    /** Columnas de ancho, de 1 a 24. */
+    w?: number;
+    /** Filas de alto, de 32 px. */
+    h?: number;
   }>;
   /**
    * Exige un identificador en la URL. Es la ÚNICA restricción de colocación, y
@@ -313,10 +322,10 @@ const enModuloY = (
   screen: string,
   modulo: string,
   position: number,
-  width: "full" | "half" = "full",
+  w: number = 24,
 ) => [
   { screen, position },
-  { screen: dashboardScreen(modulo), position, width },
+  { screen: dashboardScreen(modulo), position, w },
 ];
 
 export const ANALYSES: Analysis[] = [
@@ -340,7 +349,7 @@ export const ANALYSES: Analysis[] = [
     label: "Calendario de pagos comprometidos",
     watching: ["Vencimientos pactados de las próximas seis semanas"],
     kind: "projection",
-    defaultOn: enModuloY("/admin/compras/cuentas-por-pagar", "pagos", 1, "half"),
+    defaultOn: enModuloY("/admin/compras/cuentas-por-pagar", "pagos", 1, 12),
     adminOnly: true,
     resolve: async () => payablesProjection(),
   },
@@ -368,7 +377,7 @@ export const ANALYSES: Analysis[] = [
     label: "Evolución de lo facturado y lo vencido",
     watching: ["Facturado y vencido mes a mes"],
     kind: "trend",
-    defaultOn: enModuloY("/admin/compras/cuentas-por-pagar", "pagos", 2, "half"),
+    defaultOn: enModuloY("/admin/compras/cuentas-por-pagar", "pagos", 2, 12),
     adminOnly: true,
     resolve: async () => payablesTrend(),
   },
@@ -377,7 +386,7 @@ export const ANALYSES: Analysis[] = [
     label: "A quién se le debe",
     watching: ["Saldo pendiente por proveedor, y cuál tiene facturas vencidas"],
     kind: "projection",
-    defaultOn: enModuloY("/admin/compras/cuentas-por-pagar", "pagos", 4, "half"),
+    defaultOn: enModuloY("/admin/compras/cuentas-por-pagar", "pagos", 4, 12),
     adminOnly: true,
     resolve: async (ctx) => payablesBySupplier(ctx.db),
   },
@@ -419,7 +428,7 @@ export const ANALYSES: Analysis[] = [
     label: "Quién levanta las compras",
     watching: ["Órdenes en firme por quien las creó"],
     kind: "projection",
-    defaultOn: [{ screen: dashboardScreen("compras"), position: 1, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("compras"), position: 1, w: 12 }],
     resolve: async (ctx) => purchasingByBuyer(ctx.db),
   },
   {
@@ -427,7 +436,7 @@ export const ANALYSES: Analysis[] = [
     label: "A qué proveedores se les compra",
     watching: ["Importe comprometido en órdenes, por proveedor"],
     kind: "projection",
-    defaultOn: [{ screen: dashboardScreen("compras"), position: 2, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("compras"), position: 2, w: 12 }],
     adminOnly: true,
     resolve: async (ctx) => purchasingBySupplier(ctx.db),
   },
@@ -463,7 +472,7 @@ export const ANALYSES: Analysis[] = [
     label: "Refacciones que más se consumen",
     watching: ["Piezas gastadas en servicio, por número de parte"],
     kind: "projection",
-    defaultOn: [{ screen: dashboardScreen("refacciones"), position: 2, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("refacciones"), position: 2, w: 12 }],
     resolve: async (ctx) => partsConsumption(ctx.db),
   },
   {
@@ -471,7 +480,7 @@ export const ANALYSES: Analysis[] = [
     label: "Quién mueve el almacén",
     watching: ["Entradas, salidas y ajustes de inventario, por persona"],
     kind: "projection",
-    defaultOn: [{ screen: dashboardScreen("refacciones"), position: 3, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("refacciones"), position: 3, w: 12 }],
     // Los ajustes manuales de inventario son material de control interno.
     adminOnly: true,
     resolve: async (ctx) => movementsByActor(ctx.db),
@@ -509,7 +518,7 @@ export const ANALYSES: Analysis[] = [
     label: "Carga por técnico",
     watching: ["Cuántos servicios lleva cada técnico y cuántos siguen abiertos"],
     kind: "projection",
-    defaultOn: [{ screen: dashboardScreen("servicio"), position: 2, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("servicio"), position: 2, w: 12 }],
     resolve: async (ctx) => ticketsByTech(ctx.db),
   },
   {
@@ -517,7 +526,7 @@ export const ANALYSES: Analysis[] = [
     label: "Horas efectivas por técnico",
     watching: ["Horas registradas en la bitácora, por quien atendió"],
     kind: "projection",
-    defaultOn: [{ screen: dashboardScreen("servicio"), position: 3, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("servicio"), position: 3, w: 12 }],
     resolve: async (ctx) => hoursByTech(ctx.db),
   },
   {
@@ -525,7 +534,7 @@ export const ANALYSES: Analysis[] = [
     label: "En qué se va el servicio",
     watching: ["Reparto entre mantenimiento, calificación y soporte"],
     kind: "projection",
-    defaultOn: [{ screen: dashboardScreen("servicio"), position: 4, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("servicio"), position: 4, w: 12 }],
     resolve: async (ctx) => ticketsByCategory(ctx.db),
   },
   {
@@ -533,7 +542,7 @@ export const ANALYSES: Analysis[] = [
     label: "Servicios por mes",
     watching: ["Cuántos servicios entran cada mes, doce meses móviles"],
     kind: "trend",
-    defaultOn: [{ screen: dashboardScreen("servicio"), position: 5, width: "full" }],
+    defaultOn: [{ screen: dashboardScreen("servicio"), position: 5, w: 24 }],
     resolve: async (ctx) => ticketsVolume(ctx.db),
   },
   {
@@ -545,8 +554,8 @@ export const ANALYSES: Analysis[] = [
     // afirmación leída con otra pregunta —allá, de quién depende la operación;
     // acá, cómo se reparte el trabajo—.
     defaultOn: [
-      { screen: dashboardScreen("servicio"), position: 6, width: "half" },
-      { screen: dashboardScreen("clientes"), position: 3, width: "half" },
+      { screen: dashboardScreen("servicio"), position: 6, w: 12 },
+      { screen: dashboardScreen("clientes"), position: 3, w: 12 },
     ],
     resolve: async (ctx) => ticketsByClient(ctx.db),
   },
@@ -555,7 +564,7 @@ export const ANALYSES: Analysis[] = [
     label: "Equipos que más servicio consumen",
     watching: ["Qué equipos hubo que atender más veces"],
     kind: "projection",
-    defaultOn: [{ screen: dashboardScreen("servicio"), position: 7, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("servicio"), position: 7, w: 12 }],
     resolve: async (ctx) => ticketsByEquipment(ctx.db),
   },
   /* --- Ventas: el embudo, dicho en tres afirmaciones --- */
@@ -579,7 +588,7 @@ export const ANALYSES: Analysis[] = [
       "Negocios en dólares que no se pueden convertir y quedan fuera de la suma",
     ],
     kind: "projection",
-    defaultOn: enModuloY("/admin/crm", "ventas", 1, "half"),
+    defaultOn: enModuloY("/admin/crm", "ventas", 1, 12),
     resolve: async (ctx) => salesFunnel(ctx.db),
   },
   {
@@ -587,7 +596,7 @@ export const ANALYSES: Analysis[] = [
     label: "Valor ganado por mes",
     watching: ["Valor ganado mes a mes", "Tasa de cierre de los últimos doce meses"],
     kind: "trend",
-    defaultOn: enModuloY("/admin/crm", "ventas", 2, "half"),
+    defaultOn: enModuloY("/admin/crm", "ventas", 2, 12),
     resolve: async (ctx) => salesTrend(ctx.db),
   },
 
@@ -600,7 +609,7 @@ export const ANALYSES: Analysis[] = [
     label: "Quién está vendiendo",
     watching: ["Monto ganado por vendedor, y cuántos negocios lo sostienen"],
     kind: "projection",
-    defaultOn: [{ screen: dashboardScreen("ventas"), position: 3, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("ventas"), position: 3, w: 12 }],
     resolve: async (ctx) => salesByOwner(ctx.db),
   },
   {
@@ -608,7 +617,7 @@ export const ANALYSES: Analysis[] = [
     label: "Por qué se pierden los negocios",
     watching: ["Motivos de pérdida capturados, por frecuencia e importe"],
     kind: "projection",
-    defaultOn: [{ screen: dashboardScreen("ventas"), position: 4, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("ventas"), position: 4, w: 12 }],
     resolve: async (ctx) => salesLostReasons(ctx.db),
   },
   {
@@ -616,7 +625,7 @@ export const ANALYSES: Analysis[] = [
     label: "De dónde vienen las oportunidades",
     watching: ["Origen de los negocios: referencia, web, campaña"],
     kind: "projection",
-    defaultOn: [{ screen: dashboardScreen("ventas"), position: 5, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("ventas"), position: 5, w: 12 }],
     resolve: async (ctx) => salesBySource(ctx.db),
   },
   {
@@ -624,7 +633,7 @@ export const ANALYSES: Analysis[] = [
     label: "Cuánto tarda en cerrarse un negocio",
     watching: ["Días entre la creación y el cierre de los negocios ya cerrados"],
     kind: "finding",
-    defaultOn: [{ screen: dashboardScreen("ventas"), position: 6, width: "full" }],
+    defaultOn: [{ screen: dashboardScreen("ventas"), position: 6, w: 24 }],
     resolve: async (ctx) => salesCycle(ctx.db),
   },
 
@@ -642,7 +651,7 @@ export const ANALYSES: Analysis[] = [
       "Equipos que esos contratos amparan",
     ],
     kind: "finding",
-    defaultOn: [{ screen: dashboardScreen("clientes"), position: 0, width: "full" }],
+    defaultOn: [{ screen: dashboardScreen("clientes"), position: 0, w: 24 }],
     resolve: async (ctx) => expiringContracts(ctx.db),
   },
   {
@@ -653,7 +662,7 @@ export const ANALYSES: Analysis[] = [
       "Equipos instalados que llevan ese tiempo sin visitas",
     ],
     kind: "finding",
-    defaultOn: [{ screen: dashboardScreen("clientes"), position: 1, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("clientes"), position: 1, w: 12 }],
     resolve: async () => quietClients(),
   },
   {
@@ -664,7 +673,7 @@ export const ANALYSES: Analysis[] = [
       "Qué parte de la cartera concentran los primeros",
     ],
     kind: "projection",
-    defaultOn: [{ screen: dashboardScreen("clientes"), position: 2, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("clientes"), position: 2, w: 12 }],
     resolve: async () => clientConcentration(),
   },
   {
@@ -672,7 +681,7 @@ export const ANALYSES: Analysis[] = [
     label: "De qué marcas es el parque instalado",
     watching: ["Marcas de los equipos bajo cuidado de la empresa"],
     kind: "projection",
-    defaultOn: [{ screen: dashboardScreen("clientes"), position: 4, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("clientes"), position: 4, w: 12 }],
     resolve: async (ctx) => installedBase(ctx.db),
   },
   {
@@ -683,10 +692,35 @@ export const ANALYSES: Analysis[] = [
     // También en el tablero de Ventas: allá se lee como reparto de cuentas,
     // acá como quién responde por la post-venta de cada laboratorio.
     defaultOn: [
-      { screen: dashboardScreen("clientes"), position: 5, width: "half" },
-      { screen: dashboardScreen("ventas"), position: 7, width: "half" },
+      { screen: dashboardScreen("clientes"), position: 5, w: 12 },
+      { screen: dashboardScreen("ventas"), position: 7, w: 12 },
     ],
     resolve: async (ctx) => contractsByRep(ctx.db),
+  },
+
+  /* --- Contratos: el ingreso comprometido --- */
+  {
+    id: "contracts.revenue",
+    label: "Ingreso contratado por cliente",
+    watching: ["Importe comprometido en contratos vigentes, por cliente"],
+    kind: "projection",
+    // En Rentabilidad y en Clientes: la pregunta «de quién dependemos» se hace
+    // desde los dos lados, y el bloque es el mismo.
+    defaultOn: [
+      { screen: dashboardScreen("rentabilidad"), position: 4, w: 12 },
+      { screen: dashboardScreen("clientes"), position: 4, w: 12 },
+    ],
+    adminOnly: true,
+    resolve: async (ctx) => contractRevenueByClient(ctx.db),
+  },
+  {
+    id: "contracts.schedule",
+    label: "Ingreso contratado por mes",
+    watching: ["Cómo entra el ingreso ya firmado en los próximos doce meses"],
+    kind: "projection",
+    defaultOn: [{ screen: dashboardScreen("rentabilidad"), position: 5, w: 24 }],
+    adminOnly: true,
+    resolve: async (ctx) => contractRevenueSchedule(ctx.db),
   },
 
   /* --- Rentabilidad: la pantalla, partida en piezas --- */
@@ -695,7 +729,7 @@ export const ANALYSES: Analysis[] = [
     label: "Utilidad por mes",
     watching: ["Ingresos y costos de los servicios facturables, mes a mes"],
     kind: "trend",
-    defaultOn: [{ screen: dashboardScreen("rentabilidad"), position: 0, width: "full" }],
+    defaultOn: [{ screen: dashboardScreen("rentabilidad"), position: 0, w: 24 }],
     adminOnly: true,
     resolve: async (ctx) => profitTrend(ctx.db),
   },
@@ -704,7 +738,7 @@ export const ANALYSES: Analysis[] = [
     label: "Origen de la utilidad",
     watching: ["Cuánto del margen viene de refacciones y cuánto de horas"],
     kind: "projection",
-    defaultOn: [{ screen: dashboardScreen("rentabilidad"), position: 1, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("rentabilidad"), position: 1, w: 12 }],
     adminOnly: true,
     resolve: async (ctx) => profitSplit(ctx.db),
   },
@@ -713,7 +747,7 @@ export const ANALYSES: Analysis[] = [
     label: "Clientes más rentables",
     watching: ["Margen acumulado por cliente y de quién depende el resultado"],
     kind: "projection",
-    defaultOn: [{ screen: dashboardScreen("rentabilidad"), position: 2, width: "half" }],
+    defaultOn: [{ screen: dashboardScreen("rentabilidad"), position: 2, w: 12 }],
     adminOnly: true,
     resolve: async (ctx) => topClients(ctx.db),
   },
@@ -724,7 +758,7 @@ export const ANALYSES: Analysis[] = [
     // HALLAZGO y no gráfica: los otros tres describen, este pide acción. Ver
     // la nota de `worstServices`.
     kind: "finding",
-    defaultOn: [{ screen: dashboardScreen("rentabilidad"), position: 3, width: "full" }],
+    defaultOn: [{ screen: dashboardScreen("rentabilidad"), position: 3, w: 24 }],
     adminOnly: true,
     resolve: async (ctx) => worstServices(ctx.db),
   },

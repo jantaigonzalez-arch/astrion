@@ -81,7 +81,7 @@ function sitiosDeFabrica(modulo: string): Analysis["defaultOn"] {
   return [
     { screen: pantalla, position: 50 },
     ...(conTablero
-      ? [{ screen: dashboardScreen(conTablero.id), position: 50, width: "full" as const }]
+      ? [{ screen: dashboardScreen(conTablero.id), position: 50, w: 24, h: 8 }]
       : []),
   ];
 }

@@ -122,6 +122,10 @@ export async function ticketsByTech(conexion?: DbOrTx): Promise<Block[]> {
       key: f.id ?? SIN_ASIGNAR,
       label: nombreCorto(f.nombre),
       value: f.total,
+      // La lista ya filtra por técnico con ese mismo uuid, así que el enlace
+      // es exacto y no una búsqueda por nombre. Sin asignar tiene su propio
+      // valor —`sin`— porque no hay uuid que pasar.
+      href: `/admin/tickets?tecnico=${f.id ?? "sin"}`,
     })),
     total,
     href: "/admin/tickets",
@@ -206,6 +210,7 @@ export async function hoursByTech(conexion?: DbOrTx): Promise<Block[]> {
       key: f.id ?? SIN_ASIGNAR,
       label: nombreCorto(f.nombre),
       value: Math.round(f.horas),
+      href: `/admin/tickets?tecnico=${f.id ?? "sin"}`,
     })),
     total: Math.round(total),
     href: "/admin/tickets",
@@ -260,6 +265,8 @@ export async function ticketsByCategory(conexion?: DbOrTx): Promise<Block[]> {
       key: f.categoria,
       label: CATEGORIA[f.categoria] ?? f.categoria,
       value: f.total,
+      // `categoria` de la lista toma exactamente estos valores del enum.
+      href: `/admin/tickets?categoria=${encodeURIComponent(f.categoria)}`,
     })),
     total,
     href: "/admin/tickets",
@@ -308,6 +315,7 @@ export async function ticketsVolume(conexion?: DbOrTx): Promise<Block[]> {
       `${n(total)} servicio${s(total)} en los últimos ${filas.length} mes${filas.length === 1 ? "" : "es"}, ` +
       `${n(promedio)} al mes de media. El mes en curso lleva ${n(ultimo.total)} ` +
       "y está incompleto.",
+    axis: "time",
     bars: filas.map((f) => ({
       key: f.mes,
       label: etiquetaMesISO(f.mes),

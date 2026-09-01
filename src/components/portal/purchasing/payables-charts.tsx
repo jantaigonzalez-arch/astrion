@@ -1,27 +1,32 @@
 "use client";
 
 import { useId, useState } from "react";
+import {
+  SERIE as SLOT,
+  SERIE_ALERTA,
+} from "@/components/portal/purchasing/chart-palette";
 import { cn } from "@/lib/utils";
 
 /**
  * Gráficos de cuentas por pagar.
  *
- * Dos colores categóricos y nada más: pago y anticipo. Los pasos están
- * validados con el comprobador de paleta en ambos modos —banda de luminosidad,
- * piso de croma, separación bajo daltonismo y contraste contra la superficie—
- * y NO son los tokens de la aplicación tal cual: el cian del sistema
- * (`--signal`) da 1.89:1 sobre blanco, que no alcanza para una marca de datos.
+ * Dos colores categóricos y nada más: pago y anticipo.
  *
- *   claro   pago #0462d3   anticipo #0095a5   (ΔE normal 17.4)
- *   oscuro  pago #1b6ad4   anticipo #00ab9c   (ΔE normal 22.4)
+ * ── AQUÍ NACIÓ LA TERCERA COPIA ────────────────────────────────────────────
  *
- * Se pintan con `currentColor` sobre clases que cambian por modo, para que el
- * tema oscuro elija SU paso y no una versión aclarada del claro.
+ * De este archivo se extrajo `chart-palette.ts` —«viven en un módulo aparte
+ * porque dos copias divergen en el primer retoque»— y luego este archivo se
+ * quedó con la suya. Fue exactamente la divergencia que la extracción existía
+ * para evitar: tres juegos de colores, los tres describiéndose como validados.
+ *
+ * Ahora los pasos son los slots de la aplicación y este módulo solo decide QUÉ
+ * papel ocupa cada uno. El azul/teal de antes se fue con ellos.
  */
 
+/** Qué slot le toca a cada papel. El orden importa: ver `chart-palette.ts`. */
 const SERIE = {
-  pago: "text-[#0462d3] dark:text-[#1b6ad4]",
-  anticipo: "text-[#0095a5] dark:text-[#00ab9c]",
+  pago: SLOT.a,
+  anticipo: SLOT.b,
 } as const;
 
 const money = (n: number, currency: string) =>
@@ -57,7 +62,7 @@ export function PaymentCalendarChart({
   const max = Math.max(...weeks.map((w) => w.amount), 1);
 
   return (
-    <div>
+    <div className="viz-root">
       <div className="flex items-end gap-2" style={{ height: 168 }}>
         {weeks.map((w) => {
           const h = Math.max(3, (w.amount / max) * 140);
@@ -85,12 +90,14 @@ export function PaymentCalendarChart({
               <div
                 className={cn(
                   "w-full rounded-t transition-opacity",
-                  // Vencido es un ESTADO, no una serie: usa el color de estado
-                  // y va acompañado de su etiqueta, nunca solo del color.
-                  w.overdue ? "text-destructive" : SERIE.pago,
                   hover && !activo && "opacity-50",
                 )}
-                style={{ height: h, background: "currentColor" }}
+                style={{
+                  height: h,
+                  // Vencido es un ESTADO, no una serie: usa el color de estado
+                  // y va acompañado de su etiqueta, nunca solo del color.
+                  background: w.overdue ? SERIE_ALERTA : SERIE.pago,
+                }}
               />
             </div>
           );
@@ -135,12 +142,12 @@ export function CashOutChart({
   const hayAnticipos = data.some((d) => d.advances > 0);
 
   return (
-    <div>
+    <div className="viz-root">
       {/* Con dos series la leyenda es obligatoria: la identidad no puede
           depender solo del color. */}
       <div className="mb-3 flex flex-wrap gap-4 text-xs">
-        <Leyenda clase={SERIE.pago} texto="Pagos a factura" />
-        {hayAnticipos && <Leyenda clase={SERIE.anticipo} texto="Anticipos" />}
+        <Leyenda color={SERIE.pago} texto="Pagos a factura" />
+        {hayAnticipos && <Leyenda color={SERIE.anticipo} texto="Anticipos" />}
       </div>
 
       <div className="flex items-end gap-1.5" style={{ height: 160 }}>
@@ -174,10 +181,10 @@ export function CashOutChart({
               >
                 {d.advances > 0 && (
                   <div
-                    className={cn("w-full rounded-t", SERIE.anticipo)}
+                    className="w-full rounded-t"
                     style={{
                       height: Math.max(3, ha),
-                      background: "currentColor",
+                      background: SERIE.anticipo,
                       // 2px de superficie entre segmentos: sin el hueco, dos
                       // fills contiguos se leen como una sola barra.
                       marginBottom: d.payments > 0 ? 2 : 0,
@@ -187,12 +194,8 @@ export function CashOutChart({
                 )}
                 {d.payments > 0 && (
                   <div
-                    className={cn(
-                      "w-full",
-                      d.advances > 0 ? "" : "rounded-t",
-                      SERIE.pago,
-                    )}
-                    style={{ height: Math.max(3, hp), background: "currentColor" }}
+                    className={cn("w-full", d.advances > 0 ? "" : "rounded-t")}
+                    style={{ height: Math.max(3, hp), background: SERIE.pago }}
                     aria-hidden="true"
                   />
                 )}
@@ -259,12 +262,12 @@ export function CashOutChart({
   );
 }
 
-function Leyenda({ clase, texto }: { clase: string; texto: string }) {
+function Leyenda({ color, texto }: { color: string; texto: string }) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <span
-        className={cn("size-2.5 rounded-sm", clase)}
-        style={{ background: "currentColor" }}
+        className="size-2.5 rounded-sm"
+        style={{ background: color }}
         aria-hidden="true"
       />
       {/* El texto va en tinta de texto, nunca en el color de la serie. */}
@@ -277,13 +280,15 @@ function Leyenda({ clase, texto }: { clase: string; texto: string }) {
 
 export function ShareBar({ pct }: { pct: number }) {
   return (
+    // Lleva su propio `viz-root`: se incrusta suelta en una celda de tabla, así
+    // que no puede contar con que haya una superficie de gráfica encima.
     <span
-      className="inline-flex h-1.5 w-20 overflow-hidden rounded-full bg-border align-middle"
+      className="viz-root inline-flex h-1.5 w-20 overflow-hidden rounded-full bg-border align-middle"
       aria-hidden="true"
     >
       <span
-        className={cn("h-full rounded-full", SERIE.pago)}
-        style={{ width: `${Math.min(100, pct)}%`, background: "currentColor" }}
+        className="h-full rounded-full"
+        style={{ width: `${Math.min(100, pct)}%`, background: SERIE.pago }}
       />
     </span>
   );

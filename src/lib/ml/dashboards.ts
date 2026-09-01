@@ -14,9 +14,11 @@ import {
   type Analysis,
 } from "@/lib/ml/analyses";
 import {
+  caja,
   placementsFor,
   placementsForMany,
   setPlacement,
+  type Caja,
   type Placement,
 } from "@/lib/ml/placements";
 
@@ -389,7 +391,7 @@ async function sembrarDesde(slug: string, modulo: string, db: DbOrTx) {
       // preguntas del usuario nacen en la 50— y copiarlas dejaría un tablero
       // nuevo con un salto que nadie pidió.
       position: i,
-      width: en.width ?? "full",
+      caja: caja(en),
       source: "system",
       conexion: db,
     });
@@ -427,7 +429,13 @@ function slugify(s: string): string {
  */
 export async function reorderDashboard(
   slug: string,
-  orden: Array<{ analysis: string; width: "full" | "half"; active: boolean }>,
+  orden: Array<{
+    analysis: string;
+    caja: Caja;
+    active: boolean;
+    /** La forma elegida; `null` es «que la recomiende el sistema». */
+    viz: string | null;
+  }>,
 ): Promise<{ ok: boolean; reason?: string }> {
   const db = await tenantDb();
   if (!(await filaDe(slug, db))) return { ok: false, reason: "Ese tablero no existe." };
@@ -442,7 +450,8 @@ export async function reorderDashboard(
         screen,
         active: b.active,
         position: i,
-        width: b.width,
+        caja: b.caja,
+        viz: b.viz,
         conexion: tx,
       });
       if (!r.ok) return r;

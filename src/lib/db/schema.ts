@@ -8,6 +8,7 @@ import {
   timestamp,
   boolean,
   integer,
+  smallint,
   bigserial,
   jsonb,
   numeric,
@@ -2612,13 +2613,35 @@ export const analysisPlacements = pgTable(
      */
     source: varchar("source", { length: 20 }).notNull().default("user"),
     /**
-     * Cuánto ocupa el bloque en un DASHBOARD: `full` o `half`.
+     * DÓNDE y CUÁNTO ocupa el bloque en un DASHBOARD. Lienzo libre: la caja la
+     * pone quien compone y nadie la reacomoda. Ver la migración 0022.
      *
-     * Solo cuenta ahí. En una pantalla de trabajo los análisis van uno debajo
-     * de otro y a ancho completo, porque compiten con el trabajo por la
-     * atención y media caja los vuelve decoración.
+     *   x  0..23   columna donde empieza, sobre 24
+     *   y  0..     fila donde empieza, en unidades de 32 px
+     *   w  1..24   columnas que ocupa
+     *   h  3..     filas que ocupa
+     *
+     * Se pueden solapar y se pueden dejar huecos: eso es lo que lo hace un
+     * lienzo y no una rejilla.
+     *
+     * Solo cuenta en un tablero. En una pantalla de trabajo los análisis van
+     * uno debajo de otro y a ancho completo, porque compiten con el trabajo por
+     * la atención y media caja los vuelve decoración.
      */
-    width: varchar("width", { length: 6 }).notNull().default("full"),
+    x: smallint("x").notNull().default(0),
+    y: smallint("y").notNull().default(0),
+    w: smallint("w").notNull().default(12),
+    h: smallint("h").notNull().default(8),
+    /**
+     * Con qué forma se dibuja: `ranking`, `pastel`, `linea`…
+     *
+     * NULL —como nacen todas— significa «la que recomiende el sistema», no
+     * «ninguna»: así la forma sigue a los datos cuando cambian, en vez de
+     * quedar congelada en la recomendación del día que se creó la fila. Solo
+     * se escribe cuando una persona elige. Ver `formaEfectiva` en
+     * `@/lib/ml/formas` y la migración 0020.
+     */
+    viz: varchar("viz", { length: 16 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

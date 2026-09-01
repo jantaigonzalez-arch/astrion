@@ -107,6 +107,7 @@ export async function profitTrend(conexion?: DbOrTx): Promise<Block[]> {
       "Ingresos contra costos de los servicios facturables, mes a mes. Son " +
       "hechos registrados: horas de bitácora y refacciones consumidas, " +
       "valuadas con las tarifas vigentes.",
+    axis: "time",
     bars: monthly.map((m) => ({
       key: m.month.toISOString(),
       label: mes(m.month),

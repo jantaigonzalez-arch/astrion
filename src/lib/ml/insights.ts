@@ -836,6 +836,7 @@ export async function payablesProjection(
         "Próximas seis semanas por vencimiento. Con parcialidades cuenta cada " +
         "una por su fecha, no la factura entera. Lo vencido va aparte porque no " +
         "tiene semana futura a la que pertenecer.",
+      axis: "time" as const,
       bars: c.weeks.map((w) => ({
         key: w.key,
         label: w.label,
@@ -864,6 +865,7 @@ export async function payablesTrend(conexion?: DbOrTx): Promise<TrendBlock[]> {
         "banco; las notas de crédito no aparecen —bajan la deuda sin mover un " +
         "peso— y las imputaciones de anticipo tampoco, porque ese dinero ya se " +
         "contó el día que salió.",
+      axis: "time" as const,
       bars: caja.data.map((d) => ({
         key: d.month,
         label: d.label,
@@ -1159,6 +1161,7 @@ export async function payablesNextMonth(conexion?: DbOrTx): Promise<Block[]> {
       note:
         `${semanas.length} vencimiento(s) ya pactado(s) de facturas emitidas. ` +
         `No es una estimación: son fechas acordadas.`,
+      axis: "time" as const,
       bars: semanas.map((s) => ({
         key: s.key,
         label: s.label,

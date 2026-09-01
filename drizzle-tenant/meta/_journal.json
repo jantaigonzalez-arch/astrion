@@ -141,6 +141,27 @@
       "when": 1786852307340,
       "tag": "0019_sin_tableros_de_fabrica",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1786852307341,
+      "tag": "0020_forma_del_bloque",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786852307342,
+      "tag": "0021_tamano_del_bloque",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786852307343,
+      "tag": "0022_lienzo_libre",
+      "breakpoints": true
     }
   ]
 }

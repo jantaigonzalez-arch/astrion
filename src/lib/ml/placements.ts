@@ -29,12 +29,74 @@ import {
  * coordinado. Las filas empiezan a existir cuando alguien configura algo.
  */
 
+/**
+ * La caja de un bloque en el lienzo: dónde empieza y cuánto ocupa.
+ *
+ *   x  0..23   columna, sobre una retícula de 24
+ *   y  0..     fila, en unidades de 32 px
+ *   w  1..24   columnas de ancho
+ *   h  3..     filas de alto
+ *
+ * Números y no una unión de literales: son 24 valores de ancho y cuarenta de
+ * alto, y una unión de sesenta y cuatro miembros no protege de nada que estos
+ * saneadores no cubran mejor.
+ */
+export type Caja = { x: number; y: number; w: number; h: number };
+
+/*
+  Todo esto viene de la base o del catálogo, o sea de fuera del compilador. Un
+  valor imposible —un 99 escrito a mano, un 0 de una versión vieja— tiene que
+  caer en el más cercano y no romper la pantalla: el layout de un tablero no es
+  sitio para fallar fuerte.
+*/
+export const COLUMNAS = 24;
+/** Alto mínimo en filas. Por debajo, la tarjeta no cabe ni con su título. */
+export const ALTO_MIN = 4;
+/** Tope de alto. Un bloque de doscientas filas es un dedo resbalado. */
+export const ALTO_MAX = 60;
+
+const lim = (n: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, Math.round(Number.isFinite(n) ? n : min)));
+
+export const ancho = (n: number | undefined): number => lim(n ?? 12, 1, COLUMNAS);
+export const alto = (n: number | undefined): number => lim(n ?? 8, ALTO_MIN, ALTO_MAX);
+export const coordX = (n: number | undefined): number => lim(n ?? 0, 0, COLUMNAS - 1);
+export const coordY = (n: number | undefined): number => lim(n ?? 0, 0, 400);
+
+/**
+ * La caja saneada, con el ancho recortado para que no se salga por la derecha.
+ *
+ * Un bloque que empieza en la 20 y mide 12 se saldría del lienzo; el navegador
+ * lo dibujaría cortado y quien compone no entendería por qué. Se recorta el
+ * ANCHO y no la posición: mover un bloque que alguien colocó a propósito es más
+ * sorprendente que estrecharlo.
+ */
+export function caja(v: Partial<Caja> | undefined): Caja {
+  const x = coordX(v?.x);
+  return {
+    x,
+    y: coordY(v?.y),
+    w: Math.min(ancho(v?.w), COLUMNAS - x),
+    h: alto(v?.h),
+  };
+}
+
 export type Placement = {
   analysis: Analysis;
   position: number;
   active: boolean;
-  /** Cuánto ocupa en un dashboard. Ver `analysisPlacements.width`. */
-  width: "full" | "half";
+  /** Dónde y cuánto ocupa en un tablero. Ver `analysisPlacements.x`. */
+  caja: Caja;
+  /**
+   * La forma elegida a mano, o `null` para «la que recomiende el sistema».
+   *
+   * No se valida contra el catálogo de formas al leer: un nombre que la
+   * aplicación no conozca —una forma retirada, una fila escrita por una versión
+   * más nueva— tiene que degradar a recomendación, no tumbar la pantalla. De
+   * eso se encarga `formaEfectiva`, que además comprueba que la forma siga
+   * siendo APTA para los datos de hoy.
+   */
+  viz: string | null;
   /** `true` cuando sale del catálogo y no de una fila. */
   factory: boolean;
   source: "user" | "system" | "factory";
@@ -44,7 +106,11 @@ type Row = {
   analysis: string;
   screen: string;
   position: number;
-  width: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  viz: string | null;
   active: boolean;
   source: string;
 };
@@ -65,7 +131,11 @@ async function rowsFor(conexion: DbOrTx | undefined, screen?: string): Promise<R
       position: analysisPlacements.position,
       active: analysisPlacements.active,
       source: analysisPlacements.source,
-      width: analysisPlacements.width,
+      x: analysisPlacements.x,
+      y: analysisPlacements.y,
+      w: analysisPlacements.w,
+      h: analysisPlacements.h,
+      viz: analysisPlacements.viz,
     })
     .from(analysisPlacements);
   return screen ? q.where(eq(analysisPlacements.screen, screen)) : q;
@@ -143,7 +213,8 @@ function mezclar(analyses: Analysis[], rows: Row[], screenPrefix: string): Place
         analysis: a,
         position: row.position,
         active: row.active,
-        width: row.width === "half" ? "half" : "full",
+        caja: caja(row),
+        viz: row.viz,
         factory: false,
         source: row.source === "system" ? "system" : "user",
       });
@@ -156,7 +227,9 @@ function mezclar(analyses: Analysis[], rows: Row[], screenPrefix: string): Place
         analysis: a,
         position: fabrica.position,
         active: true,
-        width: fabrica.width ?? "full",
+        caja: caja(fabrica),
+        // De fábrica nadie eligió forma: se recomienda.
+        viz: null,
         factory: true,
         source: "factory",
       });
@@ -192,8 +265,19 @@ export async function setPlacement(opts: {
   screen: string;
   active: boolean;
   position?: number;
-  /** Solo en dashboards. Ausente conserva el que tuviera. */
-  width?: "full" | "half";
+  /** Solo en dashboards. Ausente conserva la que tuviera. */
+  caja?: Caja;
+  /**
+   * La forma elegida. Tres estados, y los tres hacen falta:
+   *
+   *   ausente  conservar la que la fila ya tenga (mover un bloque no le
+   *            cambia el dibujo)
+   *   null     volver a la recomendación automática — es una elección de la
+   *            persona, «que lo decida el sistema», y por eso tiene que poder
+   *            escribirse y no solo omitirse
+   *   valor    fijarla
+   */
+  viz?: string | null;
   source?: "user" | "system";
   conexion?: DbOrTx;
 }): Promise<{ ok: boolean; reason?: string }> {
@@ -220,7 +304,8 @@ export async function setPlacement(opts: {
       screen: opts.screen,
       position: opts.position ?? fabrica?.position ?? 0,
       active: opts.active,
-      width: opts.width ?? fabrica?.width ?? "full",
+      ...caja(opts.caja ?? fabrica),
+      viz: opts.viz ?? null,
       source: opts.source ?? "user",
     })
     .onConflictDoUpdate({
@@ -232,7 +317,11 @@ export async function setPlacement(opts: {
         // que la fila ya tenía, no volver al de fábrica. Mover un bloque de
         // sitio no debería devolverle el ancho, y con un valor plano lo haría
         // en cada arrastre.
-        ...(opts.width ? { width: opts.width } : {}),
+        ...(opts.caja ? caja(opts.caja) : {}),
+        // Igual que `width`, pero con `undefined` como única señal de «no
+        // tocar»: aquí `null` es un valor que SÍ se escribe —«volvé a
+        // recomendar»— así que no se puede usar el truco de la falsedad.
+        ...(opts.viz !== undefined ? { viz: opts.viz } : {}),
         source: opts.source ?? "user",
         updatedAt: new Date(),
       },

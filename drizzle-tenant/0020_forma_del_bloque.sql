@@ -1,0 +1,34 @@
+-- Cada bloque de un tablero puede elegir con qué forma se dibuja.
+--
+-- ── POR QUÉ UNA COLUMNA Y NO UNA TABLA ────────────────────────────────────
+--
+-- Es exactamente el mismo caso que `width`: una preferencia de presentación de
+-- UNA colocación concreta. El mismo análisis puesto en dos tableros puede
+-- querer pastel en uno y columnas en el otro, y `analysis_placements` ya es la
+-- fila que dice «este análisis, en esta pantalla, así». Una tabla aparte
+-- repetiría su clave para guardar un texto de doce caracteres.
+--
+-- ── NULL NO ES «SIN FORMA»: ES «LA QUE RECOMIENDE EL SISTEMA» ─────────────
+--
+-- Y la diferencia importa porque los datos cambian. Un bloque que hoy son seis
+-- categorías y mañana catorce necesita que su forma cambie con ellos; si al
+-- crearse se hubiera escrito la recomendada de ese día, se quedaría congelada
+-- en una decisión que nadie tomó y que ya no aplica.
+--
+-- Así, NULL —que es como nacen TODAS las filas existentes— significa «seguí
+-- recomendando», y solo se escribe un valor cuando una persona elige de verdad.
+-- Esa elección tampoco se borra si un día deja de ser apta: se deja de usar
+-- mientras no lo sea, y vuelve sola cuando los datos vuelven a permitirla. Ver
+-- `formaEfectiva` en src/lib/ml/formas.ts.
+--
+-- ── SIN RESTRICCIÓN DE VALORES, A PROPÓSITO ──────────────────────────────
+--
+-- Un CHECK con los trece nombres obligaría a una migración por cada forma
+-- nueva, en todos los esquemas de inquilino, para ganar una validación que la
+-- aplicación ya hace —y que tiene que hacer igual, porque «apta» no depende del
+-- nombre sino de los datos del bloque—. Un nombre que la aplicación no conozca
+-- se trata como NULL: se recomienda. Degradar así es seguro; fallar el guardado
+-- de un tablero entero por una cadena desconocida, no.
+
+ALTER TABLE "analysis_placements"
+  ADD COLUMN "viz" varchar(16);

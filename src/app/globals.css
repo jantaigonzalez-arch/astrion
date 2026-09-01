@@ -219,11 +219,41 @@
 }
 
 /* ---------------- Tokens de visualización de datos ----------------
-   Slots categóricos de la paleta validada (CVD ΔE 24.7 claro / 26.8 oscuro).
-   Los pasos oscuros son elegidos para la superficie oscura, no un flip. */
+   Slots categóricos de la paleta validada. Los pasos oscuros son elegidos
+   CONTRA la superficie oscura, no el claro aclarado.
+
+   ── SEIS SLOTS, Y POR QUÉ NO DOS ─────────────────────────────────────────
+   Eran dos, y un tablero con tres series no tenía con qué pintar la tercera.
+   Además convivían con una SEGUNDA paleta —azul/teal, en chart-palette.ts—
+   que también se declaraba «la validada»: el mismo tablero pintaba la serie B
+   en teal arriba y en naranja abajo. Ésta es la que sobrevivió, y no por
+   gusto: sus dos pasos ya eran los slots 1 y 2 de la paleta de referencia.
+
+   ── EL ORDEN ES EL MECANISMO, NO LA DECORACIÓN ───────────────────────────
+   La separación bajo daltonismo se comprueba entre slots ADYACENTES, así que
+   reordenarlos cambia el resultado. Verificado con el comprobador, superficie
+   #ffffff y #2b2b33, en los dos modos:
+
+     claro   peor par adyacente CVD ΔE 9.1 (protan) · visión normal 19.6
+     oscuro  peor par adyacente CVD ΔE 8.4 (protan) · visión normal 19.3
+
+   Tocar un valor o mover un slot obliga a volver a pasarlo, no a ajustarlo a
+   ojo. Y si algún día hacen falta más de seis, la respuesta no es inventar un
+   séptimo tono: es agrupar en «Otros» o partir en varias gráficas.
+
+   ── LA ADVERTENCIA QUE HAY QUE HONRAR ────────────────────────────────────
+   Tres pasos claros (aqua, amarillo, magenta) y el verde en oscuro quedan bajo
+   3:1 contra su superficie. Es legal SOLO con relieve: etiqueta visible junto a
+   la marca. Por eso las barras llevan su valor escrito y las leyendas su texto
+   —nunca identidad por color solo—. Si alguien pinta una marca de estos slots
+   sin etiqueta, esa marca está mal. */
 .viz-root {
   --series-1: #2a78d6; /* azul — utilidad / refacciones */
   --series-2: #eb6834; /* naranja — mano de obra */
+  --series-3: #1baf7a; /* aqua */
+  --series-4: #eda100; /* amarillo */
+  --series-5: #e87ba4; /* magenta */
+  --series-6: #008300; /* verde */
   --viz-grid: color-mix(in oklch, var(--border) 70%, transparent);
   --viz-track: color-mix(in oklch, var(--muted) 60%, transparent);
 }
@@ -231,12 +261,20 @@
   :root:where(:not([data-theme="light"])) .viz-root {
     --series-1: #3987e5;
     --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
   }
 }
 :root.dark .viz-root,
 :root[data-theme="dark"] .viz-root {
   --series-1: #3987e5;
   --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
 }
 
 /* ---------------- Impresión (reporte de servicio) ---------------- */
@@ -285,4 +323,55 @@
 [data-solo-lectura] form:not([data-permitido]) :is(button, [type="submit"]):not([type="button"]):not([data-permitido]) {
   opacity: 0.45;
   pointer-events: none;
+}
+
+/* ---------------- El lienzo de los tableros ----------------
+   Posiciones absolutas de tableta para arriba; apilado en teléfono.
+
+   ── POR QUÉ EL APILADO NO ES OPCIONAL ──────────────────────────────────────
+   Un lienzo de posiciones fijas en 390 px de ancho deja bloques de 90 px con
+   texto dentro: ilegible. PowerBI resuelve esto obligando a AUTORAR un segundo
+   layout para teléfono, y hasta que alguien lo hace el tablero no se puede
+   enseñar ahí. Aquí el apilado sale solo, del orden de lectura que ya existe
+   (`position`), que es el orden en que se pintan los bloques en el DOM.
+
+   Cuesta esto: en teléfono NO se respeta la composición. Es el precio del
+   modelo, y es preferible a un tablero que en un teléfono no se puede abrir.
+
+   ── LAS COORDENADAS VIAJAN COMO VARIABLES ─────────────────────────────────
+   Y no como `left`/`top` en línea, porque un estilo en línea no se puede apagar
+   desde una media query. Las variables sí: aquí abajo simplemente no se usan
+   hasta el punto de quiebre. */
+.lienzo {
+  display: grid;
+  gap: 0.75rem;
+}
+@media (min-width: 768px) {
+  .lienzo {
+    display: block;
+    position: relative;
+    height: var(--lienzo-h);
+  }
+  .lienzo > .bloque {
+    position: absolute;
+    left: calc(var(--bx) / 24 * 100%);
+    width: calc(var(--bw) / 24 * 100%);
+    top: calc(var(--by) * 32px);
+    height: calc(var(--bh) * 32px);
+    /* El aire va por dentro para que la coordenada siga siendo exacta: con
+       margen, dos bloques pegados dejarían de tocarse y la retícula mentiría. */
+    padding: 4px;
+  }
+  /* El contenido llena su caja y se desborda hacia dentro. Un bloque más corto
+     que su gráfica recorta, no empuja al de abajo: en un lienzo no hay «abajo»
+     que empujar, y derramarse encima del vecino es peor que recortar.
+
+     Se apunta a una clase y NO a `> *`: los tiradores del compositor son hijos
+     directos del bloque y van posicionados en sus esquinas; con el selector
+     universal se les habría impuesto un alto del 100 % y un recorte propio, y
+     el asa de medir habría quedado fuera de su caja. */
+  .lienzo > .bloque > .contenido {
+    height: 100%;
+    overflow: auto;
+  }
 }

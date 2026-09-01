@@ -39,7 +39,50 @@ export type Bar = {
   stacked?: number;
   /** Marca el tramo como estado —vencido, en falta— y no como serie. */
   alert?: boolean;
+  /**
+   * A dónde lleva CLICAR esta marca. La lista de detrás de este dato.
+   *
+   * ── POR QUÉ POR BARRA Y NO POR BLOQUE ─────────────────────────────────────
+   *
+   * El bloque ya tiene su `href` —«Ver a detalle»— y va al listado entero. Lo
+   * que falta es lo otro: ver «Juan P. · 14 servicios», querer esos catorce, y
+   * tener que ir al listado y filtrar a mano por Juan. La barra SABE de quién
+   * es; el enlace es esa respuesta.
+   *
+   * Opcional a propósito. Una barra sin `href` no es clicable y no lo finge:
+   * un cursor de mano que no lleva a ningún sitio enseña a no volver a probar.
+   */
+  href?: string;
 };
+
+/**
+ * Qué hay en el eje de las categorías: el tiempo, o entidades con nombre.
+ *
+ * ── POR QUÉ SE DECLARA Y NO SE ADIVINA ─────────────────────────────────────
+ *
+ * Porque decide la FORMA del dibujo, y adivinarlo desde el texto de la etiqueta
+ * —buscar «ene», «sem 12», un patrón de fecha— es una regla que falla en
+ * silencio el día que un cliente se llame «Marzo» o una refacción «S-2024».
+ * Quien construye el bloque sabe con certeza lo que tiene entre manos; que lo
+ * diga cuesta una línea.
+ *
+ * ── AUSENTE SIGNIFICA CATEGÓRICO, Y ES EL DEFECTO CORRECTO ─────────────────
+ *
+ * De los 24 bloques con barras del catálogo, 18 son rankings de entidades
+ * —técnicos, refacciones, clientes, motivos de pérdida— y solo 6 son tiempo.
+ * El defecto cubre la mayoría, y los seis que no lo son se marcan a mano.
+ *
+ * Si alguien añade un bloque temporal y olvida marcarlo, saldrá como ranking:
+ * se ve raro —los meses ordenados de mayor a menor— pero se ve, y el error es
+ * evidente en pantalla en vez de quedar escondido.
+ */
+export type Axis = "time";
+
+/*
+ * Cómo se DIBUJA un bloque —qué formas admite, cuál se le recomienda y por qué
+ * una no le sirve— vive en `@/lib/ml/formas`. Aquí solo está lo que un bloque
+ * ES; allí, lo que se puede hacer con él.
+ */
 
 /** 1 · Un hecho de ahora que pide acción. */
 export type FindingBlock = {
@@ -60,6 +103,8 @@ export type ProjectionBlock = {
   /** Por qué se afirma. Mismo papel que `because` en un hallazgo. */
   note: string;
   bars: Bar[];
+  /** Ver `Axis`. Ausente = ranking de entidades. */
+  axis?: Axis;
   currency?: string;
   total?: number;
   href?: string;
@@ -72,6 +117,8 @@ export type TrendBlock = {
   title: string;
   note: string;
   bars: Bar[];
+  /** Ver `Axis`. Ausente = ranking de entidades. */
+  axis?: Axis;
   currency?: string;
   /** Nombres de las dos series cuando las barras van apiladas. */
   legend?: [string, string];

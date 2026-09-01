@@ -42,7 +42,17 @@ const n = (v: number) => Math.round(v).toLocaleString("es-MX");
 const s = (v: number) => (v === 1 ? "" : "s");
 
 /** Etiqueta corta para el eje: los nombres de proveedor y persona no caben. */
-function corto(texto: string | null, max = 16): string {
+/**
+ * Recorta una etiqueta que no cabe.
+ *
+ * El límite era 16 porque la etiqueta iba centrada bajo una columna de un
+ * doceavo del ancho. Estos bloques se dibujan como ranking horizontal, donde
+ * el nombre ocupa una línea entera, así que el recorte de aquí ya no lo impone
+ * el dibujo: lo impone que un nombre de refacción de ochenta caracteres tampoco
+ * ayuda a nadie. De ahí 32, y el `truncate` del componente se encarga del resto
+ * según el ancho REAL, que es quien lo sabe.
+ */
+function corto(texto: string | null, max = 32): string {
   const limpio = (texto ?? "").replace(/\s+/g, " ").trim();
   if (!limpio) return "—";
   return limpio.length > max ? `${limpio.slice(0, max - 1)}…` : limpio;
@@ -105,7 +115,9 @@ export async function partsConsumption(conexion?: DbOrTx): Promise<Block[]> {
     ].join(" "),
     bars: filas.map((f) => ({
       key: f.parte,
-      label: corto(f.parte, 14),
+      // Sin el 14 de antes: en horizontal cabe, y catorce caracteres de un
+      // nombre de refacción se comen justo la parte que la distingue de otra.
+      label: corto(f.parte),
       value: f.cantidad,
     })),
     href: "/admin/refacciones",
