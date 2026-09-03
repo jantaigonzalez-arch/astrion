@@ -17,9 +17,8 @@ import {
   TrendCard,
 } from "@/components/portal/assistant-blocks";
 import type { Block } from "@/lib/ml/blocks-types";
-import type { Forma } from "@/lib/ml/formas";
+import { formaGuardada, type Forma } from "@/lib/ml/formas";
 import { estiloCaja, estiloLienzo } from "@/components/portal/dashboard-grid";
-import { cn } from "@/lib/utils";
 
 /**
  * El dashboard de un módulo, tal como quedó compuesto.
@@ -88,11 +87,11 @@ export default async function DashboardPage({
   const resueltos = await Promise.allSettled(
     visibles.map(async (b) => ({
       caja: b.caja,
-      // La forma que eligió quien compuso. Sin validar: `formaEfectiva` degrada
-      // a la recomendada si el nombre no se conoce o si dejó de ser apta para
-      // los datos de hoy, que es justo lo que tiene que pasar en una vista de
-      // lectura — antes que enseñar un hueco.
-      viz: b.viz as Forma | null,
+      // Saneada al entrar: un nombre que esta versión no conoce vale `null` y
+      // se recomienda. Antes iba con un `as` y confiaba en que `formaEfectiva`
+      // degradara sola —no lo hacía, reventaba—, y como esto se dibuja en el
+      // cliente, una sola fila mala tumbaba el tablero para todo el equipo.
+      viz: formaGuardada(b.viz),
       id: b.analysis.id,
       bloques: await resolveAnalysis(b.analysis, {}),
     })),

@@ -122,6 +122,16 @@ function esRepartoCompleto(d: Datos): boolean {
  * leer en un menú sin abrir documentación.
  */
 export function aptitud(d: Datos, f: Forma): Aptitud {
+  // Un nombre que este catálogo no conoce —una forma retirada, una fila escrita
+  // por una versión más nueva, un valor a mano en la base— no es apto, y decirlo
+  // aquí es lo que evita que el `switch` se caiga por el final devolviendo
+  // `undefined`. TypeScript da el switch por exhaustivo sobre `Forma`, pero este
+  // valor llega de la BASE y de un campo oculto de formulario: el tipo describe
+  // la intención, no lo que de verdad puede llegar.
+  if (!FORMAS.includes(f)) {
+    return { apta: false, motivo: "Esa forma ya no existe en esta versión." };
+  }
+
   const n = d.bars.length;
   const si: Aptitud = { apta: true };
   const no = (motivo: string): Aptitud => ({ apta: false, motivo });
@@ -295,4 +305,26 @@ export function recomendada(d: Datos): Forma {
 export function formaEfectiva(d: Datos, elegida: Forma | null): Forma {
   if (elegida && aptitud(d, elegida).apta) return elegida;
   return recomendada(d);
+}
+
+/**
+ * La forma guardada, saneada al entrar.
+ *
+ * ── DÓNDE ESTABA EL AGUJERO ───────────────────────────────────────────────
+ *
+ * `viz` se guarda SIN validar contra este catálogo, y a propósito: la aptitud
+ * depende de los datos del bloque, que en el momento de guardar no están
+ * resueltos. La apuesta era que un nombre desconocido degradara a
+ * recomendación al dibujar. No degradaba: `aptitud` caía por el final del
+ * `switch` devolviendo `undefined` y `formaEfectiva` reventaba leyendo `.apta`
+ * —comprobado—. Como esto corre en el render del cliente, una sola fila con un
+ * nombre viejo tumbaba el tablero entero para todo el que lo abriera.
+ *
+ * Ahora hay dos redes y las dos hacen falta: ésta convierte lo desconocido en
+ * `null` al leerlo, y `aptitud` responde «no apta» en vez de nada. Una sola no
+ * alcanza: por aquí entra lo que viene de la base, pero `aptitud` la llama
+ * también el menú del compositor con lo que tenga en la mano.
+ */
+export function formaGuardada(v: string | null | undefined): Forma | null {
+  return v && (FORMAS as string[]).includes(v) ? (v as Forma) : null;
 }

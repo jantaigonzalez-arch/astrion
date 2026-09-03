@@ -46,8 +46,7 @@ const KIND_LABEL: Record<string, string> = {
  *
  * Vive dentro del panel del compositor, debajo del nombre y de los módulos, y
  * es la única parte que se desplaza: lo de arriba se decide una vez y esto se
- * recorre. Quien la envuelve es también quien recibe lo que se suelta para
- * quitarlo, porque el destino de ese gesto es el panel entero y no esta lista.
+ * recorre.
  *
  * ── ESTABA ABAJO Y ESO ERA EL PROBLEMA ─────────────────────────────────────
  *
@@ -65,15 +64,12 @@ const KIND_LABEL: Record<string, string> = {
 export function DashboardToolbox({
   disponibles,
   quitados,
-  quitando,
   onAgregar,
   onArrastrar,
 }: {
   disponibles: HerramientaItem[];
   quitados: HerramientaItem[];
-  /** Se está arrastrando algo DESDE el tablero: soltarlo aquí lo quita. */
-  quitando: boolean;
-  /** Al pulsar «+»: entra al final del tablero, encendido. */
+  /** Al pulsar «+»: entra encendido, debajo de todo lo colocado. */
   onAgregar: (id: string, desde: "disponible" | "quitado") => void;
   onArrastrar: (id: string, desde: "disponible" | "quitado" | null) => void;
 }) {
@@ -138,10 +134,13 @@ export function DashboardToolbox({
           )}
         </div>
 
+        {/* Dice DÓNDE cae cada gesto, que en un lienzo es la pregunta: soltar
+            coloca en el punto del cursor y el «+» no tiene punto que usar, así
+            que baja al primer sitio libre. «Al final» era del layout de flujo,
+            donde había un final. */}
         <p className="px-1 pt-2 text-[11px] leading-snug text-muted-foreground">
-          {quitando
-            ? "Suelta aquí para quitarlo del tablero."
-            : "Arrastra al tablero, o pulsa + para ponerlo al final."}
+          Arrastra al tablero y cae donde lo sueltes. El + lo pone debajo de
+          todo.
         </p>
       </div>
 

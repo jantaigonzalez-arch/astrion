@@ -358,6 +358,17 @@
     width: calc(var(--bw) / 24 * 100%);
     top: calc(var(--by) * 32px);
     height: calc(var(--bh) * 32px);
+    /* El alto del DIBUJO sale del alto de la caja, menos lo que ocupan el
+       título, el motivo y los márgenes de la tarjeta —unos 132 px—.
+
+       Sin esto, estirar un bloque solo añadía espacio en blanco: las gráficas
+       leen `--viz-h` y nadie la definía desde que el layout pasó a lienzo, así
+       que todas se quedaban en su valor de respaldo. El alto era cosmético.
+
+       El piso de 96 px es lo que hace que una caja corta siga teniendo una
+       gráfica legible en vez de una tira de dos píxeles; lo que no entre, lo
+       desplaza `.contenido`, que ya recorta hacia dentro. */
+    --viz-h: max(96px, calc(var(--bh) * 32px - 132px));
     /* El aire va por dentro para que la coordenada siga siendo exacta: con
        margen, dos bloques pegados dejarían de tocarse y la retícula mentiría. */
     padding: 4px;

@@ -175,7 +175,10 @@ export function DashboardBuilder({
    */
   const [arrastrando, setArrastrando] = useState<{
     id: string;
-    desde: "tablero" | "disponible" | "quitado";
+    // Ya no existe «desde el tablero»: mover una caja no es un arrastre de
+    // HTML5. Lo único que se arrastra hasta el lienzo viene de la caja de
+    // herramientas, puesto o quitado.
+    desde: "disponible" | "quitado";
   } | null>(null);
   /*
     La rejilla, para poder medirla al redimensionar.
@@ -297,20 +300,29 @@ export function DashboardBuilder({
 
   function colocar(id: string, cx: number, cy: number) {
     setLista((xs) => {
-      // La caja se centra en el cursor y se acota al lienzo: nace a media hoja,
-      // así que soltando cerca del borde derecho se saldría.
-      const w = 12;
+      const ya = xs.find((v) => v.analysis === id);
+      /*
+        El acote se hace con el ancho REAL de la caja que se está colocando.
+
+        Antes daba por hecho 12 —el ancho de un bloque nuevo— y un bloque que se
+        había quitado midiendo 24 volvía con `x = 12`: se dibujaba saliéndose
+        por la derecha y, al guardar, `caja()` le recortaba el ancho a 12 sin
+        avisar. Lo que se veía no era lo que se guardaba.
+      */
+      const w = ya?.caja.w ?? 12;
+      const h = ya?.caja.h ?? 8;
+      // Centrada en el cursor: soltar apuntando al medio del hueco es el gesto,
+      // y colocar la esquina ahí desplazaría el bloque media anchura.
       const x = Math.min(COLS - w, Math.max(0, cx - Math.floor(w / 2)));
       const y = Math.max(0, cy);
 
-      const ya = xs.find((v) => v.analysis === id);
       if (ya) {
         return xs.map((v) =>
           v.analysis === id ? { ...v, active: true, caja: { ...v.caja, x, y } } : v,
         );
       }
       const nuevo = disponibles.find((d) => d.id === id);
-      return nuevo ? [...xs, { ...comoBloque(nuevo), caja: { x, y, w, h: 8 } }] : xs;
+      return nuevo ? [...xs, { ...comoBloque(nuevo), caja: { x, y, w, h } }] : xs;
     });
     setArrastrando(null);
   }
@@ -384,7 +396,7 @@ export function DashboardBuilder({
       >
         {enTablero.length === 0 ? (
           <ZonaVacia
-            activa={Boolean(arrastrando) && arrastrando?.desde !== "tablero"}
+            activa={Boolean(arrastrando)}
             onSoltar={(soltado) => {
               const id = soltado || arrastrando?.id;
               if (id) colocar(id, 6, 0);
@@ -437,27 +449,22 @@ export function DashboardBuilder({
           <span className="[writing-mode:vertical-rl]">Panel</span>
         </button>
       ) : (
+      /*
+        Sin «soltá aquí para quitarlo».
+
+        Existía cuando los bloques eran `draggable` y arrastrarlos significaba
+        reordenar. En el lienzo el arrastre MUEVE la caja —ver `Tiradores`— así
+        que ya no hay ninguna soltada que traer hasta aquí: los handlers no se
+        disparaban nunca y el aviso no llegaba a aparecer. Se quita en vez de
+        dejarlo simulando una función. Quitar un bloque es el botón del ojo.
+      */
       <aside
-        onDragOver={(e) => {
-          if (arrastrando?.desde !== "tablero") return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-        }}
-        onDrop={(e) => {
-          if (arrastrando?.desde !== "tablero") return;
-          e.preventDefault();
-          cambiar(arrastrando.id, { active: false });
-          setArrastrando(null);
-        }}
         className={cn(
           // Pegajoso y de alto completo: acomodar un tablero largo es
           // desplazarse por él, y un panel que se va hacia arriba obliga a
           // volver por cada bloque que se agrega.
           "lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)]",
-          "flex flex-col overflow-hidden rounded-xl border bg-card transition-colors",
-          arrastrando?.desde === "tablero"
-            ? "border-destructive/50 bg-destructive/5"
-            : "border-border",
+          "flex flex-col overflow-hidden rounded-xl border border-border bg-card",
         )}
       >
         {/* ── El nombre ── */}
@@ -674,7 +681,6 @@ export function DashboardBuilder({
             piezas: b.preview.length,
             preview: b.preview,
           }))}
-          quitando={arrastrando?.desde === "tablero"}
           onAgregar={(id) => colocar(id, 6, libreAbajo())}
           onArrastrar={(id, desde) => setArrastrando(desde ? { id, desde } : null)}
         />

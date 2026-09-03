@@ -112,7 +112,12 @@ export function Chart({
     un control que no hace nada es peor que su ausencia — enseña a desconfiar
     del resto. Se filtra contra el largo real de la serie.
   */
-  const cortes = [6, 12, 24].filter((k) => k < p.bars.length);
+  // Y SOLO en series de tiempo: el recorte de arriba está condicionado a
+  // `axis === "time"`, así que en un ranking los botones se pintaban, se
+  // marcaban al pulsarlos y no cambiaban nada. Es exactamente el control muerto
+  // que el comentario de dos líneas más arriba dice que no puede existir.
+  const cortes =
+    axis === "time" ? [6, 12, 24].filter((k) => k < p.bars.length) : [];
 
   const dibujo = <Pintar forma={forma} {...p} bars={bars} />;
 
@@ -277,7 +282,6 @@ export function Leyenda({ claves }: { claves: Array<{ color: string; texto: stri
 function Columnas({
   bars,
   currency,
-  legend,
   modo,
 }: ChartProps & { modo: "simple" | "apiladas" | "agrupadas" | "cien" }) {
   const [hover, setHover] = useState<string | null>(null);
@@ -291,15 +295,10 @@ function Columnas({
 
   return (
     <div>
-      {legend && modo !== "simple" && (
-        <Leyenda
-          claves={[
-            { color: SERIE.a, texto: legend[0] },
-            { color: SERIE.b, texto: legend[1] },
-          ]}
-        />
-      )}
-
+      {/* La leyenda la pinta `Chart`, y VIVA —enciende y apaga series—. Aquí
+          había una segunda, estática: salían las dos, una encima de otra, y al
+          apagar una serie la de abajo seguía mostrando las dos muestras a todo
+          color, contradiciendo a la de arriba. */}
       {/* `--viz-h` la pone la tarjeta a partir del alto que eligió quien
           compuso; el 132 es el respaldo para cuando se dibuja fuera de un
           tablero —el globo del asistente, una pantalla de trabajo—. Las
@@ -880,7 +879,16 @@ function Treemap({ bars, currency }: ChartProps) {
 
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: "var(--viz-h, 168px)" }} role="img"
+      {/* `preserveAspectRatio="none"`: sin él el dibujo se encajona en su
+          proporción y se centra, así que ensanchar el bloque solo añadía
+          márgenes en blanco a los lados y el tirador de ancho no hacía nada.
+          Se estira, que es lo correcto para un reparto por área. */}
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full"
+        preserveAspectRatio="none"
+        style={{ height: "var(--viz-h, 168px)" }}
+        role="img"
         aria-label={`Reparto de ${money(total, currency)} entre ${datos.length} partes`}>
         {cajas.map((c, k) => {
           const color = c.b.alert ? SERIE_ALERTA : SERIES[k % SERIES.length];
@@ -904,11 +912,17 @@ function Treemap({ bars, currency }: ChartProps) {
                 rx="1"
               />
               {cabe && (
+                // Tinta oscura fija y no blanca: tres de los seis slots
+                // —aqua, amarillo y magenta— quedan por debajo de 3:1 contra su
+                // superficie, y la paleta los admite SOLO con etiqueta visible.
+                // Blanco sobre el amarillo da ~1,9:1, así que justo la etiqueta
+                // que sostiene esa regla era la que no se podía leer. El negro
+                // sobre estos seis pasos se lee en los seis.
                 <text
                   x={c.x + 2}
                   y={c.y + 5}
-                  className="fill-white"
-                  style={{ fontSize: 3.4, fontWeight: 500 }}
+                  fill="#0b0b0b"
+                  style={{ fontSize: 3.4, fontWeight: 600 }}
                 >
                   {c.b.label}
                 </text>

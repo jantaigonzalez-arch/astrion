@@ -14,6 +14,7 @@ import {
   type Analysis,
 } from "@/lib/ml/analyses";
 import {
+  COLUMNAS,
   caja,
   placementsFor,
   placementsForMany,
@@ -382,7 +383,8 @@ async function sembrarDesde(slug: string, modulo: string, db: DbOrTx) {
     .sort((x, y) => x.en.position - y.en.position);
 
   const destino = dashboardScreen(slug);
-  for (const [i, { a, en }] of deFabrica.entries()) {
+  const cajas = empaquetar(deFabrica.map(({ en }) => caja(en)));
+  for (const [i, { a }] of deFabrica.entries()) {
     await setPlacement({
       analysis: a.id,
       screen: destino,
@@ -391,11 +393,49 @@ async function sembrarDesde(slug: string, modulo: string, db: DbOrTx) {
       // preguntas del usuario nacen en la 50— y copiarlas dejaría un tablero
       // nuevo con un salto que nadie pidió.
       position: i,
-      caja: caja(en),
+      caja: cajas[i],
       source: "system",
       conexion: db,
     });
   }
+}
+
+/**
+ * Acomoda una lista de cajas de izquierda a derecha, bajando cuando no cabe.
+ *
+ * ── POR QUÉ HACE FALTA ────────────────────────────────────────────────────
+ *
+ * El catálogo declara cuánto ocupa cada análisis de fábrica (`w`), pero no
+ * DÓNDE: con el layout de flujo no hacía falta, porque el navegador los
+ * acomodaba. En un lienzo nadie acomoda nada, así que sembrar sin posición
+ * dejaba los ocho bloques de un módulo superpuestos en la misma caja de 12×8
+ * —un tablero recién creado que parecía un solo bloque roto—.
+ *
+ * Es el MISMO recorrido que hace la migración 0022 en SQL para las filas que ya
+ * existían, y por el mismo motivo: reproduce el acomodo que el flujo daba
+ * gratis. Si un día se quiere una disposición de fábrica más pensada, el sitio
+ * es `defaultOn`, declarando `x` e `y`; esto es el defecto razonable mientras
+ * no los declare.
+ */
+function empaquetar(cajas: Caja[]): Caja[] {
+  const out: Caja[] = [];
+  let x = 0;
+  let y = 0;
+  // Alto de la fila en curso: la siguiente baja lo que mida el más alto de
+  // ésta, que es lo que impide que se pisen.
+  let altoFila = 0;
+
+  for (const c of cajas) {
+    if (x + c.w > COLUMNAS) {
+      x = 0;
+      y += altoFila;
+      altoFila = 0;
+    }
+    out.push({ ...c, x, y });
+    x += c.w;
+    altoFila = Math.max(altoFila, c.h);
+  }
+  return out;
 }
 
 /** De «Cierre de mes» a `cierre-de-mes`. */
@@ -443,8 +483,33 @@ export async function reorderDashboard(
 
   // En UNA transacción: si se cae a la mitad, el tablero queda con la mitad del
   // orden nuevo y la mitad del viejo, que es peor que no haber movido nada.
+  /*
+    El ORDEN DE LECTURA sale del lienzo, no del orden en que llegó la lista.
+
+    `position` dejó de decidir el layout con la migración 0022, pero sigue
+    decidiendo algo que se ve: es el orden en que se apilan los bloques en un
+    teléfono, donde el lienzo no cabe. Se escribía el índice del array, y ese
+    índice no cambia nunca al mover una caja —el compositor edita con `.map` y
+    agrega al final—, así que alguien podía subir un bloque al tope del lienzo y
+    en el teléfono seguía saliendo último, sin ningún control para arreglarlo.
+
+    Ordenar por fila y luego por columna es exactamente cómo se lee una página.
+    El desempate por análisis mantiene el orden estable entre guardados cuando
+    dos cajas empiezan en el mismo punto —que en un lienzo con solapes se
+    puede—.
+  */
+  const porLectura = [...orden]
+    .map((b, i) => ({ b, i }))
+    .sort(
+      (p, q) =>
+        p.b.caja.y - q.b.caja.y ||
+        p.b.caja.x - q.b.caja.x ||
+        p.b.analysis.localeCompare(q.b.analysis),
+    )
+    .map(({ b }) => b);
+
   return db.transaction(async (tx) => {
-    for (const [i, b] of orden.entries()) {
+    for (const [i, b] of porLectura.entries()) {
       const r = await setPlacement({
         analysis: b.analysis,
         screen,

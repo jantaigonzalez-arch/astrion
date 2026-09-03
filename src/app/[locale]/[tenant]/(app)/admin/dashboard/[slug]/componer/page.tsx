@@ -8,6 +8,7 @@ import { Link } from "@/lib/nav";
 import { dashboardFor } from "@/lib/ml/dashboards";
 import { MODULOS, resolveAnalysis } from "@/lib/ml/analyses";
 import type { Block } from "@/lib/ml/blocks-types";
+import { formaGuardada } from "@/lib/ml/formas";
 import { Button } from "@/components/ui/button";
 import {
   DashboardBuilder,
@@ -85,10 +86,9 @@ export default async function ComponerPage({
     watching: b.analysis.watching,
     active: b.active,
     caja: b.caja,
-    // Sin validar contra el catálogo de formas: una fila con un nombre que esta
-    // versión no conoce degrada a recomendación en `formaEfectiva`, y eso es lo
-    // correcto — no tumbar el compositor por una cadena.
-    viz: (b.viz as BloqueView["viz"]) ?? null,
+    // Saneada al entrar: ver `formaGuardada`. Un nombre desconocido vale
+    // `null` y se recomienda, en vez de tumbar el compositor.
+    viz: formaGuardada(b.viz),
     source: b.source,
     preview: vista.get(b.analysis.id) ?? [],
   }));

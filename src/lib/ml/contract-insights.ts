@@ -55,6 +55,27 @@ const meses = (v: number) => (v === 1 ? "mes" : "meses");
 /** El importe en su propia moneda. Ver la nota de arriba: no se convierten. */
 const IMPORTE = sql<number>`coalesce(c.amount_mxn, c.amount_usd, 0)::float`;
 
+/**
+ * De qué moneda es ese importe: lo decide la COLUMNA que lo trae.
+ *
+ * ── POR QUÉ NO SE MIRA `contracts.currency` ───────────────────────────────
+ *
+ * Porque todavía no significa nada. El esquema lo dice de su gemelo en
+ * `crm_deals`, del que `contracts.currency` hereda la nota: «modelo de moneda
+ * al que migra el par mxn/usd […] ningún lector usa esto todavía». Todos los
+ * demás lectores —el listado de contratos, el panel, el formulario— tratan
+ * `amount_mxn`/`amount_usd` como la autoridad.
+ *
+ * Y usarlo era peor que inútil: el importe salía de una regla —la primera
+ * columna no nula— y la etiqueta de otra —`currency`—, así que un contrato con
+ * `currency='USD'` e importe en la columna MXN se contaba como USD, y uno sin
+ * `currency` con importe en USD caía en el montón de pesos. Justo la cifra
+ * inventada que la cabecera de este archivo dice que no se puede producir.
+ *
+ * Una sola regla para las dos cosas: manda la columna.
+ */
+const MONEDA = sql<string>`case when c.amount_mxn is not null then 'MXN' else 'USD' end`;
+
 /** Solo lo que tiene con qué contar: importe positivo y vigencia declarada. */
 const CONTABLE = sql`
   where coalesce(c.amount_mxn, c.amount_usd, 0) > 0
@@ -85,7 +106,7 @@ export async function contractRevenueByClient(conexion?: DbOrTx): Promise<Block[
     importe: number;
     contratos: number;
   }>(sql`
-    select coalesce(c.currency, 'MXN') as moneda,
+    select ${MONEDA}                   as moneda,
            c.client_id                 as id,
            u.name                      as nombre,
            sum(${IMPORTE})             as importe,
@@ -129,11 +150,18 @@ export async function contractRevenueByClient(conexion?: DbOrTx): Promise<Block[
         " Es lo que el cliente se comprometió a pagar, NO la utilidad que deja:" +
         " el costo de atenderlo no se puede calcular mientras no haya tarifas" +
         " de mano de obra capturadas.",
+      // SIN `href` por barra, y no es un olvido: `/admin/contratos` filtra por
+      // `vigencia` y `vendedor`, no por cliente, y no hay ficha de cliente a la
+      // que llevar. Un enlace a `?cliente=…` devolvería la lista COMPLETA
+      // fingiendo estar filtrada, que es peor que no ser clicable — el cursor
+      // de mano promete algo que no ocurre y enseña a no volver a probar.
+      // Para encenderlo hace falta que la lista acepte el filtro; hasta
+      // entonces, el «Ver a detalle» del marco lleva al listado entero, que es
+      // una promesa que sí se cumple.
       bars: top.map((f) => ({
         key: f.id,
         label: f.nombre ?? "—",
         value: Math.round(f.importe),
-        href: `/admin/contratos?cliente=${f.id}`,
       })),
       currency: moneda,
       total: Math.round(total),
@@ -186,7 +214,7 @@ export async function contractRevenueSchedule(conexion?: DbOrTx): Promise<Block[
                interval '1 month')::date as mes
     ),
     reparto as (
-      select coalesce(c.currency, 'MXN') as moneda,
+      select ${MONEDA} as moneda,
              c.id,
              ${IMPORTE} / greatest(
                -- Meses que abarca la vigencia, contando el primero y el último.
@@ -199,12 +227,20 @@ export async function contractRevenueSchedule(conexion?: DbOrTx): Promise<Block[
         from contracts c
         ${CONTABLE}
     )
-    select r.moneda,
-           to_char(m.mes, 'YYYY-MM')  as mes,
-           sum(r.por_mes)             as importe,
-           count(*)::int              as activos
-      from meses m
-      join reparto r on m.mes between r.ini and r.fin
+    -- Cada moneda cruzada con cada mes del horizonte, y el reparto encima: un
+    -- mes sin ningún contrato vigente vale CERO y sigue en la serie. Con un
+    -- join a secas la fila desaparecía y las barras saltaban de octubre a
+    -- abril, mientras axis:time promete periodos consecutivos y equiespaciados
+    -- —que es de lo que dependen la línea y su recta de ajuste para colocar el
+    -- eje—.
+    select mo.moneda,
+           to_char(m.mes, 'YYYY-MM')   as mes,
+           coalesce(sum(r.por_mes), 0) as importe,
+           count(r.id)::int            as activos
+      from (select distinct moneda from reparto) mo
+      cross join meses m
+      left join reparto r
+        on r.moneda = mo.moneda and m.mes between r.ini and r.fin
      group by 1, 2
      order by 1, 2`);
 
