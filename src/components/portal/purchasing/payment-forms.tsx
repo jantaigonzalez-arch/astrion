@@ -1,10 +1,11 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Ban, CheckCircle2, Loader2, Wallet } from "lucide-react";
+import { Ban, CheckCircle2, Loader2, Undo2, Wallet } from "lucide-react";
 import {
   cancelInvoice,
   payInvoice,
+  unapplyCredit,
   type PayableState,
 } from "@/lib/actions/payables";
 import { Card } from "@/components/ui/card";
@@ -192,6 +193,88 @@ export function CancelInvoiceForm({ invoiceId }: { invoiceId: string }) {
         </div>
       </form>
     </Card>
+  );
+}
+
+/**
+ * Quita una aplicación de nota de crédito o una imputación de anticipo.
+ *
+ * ── POR QUÉ ES UN BOTÓN Y NO UNA PANTALLA ─────────────────────────────────
+ *
+ * Porque el renglón que se quita ya está a la vista, con su importe, su folio y
+ * quién lo aplicó. Llevar a otra pantalla a elegir cuál obliga a reconocerlo
+ * por el importe, que es justo cómo se cometió el error que se viene a
+ * corregir: dos facturas del mismo proveedor por cantidades parecidas.
+ *
+ * ── PIDE MOTIVO, Y NO ES BUROCRACIA ───────────────────────────────────────
+ *
+ * La fila desaparece y lo que queda es el evento de la bitácora. Sin motivo,
+ * ese evento dice que alguien quitó 12 000 pesos de una factura y nada más, que
+ * seis meses después no se distingue de un error. El mismo criterio que
+ * cancelar una factura, y por eso se ve igual.
+ *
+ * Confirma en dos pasos por la misma razón que `CancelInvoiceForm`: es
+ * destructivo y está a un clic de renglones que solo se leen.
+ */
+export function UnapplyForm({
+  tipo,
+  applicationId,
+}: {
+  tipo: "nota" | "anticipo";
+  applicationId: string;
+}) {
+  const [state, action, pending] = useActionState(unapplyCredit, initial);
+  const [abierto, setAbierto] = useState(false);
+
+  const sustantivo = tipo === "nota" ? "la aplicación" : "la imputación";
+
+  if (state.ok) {
+    return (
+      <p className="mt-1 text-xs text-muted-foreground">
+        {state.message ?? "Quitada."}
+      </p>
+    );
+  }
+
+  if (!abierto) {
+    return (
+      <button
+        type="button"
+        onClick={() => setAbierto(true)}
+        className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive"
+      >
+        <Undo2 className="size-3.5" /> Quitar {sustantivo}
+      </button>
+    );
+  }
+
+  return (
+    <form action={action} className="mt-2 grid gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+      <input type="hidden" name="tipo" value={tipo} />
+      <input type="hidden" name="applicationId" value={applicationId} />
+      <p className="text-xs text-muted-foreground">
+        {tipo === "nota"
+          ? "El saldo vuelve a la factura y la nota recupera su saldo a favor."
+          : "El saldo vuelve a la factura y el anticipo recupera su saldo a favor. El dinero no se mueve: salió el día del anticipo."}
+      </p>
+      <Input
+        name="reason"
+        required
+        minLength={3}
+        className="h-9 text-sm"
+        placeholder="Motivo — ej. iba a la factura EVO-P-000042"
+      />
+      {state.error && <p className="text-xs text-destructive">{state.error}</p>}
+      <div className="flex gap-2">
+        <Button type="submit" variant="outline" size="sm" disabled={pending}>
+          {pending && <Loader2 className="size-4 animate-spin" />}
+          Quitar
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => setAbierto(false)}>
+          No
+        </Button>
+      </div>
+    </form>
   );
 }
 

@@ -60,13 +60,49 @@ export async function receivePurchaseOrder(
     note?: string | null;
   },
 ): Promise<ReceiveResult> {
-  const wanted = input.lines.filter((l) => l.quantity > 0);
-  if (wanted.length === 0) {
+  const pedidas = input.lines.filter((l) => l.quantity > 0);
+  if (pedidas.length === 0) {
     return { ok: false, reason: "No indicaste ninguna cantidad a recibir." };
   }
-  if (wanted.some((l) => !Number.isInteger(l.quantity))) {
+  if (pedidas.some((l) => !Number.isInteger(l.quantity))) {
     return { ok: false, reason: "Las cantidades recibidas deben ser enteras." };
   }
+
+  /*
+    UN RENGLÓN, UNA ENTRADA. Repetido, se suma antes de validar.
+
+    Lo que llega es un par de listas emparejadas por índice —`receive-line[]` y
+    `receive-qty[]`— y nada impedía que el mismo `lineId` viniera dos veces. Con
+    la lista tal cual, el bucle de validación comprobaba cada entrada POR
+    SEPARADO contra el pendiente: de un renglón con 8 por recibir, dos entradas
+    de 5 pasaban las dos —5 ≤ 8 dos veces— y luego se aplicaban las dos.
+
+    Medido contra la base local: entraban 10 piezas al inventario contra una
+    orden de 8, y el renglón registraba 5 recibidas. Las dos escrituras leen el
+    mismo `receivedQuantity` de la fotografía de arriba, así que la segunda pisa
+    a la primera: el ledger de inventario y el contador de la orden quedan
+    contándose cosas distintas, y encima la orden sigue enseñando 3 pendientes
+    que se pueden volver a recibir.
+
+    Es justo la diferencia que el mensaje de error de abajo dice no absorber, y
+    no se ve por ninguna parte.
+
+    Se suma en vez de rechazarse porque «recibí 5 y luego 5» es una lectura
+    legítima de dos renglones repetidos; lo que no puede pasar es que la suma
+    escape del tope. Consolidado, el pendiente se comprueba una sola vez contra
+    el total, que es donde la comprobación significa algo.
+
+    `convertToPurchaseOrders` no necesita esto porque filtra las FILAS de la
+    base por los ids recibidos, y un id repetido no puede duplicar una fila.
+  */
+  const porRenglon = new Map<string, number>();
+  for (const l of pedidas) {
+    porRenglon.set(l.lineId, (porRenglon.get(l.lineId) ?? 0) + l.quantity);
+  }
+  const wanted: ReceiptLine[] = [...porRenglon].map(([lineId, quantity]) => ({
+    lineId,
+    quantity,
+  }));
 
   // El lock sobre la orden serializa dos recepciones de la MISMA orden. Sin él,
   // ambas leerían los mismos pendientes y entre las dos recibirían de más.

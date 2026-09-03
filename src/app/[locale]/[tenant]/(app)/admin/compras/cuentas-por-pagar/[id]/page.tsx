@@ -5,9 +5,11 @@ import { isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getPayable } from "@/lib/data/payables";
 import { INVOICE_STATUS_LABEL, PAYMENT_METHOD_LABEL } from "@/lib/domain/payables";
+import { hoyCivil } from "@/lib/fechas";
 import {
   CancelInvoiceForm,
   PaymentForm,
+  UnapplyForm,
 } from "@/components/portal/purchasing/payment-forms";
 import {
   InstallmentPlan,
@@ -40,7 +42,7 @@ export default async function FacturaPage({
   } = data;
   const abierta = invoice.status === "pending" || invoice.status === "partial";
   const vencida = abierta && invoice.daysLate > 0;
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyCivil();
 
   return (
     <div className="space-y-6">
@@ -255,6 +257,12 @@ export default async function FacturaPage({
                     {c.actorName ? ` · aplicó ${c.actorName}` : ""}
                     {c.note ? ` — ${c.note}` : ""}
                   </p>
+                  {/* Solo mientras la factura siga viva: quitarle una
+                      aplicación a una cancelada no la resucita —el dominio no
+                      la toca— así que el botón prometería algo que no pasa. */}
+                  {invoice.status !== "cancelled" && (
+                    <UnapplyForm tipo="nota" applicationId={c.id} />
+                  )}
                 </div>
               </li>
             ))}
@@ -291,6 +299,9 @@ export default async function FacturaPage({
                     {a.actorName ? ` · ${a.actorName}` : ""}
                     {a.note ? ` — ${a.note}` : ""}
                   </p>
+                  {invoice.status !== "cancelled" && (
+                    <UnapplyForm tipo="anticipo" applicationId={a.id} />
+                  )}
                 </div>
               </li>
             ))}

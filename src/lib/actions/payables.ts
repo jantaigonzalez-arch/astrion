@@ -16,6 +16,8 @@ import {
   registerSupplierInvoice,
   repartirEnParcialidades,
   splitInvoice,
+  unapplyAdvance,
+  unapplyCreditNote,
 } from "@/lib/domain/payables";
 import {
   PreviewRollback,
@@ -303,6 +305,65 @@ export async function applyCreditNoteToInvoice(
   } catch (e) {
     console.error("[pagar] applyCreditNoteToInvoice:", e);
     return { ok: false, error: "No se pudo aplicar la nota de crédito." };
+  }
+}
+
+/**
+ * Quita una aplicación de nota de crédito o una imputación de anticipo.
+ *
+ * Una sola acción para los dos porque desde la pantalla es el mismo gesto sobre
+ * el mismo tipo de renglón, y separarlas obligaría a dos formularios idénticos.
+ * `tipo` viene de un campo oculto del botón, así que se valida contra un par
+ * cerrado antes de decidir a qué función del dominio se llama.
+ *
+ * Administrador y no soporte: es la operación que devuelve saldo a una factura
+ * ya rebajada, o sea que MUEVE lo que se debe. El mismo criterio que cancelar.
+ */
+export async function unapplyCredit(
+  _prev: PayableState,
+  formData: FormData,
+): Promise<PayableState> {
+  const session = await auth();
+  if (!session?.user || !isAdminRole(await currentRole())) {
+    return { ok: false, error: "Solo un administrador quita una aplicación." };
+  }
+
+  const parsed = z
+    .object({
+      tipo: z.enum(["nota", "anticipo"]),
+      applicationId: z.string().uuid(),
+      reason: z.string().trim().min(3, "Falta el motivo."),
+    })
+    .safeParse({
+      tipo: formData.get("tipo"),
+      applicationId: formData.get("applicationId"),
+      reason: formData.get("reason"),
+    });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Revisa los datos." };
+  }
+  const { tipo, applicationId, reason } = parsed.data;
+
+  try {
+    const db = await tenantDb();
+    const result = await db.transaction((tx) =>
+      tipo === "nota"
+        ? unapplyCreditNote(tx, { applicationId, reason, actorId: session.user.id })
+        : unapplyAdvance(tx, { applicationId, reason, actorId: session.user.id }),
+    );
+    if (!result.ok) return { ok: false, error: result.reason };
+
+    revalidateTenant();
+    return {
+      ok: true,
+      message:
+        tipo === "nota"
+          ? "Aplicación quitada. La nota vuelve a tener saldo a favor."
+          : "Imputación quitada. El anticipo vuelve a tener saldo a favor.",
+    };
+  } catch (e) {
+    console.error("[pagar] unapplyCredit:", e);
+    return { ok: false, error: "No se pudo quitar la aplicación." };
   }
 }
 

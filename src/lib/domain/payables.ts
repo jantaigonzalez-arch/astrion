@@ -17,7 +17,7 @@ import {
   type SupplierCreditNoteStatus,
   type SupplierAdvanceStatus,
 } from "@/lib/db/schema";
-import { recordEvent } from "@/lib/domain/events";
+import { recordDeletion, recordEvent } from "@/lib/domain/events";
 import {
   nextSupplierInvoiceReference,
   nextSupplierCreditNoteReference,
@@ -410,7 +410,7 @@ export async function cancelSupplierInvoice(
       ok: false,
       reason:
         `La factura ${invoice.reference} tiene ${partes.join(" y ")} aplicados. ` +
-        `Quita primero las aplicaciones.`,
+        `Quítalos desde la factura —cada uno tiene su botón— y vuelve a intentarlo.`,
     };
   }
 
@@ -758,6 +758,257 @@ export async function applyCreditNote(
 }
 
 /**
+ * Deshace UNA aplicación de nota de crédito.
+ *
+ * ── POR QUÉ TIENE QUE EXISTIR ─────────────────────────────────────────────
+ *
+ * Porque sin esto había tres caminos que terminaban en una instrucción
+ * imposible. `cancelCreditNote`, `cancelAdvance` y `cancelSupplierInvoice`
+ * responden «quita primero las aplicaciones» y no existía nada que las
+ * quitara: ni una función, ni una acción, ni un botón. Una nota aplicada a la
+ * factura equivocada bloqueaba para siempre la cancelación de la nota Y la de
+ * la factura, y la única salida era editar la base a mano.
+ *
+ * Un error de imputación no es raro: dos facturas del mismo proveedor con
+ * importes parecidos es exactamente el caso que la pantalla presenta junto.
+ *
+ * ── SE BORRA LA FILA, NO SE ESCRIBE UNA CONTRAPARTIDA ─────────────────────
+ *
+ * Un asiento en negativo habría sido la otra opción y aquí sale peor. `amount`
+ * y `balance_after` de esta tabla se leen sumando —`totalAplicado`, el saldo de
+ * la nota, media docena de consultas del listado y del estado de cuenta— y un
+ * importe negativo obliga a que TODAS entiendan el signo. La que se olvide da
+ * un saldo inventado, que es el error que ninguna de estas pantallas puede
+ * cometer.
+ *
+ * El rastro no se pierde: `recordDeletion` deja el evento con la copia entera
+ * de la fila, y `domain_events` es solo-anexado y viaja al lago. La pregunta
+ * «¿quién quitó esta aplicación y qué decía?» se contesta ahí.
+ *
+ * ── LO QUE SE RECALCULA ───────────────────────────────────────────────────
+ *
+ * El estado de la factura y el de la nota, los dos desde los hechos y no
+ * invirtiendo lo que hizo `applyCreditNote`. Una factura que estaba `paid`
+ * vuelve a `partial` o a `pending` según lo que le quede aplicado, y una nota
+ * que estaba `applied` vuelve a `open` en cuanto le sobra un centavo.
+ *
+ * No se toca una factura CANCELADA: quitarle una aplicación no la resucita, y
+ * dejarla en `pending` la devolvería al listado de por pagar.
+ */
+export async function unapplyCreditNote(
+  tx: DbOrTx,
+  input: { applicationId: string; reason: string; actorId?: string | null },
+): Promise<{ ok: true; invoiceId: string } | { ok: false; reason: string }> {
+  const motivo = input.reason.trim();
+  if (!motivo) {
+    return { ok: false, reason: "Decí por qué se quita: es lo único que explica el movimiento después." };
+  }
+
+  // La aplicación primero, para saber qué factura bloquear. El orden de locks
+  // que sigue —factura y luego nota— es el mismo de `applyCreditNote`, y por
+  // eso dos operaciones simultáneas no se traban entre sí.
+  const filas = (await tx.execute(sql`
+    select id, credit_note_id, invoice_id, amount::text as amount,
+           balance_after::text as balance_after, applied_at::text as applied_at,
+           note, actor_id
+      from supplier_credit_note_applications
+     where id = ${input.applicationId}::uuid
+       for update`)) as unknown as Array<{
+    id: string;
+    credit_note_id: string;
+    invoice_id: string;
+    amount: string;
+    balance_after: string;
+    applied_at: string;
+    note: string | null;
+    actor_id: string | null;
+  }>;
+  const app = filas[0];
+  if (!app) return { ok: false, reason: "Esa aplicación ya no existe." };
+
+  const facturas = (await tx.execute(sql`
+    select id, reference, total::text as total, status
+      from supplier_invoices
+     where id = ${app.invoice_id}::uuid
+       for update`)) as unknown as Array<{
+    id: string;
+    reference: string;
+    total: string;
+    status: SupplierInvoiceStatus;
+  }>;
+  const invoice = facturas[0];
+  if (!invoice) return { ok: false, reason: "La factura no existe." };
+
+  const notas = (await tx.execute(sql`
+    select id, reference, total::text as total, status
+      from supplier_credit_notes
+     where id = ${app.credit_note_id}::uuid
+       for update`)) as unknown as Array<{
+    id: string;
+    reference: string;
+    total: string;
+    status: string;
+  }>;
+  const note = notas[0];
+  if (!note) return { ok: false, reason: "La nota de crédito no existe." };
+
+  await tx
+    .delete(supplierCreditNoteApplications)
+    .where(eq(supplierCreditNoteApplications.id, app.id));
+
+  await recalcularFactura(tx, invoice.id, invoice.status, dinero(invoice.total));
+
+  // La nota vuelve a tener saldo a favor. `cancelled` no se toca: una nota
+  // anulada no se reabre porque se le quite una aplicación.
+  if (note.status !== "cancelled") {
+    const usado = await totalAplicadoDeNota(tx, note.id);
+    const restante = dinero(note.total) - usado;
+    await tx
+      .update(supplierCreditNotes)
+      .set({
+        status: restante > CENTAVO ? "open" : "applied",
+        updatedAt: new Date(),
+      })
+      .where(eq(supplierCreditNotes.id, note.id));
+  }
+
+  await recordDeletion(tx, {
+    aggregateType: "supplier_credit_note",
+    aggregateId: note.id,
+    eventType: "supplier_credit_note.unapplied",
+    snapshot: app,
+    actorId: input.actorId ?? null,
+    extra: { nota: note.reference, factura: invoice.reference, motivo },
+  });
+
+  return { ok: true, invoiceId: invoice.id };
+}
+
+/**
+ * Deshace UNA imputación de anticipo. Gemela de `unapplyCreditNote`: mismo
+ * motivo, mismo criterio de borrar la fila y dejar el evento, mismo orden de
+ * locks.
+ *
+ * Una diferencia que no es de forma: quitar la imputación NO devuelve dinero.
+ * El desembolso ocurrió el día del anticipo y sigue ocurrido; lo único que se
+ * deshace es a qué factura se le imputó. Por eso el anticipo vuelve a `open`
+ * —con saldo a favor del proveedor— y no a nada parecido a un reembolso.
+ */
+export async function unapplyAdvance(
+  tx: DbOrTx,
+  input: { applicationId: string; reason: string; actorId?: string | null },
+): Promise<{ ok: true; invoiceId: string } | { ok: false; reason: string }> {
+  const motivo = input.reason.trim();
+  if (!motivo) {
+    return { ok: false, reason: "Decí por qué se quita: es lo único que explica el movimiento después." };
+  }
+
+  const filas = (await tx.execute(sql`
+    select id, advance_id, invoice_id, amount::text as amount,
+           balance_after::text as balance_after, applied_at::text as applied_at,
+           note, actor_id
+      from supplier_advance_applications
+     where id = ${input.applicationId}::uuid
+       for update`)) as unknown as Array<{
+    id: string;
+    advance_id: string;
+    invoice_id: string;
+    amount: string;
+    balance_after: string;
+    applied_at: string;
+    note: string | null;
+    actor_id: string | null;
+  }>;
+  const app = filas[0];
+  if (!app) return { ok: false, reason: "Esa imputación ya no existe." };
+
+  const facturas = (await tx.execute(sql`
+    select id, reference, total::text as total, status
+      from supplier_invoices
+     where id = ${app.invoice_id}::uuid
+       for update`)) as unknown as Array<{
+    id: string;
+    reference: string;
+    total: string;
+    status: SupplierInvoiceStatus;
+  }>;
+  const invoice = facturas[0];
+  if (!invoice) return { ok: false, reason: "La factura no existe." };
+
+  const anticipos = (await tx.execute(sql`
+    select id, reference, amount::text as amount, status
+      from supplier_advances
+     where id = ${app.advance_id}::uuid
+       for update`)) as unknown as Array<{
+    id: string;
+    reference: string;
+    amount: string;
+    status: string;
+  }>;
+  const adv = anticipos[0];
+  if (!adv) return { ok: false, reason: "El anticipo no existe." };
+
+  await tx
+    .delete(supplierAdvanceApplications)
+    .where(eq(supplierAdvanceApplications.id, app.id));
+
+  await recalcularFactura(tx, invoice.id, invoice.status, dinero(invoice.total));
+
+  if (adv.status !== "cancelled") {
+    const usado = await totalAplicadoDeAnticipo(tx, adv.id);
+    const restante = dinero(adv.amount) - usado;
+    await tx
+      .update(supplierAdvances)
+      .set({
+        status: restante > CENTAVO ? "open" : "applied",
+        updatedAt: new Date(),
+      })
+      .where(eq(supplierAdvances.id, adv.id));
+  }
+
+  await recordDeletion(tx, {
+    aggregateType: "supplier_advance",
+    aggregateId: adv.id,
+    eventType: "supplier_advance.unapplied",
+    snapshot: app,
+    actorId: input.actorId ?? null,
+    extra: { anticipo: adv.reference, factura: invoice.reference, motivo },
+  });
+
+  return { ok: true, invoiceId: invoice.id };
+}
+
+/**
+ * Recoloca el estado de una factura a partir de lo que le queda aplicado.
+ *
+ * Se llama después de quitar una aplicación, y calcula desde los hechos en vez
+ * de invertir el paso que se deshizo: si la factura tenía encima un pago, una
+ * nota y un anticipo, «lo contrario de aplicar la nota» no es un estado, es una
+ * resta que hay que hacer contra los otros dos.
+ *
+ * `cancelled` es intocable, y `paid` sigue siendo posible: quitar una nota de
+ * una factura que además estaba pagada entera la deja saldada, que es correcto.
+ */
+async function recalcularFactura(
+  tx: DbOrTx,
+  invoiceId: string,
+  estadoActual: SupplierInvoiceStatus,
+  total: number,
+): Promise<void> {
+  if (estadoActual === "cancelled") return;
+
+  const aplicado = await totalAplicado(tx, invoiceId);
+  const saldo = total - aplicado;
+  const status: SupplierInvoiceStatus =
+    saldo <= CENTAVO ? "paid" : aplicado > CENTAVO ? "partial" : "pending";
+
+  await tx
+    .update(supplierInvoices)
+    .set({ status, updatedAt: new Date() })
+    .where(eq(supplierInvoices.id, invoiceId));
+}
+
+/**
  * Cancela una nota de crédito capturada por error.
  *
  * Solo mientras no se haya aplicado. Con la nota ya aplicada, cancelarla dejaría
@@ -788,7 +1039,7 @@ export async function cancelCreditNote(
       ok: false,
       reason:
         `La nota ${note.reference} ya se aplicó ${aDosDecimales(usado)} a facturas. ` +
-        `Quita primero las aplicaciones.`,
+        `Quita la aplicación desde la factura que la tiene encima y vuelve a intentarlo.`,
     };
   }
 
@@ -1326,7 +1577,7 @@ export async function cancelAdvance(
       ok: false,
       reason:
         `El anticipo ${adv.reference} ya se imputó ${aDosDecimales(usado)} a facturas. ` +
-        `Quita primero las imputaciones.`,
+        `Quita la imputación desde la factura que la tiene encima y vuelve a intentarlo.`,
     };
   }
 

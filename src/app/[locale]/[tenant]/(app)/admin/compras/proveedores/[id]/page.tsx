@@ -14,6 +14,7 @@ import {
   CREDIT_NOTE_STATUS_LABEL,
   INVOICE_STATUS_LABEL,
 } from "@/lib/domain/payables";
+import { hoyCivil } from "@/lib/fechas";
 import {
   AdvanceForm,
   SuspensionPanel,
@@ -54,7 +55,7 @@ export default async function ProveedorPage({
   ]);
   if (!controles) notFound();
 
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = hoyCivil();
   const anticiposAbiertos = controles.advances.filter((a) => a.remaining > 0);
 
   const abiertas = facturas.filter(

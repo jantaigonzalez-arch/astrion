@@ -81,11 +81,16 @@ export type DomainEventType =
   // va separado del de los pagos: el reporte de salidas de caja no debe verlas.
   | "supplier_credit_note.registered"
   | "supplier_credit_note.applied"
+  // `unapplied` no es lo contrario de `applied` en el sentido de borrarlo: la
+  // fila de la aplicación desaparece, y este evento con su copia ES el rastro
+  // que queda. Ver `unapplyCreditNote`.
+  | "supplier_credit_note.unapplied"
   | "supplier_credit_note.cancelled"
   // Anticipos. El dinero sale el día del anticipo; la aplicación solo lo
   // imputa a una factura, no vuelve a mover caja.
   | "supplier_advance.paid"
   | "supplier_advance.applied"
+  | "supplier_advance.unapplied"
   | "supplier_advance.cancelled"
   // Parcialidades: partir una factura en varios vencimientos.
   | "supplier_invoice.split"

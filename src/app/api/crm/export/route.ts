@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { isSalesRole, isAdminRole } from "@/lib/roles";
 import { crmContacts, crmDeals, crmOrganizations } from "@/lib/db/schema";
 import { currentRole, tenantDb } from "@/lib/tenancy/context";
+import { diaCivil, hoyCivil } from "@/lib/fechas";
 
 /** Escapa un campo para CSV (comillas dobles y separadores). */
 function cell(v: unknown) {
@@ -126,13 +127,15 @@ export async function GET(request: Request) {
         d.expectedCloseDate,
         d.source,
         d.lostReason,
-        d.createdAt.toISOString().slice(0, 10),
+        // Por `diaCivil` y no por `toISOString`: un negocio creado a las 19:00
+        // hora de México se exportaba con la fecha del día siguiente.
+        diaCivil(d.createdAt),
       ]),
     );
     filename = "negocios";
   }
 
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = hoyCivil();
   return new NextResponse(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",

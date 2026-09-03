@@ -4,6 +4,7 @@ import { isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getSuppliers } from "@/lib/data/purchasing";
 import { getInvoiceableOrders } from "@/lib/data/payables";
+import { hoyCivil } from "@/lib/fechas";
 import { InvoiceForm } from "@/components/portal/purchasing/invoice-form";
 import { Card } from "@/components/ui/card";
 import { Link } from "@/lib/nav";
@@ -30,8 +31,9 @@ export default async function NuevaFacturaPage({
   ]);
 
   // La fecha la pone el servidor: el navegador puede estar en otra zona y la
-  // emisión es un día del calendario, no un instante.
-  const hoy = new Date().toISOString().slice(0, 10);
+  // emisión es un día del calendario, no un instante. Por `hoyCivil` y no por
+  // `toISOString`, que habla en UTC y adelantaba el día desde las 18:00.
+  const hoy = hoyCivil();
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
