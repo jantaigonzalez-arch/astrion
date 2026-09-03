@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 import createMiddleware from "next-intl/middleware";
 import { routing } from "./i18n/routing";
 import {
+  esRutaDePlataforma,
   isApexHost,
   tenantFromHost,
   withTenantSegment,
@@ -17,29 +18,13 @@ const handleI18n = createMiddleware(routing);
 const TENANT_COOKIE = "evo_tenant";
 
 /**
- * Segmentos de primer nivel que NO son un inquilino.
+ * Segmentos de primer nivel que NO son un inquilino: `RUTAS_DE_PRIMER_NIVEL`.
  *
- * Solo aplica al MODO PATH. Con el inquilino en el path (`/evoelution/tickets`)
- * el primer segmento es ambiguo por naturaleza: puede ser una empresa o una
- * sección de la plataforma. Esta lista desambigua, y es la razón por la que
- * `RESERVED_SLUGS` impide dar de alta una empresa que se llame así — si alguien
- * registrara el inquilino "productos", su portal secuestraría una página del
- * sitio público.
- *
- * En modo subdominio el problema no existe: `productos.astraion.com` y
- * `astraion.com/productos` son direcciones distintas y no compiten.
+ * Vivía aquí como una lista propia, y `RESERVED_SLUGS` tenía la suya en
+ * `db/platform.ts` con un comentario pidiendo mantenerlas en línea a mano. No
+ * se mantuvieron —faltaba `consola` en las dos—, así que ahora las dos derivan
+ * del mismo sitio. El porqué de cada entrada está allá.
  */
-const NOT_A_TENANT = new Set([
-  "platform",
-  "login",
-  "entrar",
-  "contacto",
-  "nosotros",
-  "productos",
-  "servicios",
-  "marcas",
-  "evo-ai",
-]);
 
 /** Extrae el inquilino del path, o null si ese primer segmento no lo es. */
 function tenantFromPath(pathname: string): string | null {
@@ -49,7 +34,7 @@ function tenantFromPath(pathname: string): string | null {
     : segments;
 
   const candidate = rest[0];
-  if (!candidate || NOT_A_TENANT.has(candidate)) return null;
+  if (!candidate || esRutaDePlataforma(candidate)) return null;
   // Mismo formato que exige `schemaNameFor`: si no lo cumple, no puede ser
   // un inquilino y no vale la pena consultarlo.
   return /^[a-z][a-z0-9_]{1,39}$/.test(candidate) ? candidate : null;

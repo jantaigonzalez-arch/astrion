@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TenantCard } from "@/components/console/tenant-card";
 import { cn } from "@/lib/utils";
+import { isPlatformSuperadmin } from "@/lib/platform-session";
 
 /**
  * La bienvenida de la consola de Astraion.
@@ -48,7 +49,8 @@ export default async function ConsolaInicioPage({
   // renderizan EN PARALELO: su `redirect()` no impide que esto corra.
   const session = await auth();
   if (!session?.user) return null;
-  const isSuper = session.user.platformRole === "superadmin";
+  // De la BASE y no del token: ver `platform-session.ts`.
+  const isSuper = await isPlatformSuperadmin();
   const prefijo = locale === "en" ? "/en" : "";
 
   const [rows, active, signups, events] = await Promise.all([

@@ -19,6 +19,7 @@ import { auth } from "@/lib/auth";
 import { ACTIVE_TENANT_COOKIE, logTenantAccess } from "@/lib/tenancy/context";
 import { apexOrigin, portOf, tenantOrigin } from "@/lib/tenancy/host";
 import { provisionTenant } from "@/lib/tenancy/provision";
+import { currentPlatformRole } from "@/lib/platform-session";
 
 /**
  * Acciones de la consola de plataforma.
@@ -50,9 +51,20 @@ function secureProto(): "http" | "https" {
   return process.env.NODE_ENV === "production" ? "https" : "http";
 }
 
+/**
+ * La sesión, si quien la trae opera la plataforma con el nivel que hace falta.
+ *
+ * El rol sale de `currentPlatformRole()` —o sea de la BASE— y no de
+ * `session.user.platformRole`, que es lo que el token dijo el día que la
+ * persona entró. Con sesión JWT y sin tabla que invalidar, leerlo del token
+ * significaba que degradar a un superadministrador no surtía efecto durante
+ * treinta días. Ver la cabecera de `platform-session.ts`.
+ *
+ * La sesión se sigue devolviendo porque quien llama necesita el `id` para
+ * firmar lo que escribe; lo que ya no sale de ella es el permiso.
+ */
 async function requirePlatform(level: "superadmin" | "any" = "any") {
-  const session = await auth();
-  const role = session?.user?.platformRole;
+  const [session, role] = await Promise.all([auth(), currentPlatformRole()]);
   if (!role) return null;
   if (level === "superadmin" && role !== "superadmin") return null;
   return session!;

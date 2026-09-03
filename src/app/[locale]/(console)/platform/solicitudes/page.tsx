@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getSignups } from "@/lib/data/platform";
 import { SignupInbox } from "@/components/portal/signup-inbox";
+import { isPlatformSuperadmin } from "@/lib/platform-session";
 
 /**
  * Solicitudes de alta: empresas que pidieron entrar y esperan una decisión.
@@ -26,7 +27,9 @@ export default async function SolicitudesPage({
   // Ver la nota de `empresas/page.tsx`: layout y página corren en paralelo.
   const session = await auth();
   if (!session?.user) return null;
-  if (session.user.platformRole !== "superadmin") notFound();
+  // De la BASE y no del token: ver `platform-session.ts`. Un superadministrador
+  // degradado seguía aprobando altas hasta que su JWT caducara.
+  if (!(await isPlatformSuperadmin())) notFound();
 
   const signups = await getSignups();
   const pendientes = signups.filter((s) => s.status === "pending").length;

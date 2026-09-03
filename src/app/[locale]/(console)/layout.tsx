@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "@/i18n/navigation";
 import { ConsoleChrome } from "@/components/console/console-chrome";
 import { getSignups } from "@/lib/data/platform";
+import { currentPlatformRole } from "@/lib/platform-session";
 
 /**
  * Cáscara de la CONSOLA DE ASTRAION.
@@ -48,7 +49,29 @@ export default async function ConsoleLayout({
     redirect({ href: "/entrar", locale });
   }
 
-  const isAdminDePlataforma = session!.user.platformRole === "superadmin";
+  /*
+    Y la cuenta tiene que seguir viva HOY.
+
+    `kind` viene del token, o sea de la fotografía del día que entró: dice de
+    qué tabla salió la sesión y eso no cambia nunca, pero tampoco dice si la
+    cuenta sigue activa. Con sesión JWT no hay tabla de sesiones que invalidar,
+    así que desactivar a un operador en `platform_users` no lo sacaba de aquí:
+    seguía entrando a la consola, y desde ella a la empresa de cualquier
+    cliente, hasta que su token caducara —treinta días por omisión—.
+
+    `currentPlatformRole()` lo pregunta a la base. Devuelve `null` si la cuenta
+    se borró o se desactivó, y ésta es la puerta donde eso tiene que pesar: las
+    páginas de adentro comprueban si es superadministrador, no si puede estar.
+
+    A `/consola` y no a `/entrar`: quien llega aquí vino a operar, y su cuenta
+    de operador es la que dejó de servir.
+  */
+  const rolDePlataforma = await currentPlatformRole();
+  if (!rolDePlataforma) {
+    redirect({ href: "/consola", locale });
+  }
+
+  const isAdminDePlataforma = rolDePlataforma === "superadmin";
 
   // El punto sobre «Solicitudes» cuelga del layout y no de la página porque
   // tiene que verse desde CUALQUIER sección: enterarse de que hay una empresa
@@ -64,7 +87,7 @@ export default async function ConsoleLayout({
         locale={locale}
         name={session!.user.name}
         email={session!.user.email}
-        platformRole={session!.user.platformRole}
+        platformRole={rolDePlataforma}
         solicitudesPendientes={pendientes}
       >
         {children}

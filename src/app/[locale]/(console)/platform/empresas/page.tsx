@@ -4,6 +4,7 @@ import { getTenants } from "@/lib/data/platform";
 import { getTenantContext } from "@/lib/tenancy/context";
 import { NewTenantForm } from "@/components/portal/new-tenant-form";
 import { TenantCard } from "@/components/console/tenant-card";
+import { isPlatformSuperadmin } from "@/lib/platform-session";
 
 /**
  * Todas las empresas de la plataforma.
@@ -26,7 +27,8 @@ export default async function EmpresasPage({
   // servidor mientras el usuario veía la redirección correcta.
   const session = await auth();
   if (!session?.user) return null;
-  const isSuper = session.user.platformRole === "superadmin";
+  // De la BASE y no del token: ver `platform-session.ts`.
+  const isSuper = await isPlatformSuperadmin();
 
   const [rows, active] = await Promise.all([getTenants(), getTenantContext()]);
 

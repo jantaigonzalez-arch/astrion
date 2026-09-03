@@ -13,6 +13,7 @@ import {
   index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { RUTAS_DE_PRIMER_NIVEL } from "@/lib/tenancy/host";
 
 /**
  * PLANO DE CONTROL — tablas que viven en el esquema `public`.
@@ -549,33 +550,38 @@ export const FOLIO_PREFIX_RE = /^[A-Z][A-Z0-9]{1,7}$/;
 /**
  * Identificadores reservados: ningún inquilino puede llamarse así.
  *
- * Dos motivos distintos conviven en la lista. Los primeros son de Postgres:
- * un esquema no puede chocar con los del catálogo. Los segundos son de
- * ruteo, y son los peligrosos: con el inquilino en la URL
- * (`/evoelution/tickets`), un inquilino llamado "productos" secuestraría
- * `/productos` del sitio público. Debe mantenerse en línea con
- * `NOT_A_TENANT` de proxy.ts.
+ * Dos motivos distintos conviven aquí. Los de Postgres son para que el esquema
+ * del inquilino no choque con los del catálogo. Los de ruteo son los
+ * peligrosos: con el inquilino en la URL (`/evoelution/tickets`), un inquilino
+ * llamado «productos» secuestraría `/productos` del sitio público.
+ *
+ * ── LA MITAD DE RUTEO YA NO SE ESCRIBE AQUÍ ──────────────────────────────
+ *
+ * Se DERIVA de `RUTAS_DE_PRIMER_NIVEL`. Antes esta lista y el `NOT_A_TENANT`
+ * del proxy eran dos copias con un comentario que pedía mantenerlas en línea a
+ * mano, y no lo estaban: a las dos les faltaba `consola`, la puerta de quien
+ * opera Astraion. Nada impedía registrar un inquilino con ese nombre.
+ *
+ * Los guiones se vuelven guiones bajos porque el formato de un slug —el mismo
+ * que exige `schemaNameFor`— no admite guiones: la ruta `/evo-ai` solo puede
+ * chocar con el slug `evo_ai`, y es ése el que hay que reservar. La entrada se
+ * escribía así a mano; ahora sale de la ruta y no puede desalinearse.
  */
+const RUTEO_RESERVADO = RUTAS_DE_PRIMER_NIVEL.map((r) => r.replaceAll("-", "_"));
+
 export const RESERVED_SLUGS = new Set([
-  // Postgres
+  // Postgres: un esquema no puede chocar con los del catálogo.
   "public",
   "information_schema",
   "pg_catalog",
   "pg_toast",
   "drizzle",
-  // Rutas de la plataforma
+  // Nombres que un subdominio o una URL da por sentados. No son rutas de la
+  // aplicación, así que no salen de la lista derivada.
   "admin",
   "api",
   "www",
   "app",
-  "platform",
-  "login",
-  "entrar",
-  // Rutas del sitio público
-  "contacto",
-  "nosotros",
-  "productos",
-  "servicios",
-  "marcas",
-  "evo_ai",
+  // Las rutas de primer nivel, en forma de slug.
+  ...RUTEO_RESERVADO,
 ]);

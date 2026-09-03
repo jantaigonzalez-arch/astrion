@@ -155,6 +155,67 @@ export function defaultProto(): "http" | "https" {
   return process.env.NODE_ENV === "production" ? "https" : "http";
 }
 
+/* ------------------------- Rutas que no son empresas ------------------------- */
+
+/**
+ * Los segmentos de PRIMER NIVEL que la aplicación sirve por su cuenta.
+ *
+ * ── POR QUÉ ESTÁN AQUÍ Y NO EN LOS DOS SITIOS QUE LOS USAN ────────────────
+ *
+ * Porque estaban en los dos y se separaron. `proxy.ts` tenía su `NOT_A_TENANT`
+ * y `db/platform.ts` su `RESERVED_SLUGS`, con un comentario pidiendo
+ * mantenerlas en línea a mano. No se mantuvieron: `consola` —la puerta de quien
+ * opera Astraion— faltaba en las dos.
+ *
+ * Las consecuencias eran las dos que esas listas existen para evitar. En modo
+ * path, visitar `/consola` hacía que el proxy escribiera `evo_tenant=consola`,
+ * una empresa que no existe, pisando la que la persona tenía activa. Y nada
+ * impedía dar de alta un inquilino llamado «consola», cuyo portal habría
+ * secuestrado esa puerta.
+ *
+ * Aquí viven una vez. Este módulo ya lo importa el proxy —o sea que es
+ * ligero y corre donde el proxy corre— y no arrastra nada de base de datos.
+ *
+ * ── LO QUE NO ESTÁ EN LA LISTA, Y POR QUÉ ─────────────────────────────────
+ *
+ * `evoelution` es una ruta de primer nivel del sitio público Y el slug de la
+ * primera empresa que usa el sistema. No puede entrar: con el inquilino en el
+ * path, meterla aquí rompería `/evoelution/tickets` para ese cliente. Que la
+ * página de marketing y el portal compartan segmento se resuelve en Next, que
+ * prefiere la ruta estática sobre `[tenant]`; el precio es que visitar la
+ * página de marketing deja la cookie de esa empresa, que es inofensivo porque
+ * es la suya.
+ *
+ * Solo el PRIMER nivel importa: con el inquilino en el path, lo que compite es
+ * el primer segmento. `/admin/...` vive dentro de una empresa y nunca compite.
+ */
+export const RUTAS_DE_PRIMER_NIVEL = [
+  // La consola de Astraion y las dos puertas de entrada.
+  "consola",
+  "platform",
+  "entrar",
+  "login",
+  // El sitio público.
+  "contacto",
+  "nosotros",
+  "productos",
+  "servicios",
+  "marcas",
+  "evo-ai",
+] as const;
+
+/**
+ * ¿Este primer segmento del path es una sección de la plataforma y no una
+ * empresa?
+ *
+ * Solo aplica al MODO PATH. En subdominio no hay ambigüedad:
+ * `productos.astraion.com` y `astraion.com/productos` son direcciones
+ * distintas y no compiten.
+ */
+export function esRutaDePlataforma(segmento: string): boolean {
+  return (RUTAS_DE_PRIMER_NIVEL as readonly string[]).includes(segmento);
+}
+
 /* ------------------------- Reescritura del path ------------------------- */
 
 /**

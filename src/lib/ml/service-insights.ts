@@ -286,20 +286,64 @@ export async function ticketsByCategory(conexion?: DbOrTx): Promise<Block[]> {
  *
  * Doce meses móviles y no el año natural: en enero, un tablero acotado al año
  * en curso enseña una sola barra.
+ *
+ * ── UN MES SIN SERVICIOS VALE CERO Y SE QUEDA ────────────────────────────
+ *
+ * Con `group by date_trunc` a secas solo salían los meses CON tickets, así que
+ * un mes sin ninguno desaparecía y las barras saltaban. Este bloque se publica
+ * como `axis: "time"`, que promete periodos consecutivos y equiespaciados: el
+ * hueco no se veía como hueco, se veía como continuidad.
+ *
+ * Y torcía la nota, que es lo que de verdad se lee: `promedio` dividía entre el
+ * número de meses QUE TUVIERON servicios, no entre los transcurridos. Con
+ * cuatro meses activos de doce, «al mes de media» salía triplicado.
+ *
+ * El espinazo arranca en el primer servicio cuando hay menos de doce meses de
+ * historia. Rellenar hacia atrás inventaría meses anteriores a que la empresa
+ * usara el sistema, y esos ceros afirmarían que no hubo trabajo cuando lo
+ * cierto es que no había registro. Los huecos de ADENTRO sí son un hecho.
  */
 export async function ticketsVolume(conexion?: DbOrTx): Promise<Block[]> {
   const db = conexion ?? (await tenantDb());
 
-  const filas = await db
-    .select({
-      mes: sql<string>`to_char(date_trunc('month', ${tickets.createdAt}), 'YYYY-MM')`,
-      total: sql<number>`count(*)::int`,
-      cerrados: sql<number>`count(*) filter (where ${tickets.status} = 'closed')::int`,
-    })
-    .from(tickets)
-    .where(sql`${tickets.createdAt} >= date_trunc('month', now()) - interval '11 months'`)
-    .groupBy(sql`date_trunc('month', ${tickets.createdAt})`)
-    .orderBy(sql`date_trunc('month', ${tickets.createdAt})`);
+  const filas = (await db.execute(sql`
+    with servicios as (
+      -- Sin la columna de estado: la consulta traía además un conteo de
+      -- cerrados que no leía nadie, ni en esta versión ni en la anterior.
+      select date_trunc('month', ${tickets.createdAt}) as mes
+        from ${tickets}
+       where ${tickets.createdAt} >= date_trunc('month', current_date) - interval '11 months'
+    ),
+    rango as (
+      select greatest(
+               date_trunc('month', current_date) - interval '11 months',
+               min(mes)
+             ) as desde
+        from servicios
+       -- OJO: greatest() en Postgres IGNORA los nulos, así que sin una sola
+       -- fila devolvía la fecha de hace once meses en vez de nulo y la serie
+       -- salía con doce meses en cero. El having deja este CTE sin ninguna
+       -- fila cuando no hay datos, y entonces el subselect de abajo sí es
+       -- nulo y la serie sale vacía — que es lo que quien llama espera para
+       -- callarse, en vez de afirmar doce meses de nada.
+       having count(*) > 0
+    ),
+    meses as (
+      select to_char(generate_series(
+               (select desde from rango),
+               date_trunc('month', current_date),
+               interval '1 month'), 'YYYY-MM') as mes
+       where (select desde from rango) is not null
+    )
+    select m.mes             as mes,
+           count(s.mes)::int as total
+      from meses m
+      left join servicios s on to_char(s.mes, 'YYYY-MM') = m.mes
+     group by m.mes
+     order by m.mes`)) as unknown as Array<{
+    mes: string;
+    total: number;
+  }>;
 
   if (filas.length === 0) return [];
 

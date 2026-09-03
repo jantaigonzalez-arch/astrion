@@ -86,31 +86,93 @@ export async function getFunnelByStage(
   }));
 }
 
-/** Cerrados por mes (últimos 12): ganados vs perdidos. */
+/**
+ * Cerrados por mes (últimos 12): ganados vs perdidos.
+ *
+ * ── UN MES SIN CIERRES VALE CERO Y SE QUEDA EN LA SERIE ───────────────────
+ *
+ * Con `group by date_trunc` a secas solo salían los meses que tenían filas, así
+ * que un mes sin ningún negocio cerrado DESAPARECÍA. Los dos consumidores
+ * dibujan las barras en el orden en que llegan y con el mismo ancho —`salesTrend`
+ * lo publica además como `axis: "time"`, que promete periodos consecutivos y
+ * equiespaciados—, o sea que la serie saltaba de octubre a abril y esos seis
+ * meses vacíos se leían como seis meses seguidos de actividad.
+ *
+ * Es el error que no se ve: la gráfica queda perfecta y dice otra cosa.
+ *
+ * El espinazo de `generate_series` es el mismo recurso y el mismo motivo que en
+ * `getCashOutByMonth`. De paso arregla algo más pequeño: el filtro era
+ * `now() - interval '12 months'`, que arrastra el pedazo del mes número trece
+ * —un 2 de septiembre incluye del 2 al 30 de septiembre del año anterior— y
+ * producía una serie de 13 meses con el primero recortado. Ahora son meses de
+ * calendario completos, contando el que está en curso.
+ *
+ * ── PERO NO EMPIEZA SIEMPRE HACE DOCE MESES ──────────────────────────────
+ *
+ * Arranca en el primer cierre real cuando la historia es más corta. Rellenar
+ * hacia atrás hasta doce sería inventar meses ANTERIORES a que la empresa
+ * existiera, y a una que lleva tres meses le dibujaría nueve barras en cero que
+ * afirman que no vendió nada — cuando lo cierto es que todavía no estaba. Es la
+ * misma distinción que hace `profitTrend` al callarse en vez de enseñar doce
+ * ceros.
+ *
+ * Rellenar los huecos DE ADENTRO no inventa nada: entre dos meses con cierres,
+ * un mes sin ninguno es un hecho.
+ */
 export async function getMonthlyClosed(
   pipelineId: string,
   ownerId?: string,
   conexion?: DbOrTx,
 ) {
   const db = conexion ?? (await tenantDb());
-  return db
-    .select({
-      month: sql<string>`to_char(date_trunc('month', ${crmDeals.closedAt}), 'YYYY-MM')`,
-      wonValue: sql<string>`coalesce(sum(${VALOR_MXN}) filter (where ${crmDeals.status} = 'won'), 0)`,
-      wonCount: sql<number>`count(*) filter (where ${crmDeals.status} = 'won')::int`,
-      lostCount: sql<number>`count(*) filter (where ${crmDeals.status} = 'lost')::int`,
-    })
-    .from(crmDeals)
-    .where(
-      and(
-        eq(crmDeals.pipelineId, pipelineId),
-        sql`${crmDeals.closedAt} is not null`,
-        sql`${crmDeals.closedAt} > now() - interval '12 months'`,
-        ownerId ? eq(crmDeals.ownerId, ownerId) : undefined,
-      ),
+  const rows = (await db.execute(sql`
+    with cerrados as (
+      select date_trunc('month', ${crmDeals.closedAt}) as mes,
+             ${crmDeals.status} as estado,
+             ${VALOR_MXN} as valor
+        from ${crmDeals}
+       where ${crmDeals.pipelineId} = ${pipelineId}::uuid
+         and ${crmDeals.closedAt} is not null
+         and ${crmDeals.closedAt} >= date_trunc('month', current_date) - interval '11 months'
+         ${ownerId ? sql`and ${crmDeals.ownerId} = ${ownerId}::uuid` : sql``}
+    ),
+    -- El arranque: el más RECIENTE entre «hace once meses» y el primer cierre
+    -- que haya. Sin cierres, «desde» es nulo y la serie sale vacía.
+    rango as (
+      select greatest(
+               date_trunc('month', current_date) - interval '11 months',
+               min(mes)
+             ) as desde
+        from cerrados
+       -- OJO: greatest() en Postgres IGNORA los nulos, así que sin una sola
+       -- fila devolvía la fecha de hace once meses en vez de nulo y la serie
+       -- salía con doce meses en cero. El having deja este CTE sin ninguna
+       -- fila cuando no hay datos, y entonces el subselect de abajo sí es
+       -- nulo y la serie sale vacía — que es lo que quien llama espera para
+       -- callarse, en vez de afirmar doce meses de nada.
+       having count(*) > 0
+    ),
+    meses as (
+      select to_char(generate_series(
+               (select desde from rango),
+               date_trunc('month', current_date),
+               interval '1 month'), 'YYYY-MM') as mes
+       where (select desde from rango) is not null
     )
-    .groupBy(sql`date_trunc('month', ${crmDeals.closedAt})`)
-    .orderBy(sql`date_trunc('month', ${crmDeals.closedAt})`);
+    select m.mes                                                              as month,
+           coalesce(sum(c.valor) filter (where c.estado = 'won'), 0)::text    as "wonValue",
+           count(*) filter (where c.estado = 'won')::int                      as "wonCount",
+           count(*) filter (where c.estado = 'lost')::int                     as "lostCount"
+      from meses m
+      left join cerrados c on to_char(c.mes, 'YYYY-MM') = m.mes
+     group by m.mes
+     order by m.mes`)) as unknown as Array<{
+    month: string;
+    wonValue: string;
+    wonCount: number;
+    lostCount: number;
+  }>;
+  return rows;
 }
 
 /** Pronóstico: negocios abiertos agrupados por mes de cierre estimado. */

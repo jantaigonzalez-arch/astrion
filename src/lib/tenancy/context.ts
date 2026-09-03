@@ -12,6 +12,7 @@ import {
   type MembershipRole,
 } from "@/lib/db/platform";
 import { auth } from "@/lib/auth";
+import { currentPlatformRole } from "@/lib/platform-session";
 
 /**
  * Contexto de inquilino: qué empresa está viendo el usuario en esta petición,
@@ -274,6 +275,24 @@ export const getTenantContext = cache(async function getTenantContext(): Promise
    */
   const esOperador = session.user.kind === "platform";
   const mine = esOperador ? [] : await listMemberships(session.user.id);
+
+  /*
+    Y si es operador, que la cuenta SIGA VIVA.
+
+    Éste es el sitio donde el permiso de plataforma se convierte en acceso a los
+    datos de un cliente: unas líneas más abajo, un operador con la cookie de una
+    empresa donde no es miembro obtiene contexto con `impersonated: true` y rol
+    de administrador. Que eso colgara de `kind` —que viene del token y nunca
+    cambia— significaba que desactivar a alguien en `platform_users` no le
+    quitaba la entrada a ninguna empresa hasta que su JWT caducara.
+
+    Se pregunta a la base, memoizado por petición igual que el resto de esta
+    función. Devuelve `null` con la cuenta borrada o desactivada, y entonces no
+    hay contexto: ni el propio ni el de nadie.
+
+    No afecta al camino de un usuario de empresa, que ni siquiera pasa por aquí.
+  */
+  if (esOperador && !(await currentPlatformRole())) return null;
 
   if (wanted) {
     const own = mine.find((m) => m.slug === wanted);
