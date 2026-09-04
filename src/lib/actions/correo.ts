@@ -145,6 +145,29 @@ export async function probarCorreoAction(
   });
 
   if (!r.ok) return { ok: false, error: r.motivo };
+
+  /*
+    EL TRANSPORTE DE CONSOLA NO ES UN ENVÍO, y decirlo aquí es el punto.
+
+    `enviar()` devuelve `ok: true` también cuando el transporte es la consola —
+    imprime el correo al log del contenedor y no sale nada de la máquina—. Este
+    botón respondía «Enviado a tu correo. Revisa que haya llegado», y con eso se
+    comprobó en producción que los avisos funcionaban cuando no salía ni uno.
+
+    Es el peor resultado posible de un botón de prueba: certifica lo contrario
+    de lo que pasa, y quien lo pulsa deja de buscar el problema.
+  */
+  if (r.transporte === "consola") {
+    return {
+      ok: false,
+      error:
+        "NO se envió nada. Este despliegue no tiene ningún buzón ni proveedor " +
+        "de correo configurado, así que los avisos se escriben en el registro " +
+        "del servidor y se quedan ahí. Configura el buzón de arriba y vuelve a " +
+        "probar.",
+    };
+  }
+
   return {
     ok: true,
     message: r.propio

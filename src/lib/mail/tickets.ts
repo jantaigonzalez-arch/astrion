@@ -1,7 +1,7 @@
 import "server-only";
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { users } from "@/lib/db/platform";
+import { memberships, users } from "@/lib/db/platform";
 import { getTenantContext } from "@/lib/tenancy/context";
 import { tenantBase } from "@/lib/nav-server";
 import { enviar } from "@/lib/mail";
@@ -19,7 +19,9 @@ import { enviar } from "@/lib/mail";
  *   asignación   al agente que lo recibe. Nadie mira una cola ajena.
  *   estado       al cliente, y solo cuando se resuelve o se cierra. Los estados
  *                intermedios son del taller, no de quien espera.
- *   alta         acuse al cliente con su folio.
+ *   alta         DOS avisos, y son distintos: acuse a quien lo levantó con su
+ *                folio, y aviso al equipo de que hay trabajo nuevo. El primero
+ *                tranquiliza; el segundo es el que hace que alguien lo mire.
  *
  * ── LO QUE NO SE AVISA ─────────────────────────────────────────────────────
  *
@@ -258,8 +260,106 @@ export async function avisarAlta(t: Ticket): Promise<void> {
   }
 }
 
+/**
+ * Quién atiende en esta empresa, para avisarle de lo que entra.
+ *
+ * Agentes, administradores y el dueño: los mismos que `getAgents()` ofrece para
+ * asignar un ticket. Se leen de la membresía ACTIVA, no de una lista escrita a
+ * mano, para que dar de baja a alguien también lo saque de los avisos — si no,
+ * el primer correo que rebota es el de una persona que ya no trabaja ahí.
+ *
+ * Los permisos por módulo no entran aquí a propósito. Un aviso no es una puerta:
+ * quien tenga Servicio en «Sin acceso» recibirá un correo que no puede abrir, y
+ * eso es un correo de más, no una fuga. Filtrarlo exigiría resolver el permiso
+ * efectivo de cada miembro —consulta por persona— para ahorrar un mensaje.
+ */
+async function equipoQueAtiende(tenantId: string): Promise<Persona[]> {
+  const db = getDb();
+  const filas = await db
+    .select({ email: users.email, name: users.name })
+    .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(
+      and(
+        eq(memberships.tenantId, tenantId),
+        eq(memberships.active, true),
+        eq(users.active, true),
+        inArray(memberships.role, ["agent", "admin", "owner"]),
+      ),
+    );
+  return filas;
+}
+
+/**
+ * Entró trabajo nuevo: se le avisa a quien atiende.
+ *
+ * ── ES EL AVISO QUE FALTABA ───────────────────────────────────────────────
+ *
+ * `avisarAlta` da el acuse a quien levantó el ticket, y estaba escrito pero sin
+ * llamar. Aun conectándolo faltaba la otra mitad, que es la que de verdad hace
+ * que un ticket se atienda: nadie del equipo se enteraba de que había entrado
+ * uno. La única forma de saberlo era entrar a mirar la cola.
+ *
+ * ── A TODO EL EQUIPO, Y NO AL ASIGNADO ────────────────────────────────────
+ *
+ * Porque al levantarse no hay asignado: asignar es el paso siguiente, y tiene su
+ * propio aviso. Mandarlo a todos es lo correcto mientras la cola sea de todos;
+ * el día que haya reparto por especialidad, este es el sitio donde se acota.
+ *
+ * ── SE MANDA EN COPIA OCULTA ──────────────────────────────────────────────
+ *
+ * `para` recibe la lista entera, y quien la manda es el proveedor con todos los
+ * destinatarios en el mismo campo. Se pasa como arreglo porque `Correo.para` ya
+ * lo admite; si el equipo crece hasta que eso moleste, se parte en envíos
+ * individuales aquí y nadie más se entera.
+ */
+export async function avisarEquipoDeAlta(
+  t: Ticket,
+  actorId: string,
+): Promise<void> {
+  try {
+    const ctx = await getTenantContext();
+    if (!ctx) return;
+
+    const equipo = await equipoQueAtiende(ctx.tenantId);
+    // Nunca a quien lo acaba de levantar: recibir un correo contándote lo que
+    // acabas de hacer enseña a ignorar los correos. Es la misma regla que
+    // siguen los otros tres avisos.
+    const gente = await personas([actorId]);
+    const yo = gente.get(actorId)?.email;
+    const destinos = equipo.map((p) => p.email).filter((e) => e !== yo);
+    if (destinos.length === 0) return;
+
+    const quien = gente.get(actorId)?.name ?? null;
+    const href = await enlace(ctx.slug, t.id);
+    const { html, texto } = plantilla({
+      titulo: `${t.reference} · entró un ticket nuevo`,
+      cuerpo: [
+        `${quien ? `${quien} levantó` : "Entró"} «${t.subject}».`,
+        "Todavía no tiene a nadie asignado.",
+      ],
+      boton: { texto: "Abrir el ticket", href },
+      pie: `${ctx.name} · recibes esto porque atiendes la cola de servicio.`,
+    });
+
+    await enviar(ctx.tenantId, {
+      para: destinos,
+      asunto: `${t.reference} · ticket nuevo`,
+      html,
+      texto,
+    });
+  } catch (e) {
+    console.error("[mail] aviso de alta al equipo", e);
+  }
+}
+
 /** Reexportado para que las acciones tipen el ticket que pasan. */
 export type { Ticket as TicketParaAviso };
 
-/** Expuesto solo para ejercitar las plantillas desde un script de prueba. */
-export const _interno = { plantilla };
+/**
+ * Expuesto solo para ejercitar las plantillas y la lista de destinatarios desde
+ * un script de prueba. `equipoQueAtiende` decide a quién le llega el aviso de un
+ * ticket nuevo, y eso hay que poder comprobarlo contra la base real sin montar
+ * una petición.
+ */
+export const _interno = { plantilla, equipoQueAtiende };

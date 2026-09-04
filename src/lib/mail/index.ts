@@ -137,9 +137,39 @@ export async function remitenteDe(tenantId: string): Promise<Remitente> {
   };
 }
 
+/**
+ * Por dónde salió —o no salió— el correo.
+ *
+ * `consola` NO es un envío: se imprime al log y no sale nada de la máquina. Va
+ * en el resultado porque `ok: true` a secas era una mentira que llegaba hasta la
+ * pantalla: el botón «Probar» respondía «Enviado a tu correo» con el transporte
+ * de consola puesto, y en producción eso es exactamente lo que estaba pasando.
+ *
+ * Un control que dice que funcionó cuando no salió nada es peor que su ausencia
+ * — enseña a confiar en un aviso que nadie va a recibir.
+ */
+export type Transporte = "smtp" | "resend" | "consola";
+
 export type Resultado =
-  | { ok: true; id: string; propio: boolean }
+  | { ok: true; id: string; propio: boolean; transporte: Transporte }
   | { ok: false; motivo: string };
+
+/** ¿Este resultado significa que el correo SALIÓ de verdad? */
+export function saliODeVerdad(r: Resultado): boolean {
+  return r.ok && r.transporte !== "consola";
+}
+
+/**
+ * Qué transporte se usaría para esta empresa, sin mandar nada.
+ *
+ * Para que la pantalla de ajustes pueda decir «hoy no sale ningún aviso» sin
+ * obligar a pulsar un botón y sin gastar un envío.
+ */
+export async function transporteDe(tenantId: string): Promise<Transporte> {
+  const r = await remitenteDe(tenantId);
+  if (r.smtp) return "smtp";
+  return (process.env.MAIL_PROVIDER ?? "consola") === "resend" ? "resend" : "consola";
+}
 
 /**
  * Manda un correo. NUNCA lanza.
@@ -186,7 +216,7 @@ function porConsola(r: Remitente, c: Correo): Resultado {
       .filter(Boolean)
       .join("\n"),
   );
-  return { ok: true, id: "consola", propio: r.propio };
+  return { ok: true, id: "consola", propio: r.propio, transporte: "consola" };
 }
 
 /**
@@ -218,7 +248,7 @@ async function porResend(r: Remitente, c: Correo): Promise<Resultado> {
     return { ok: false, motivo: `resend ${res.status}: ${await res.text()}` };
   }
   const datos = (await res.json()) as { id?: string };
-  return { ok: true, id: datos.id ?? "?", propio: r.propio };
+  return { ok: true, id: datos.id ?? "?", propio: r.propio, transporte: "resend" };
 }
 
 /**
@@ -252,7 +282,7 @@ async function porSmtp(r: Remitente, c: Correo): Promise<Resultado> {
     ...(r.replyTo ? { replyTo: r.replyTo } : {}),
   });
 
-  return { ok: true, id: info.messageId, propio: true };
+  return { ok: true, id: info.messageId, propio: true, transporte: "smtp" };
 }
 
 /**

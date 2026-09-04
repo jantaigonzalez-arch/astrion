@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { tenants } from "@/lib/db/platform";
 import { requireTenant } from "@/lib/tenancy/context";
+import { transporteDe } from "@/lib/mail";
 
 /**
  * La configuración de correo de la empresa, TAL COMO PUEDE VERSE.
@@ -29,6 +30,16 @@ export async function getCorreoDeLaEmpresa() {
     .limit(1);
 
   return {
+    /*
+      Por dónde saldrían los avisos HOY.
+
+      Se resuelve aquí para que la pantalla lo diga sin obligar a pulsar
+      «Probar»: con el transporte de consola no sale un solo correo, y eso no se
+      notaba por ninguna parte —ni en la pantalla ni en el botón, que además
+      contestaba que sí—. Un despliegue puede llevar meses sin mandar un aviso
+      y sin que nadie tenga cómo enterarse.
+    */
+    transporte: await transporteDe(ctx.tenantId),
     configurado: Boolean(t?.host && t?.pass),
     host: t?.host ?? "",
     port: t?.port ?? 587,

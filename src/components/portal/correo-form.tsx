@@ -35,6 +35,7 @@ import { Label } from "@/components/ui/label";
  * roto. La advertencia va ANTES de los campos por eso, y no al pie.
  */
 export function CorreoForm({
+  transporte,
   configurado,
   host,
   port,
@@ -44,6 +45,8 @@ export function CorreoForm({
   replyTo,
   comprobado,
 }: {
+  /** Por dónde saldrían los avisos hoy. Ver `getCorreoDeLaEmpresa`. */
+  transporte: "smtp" | "resend" | "consola";
   configurado: boolean;
   host: string;
   port: number;
@@ -73,6 +76,33 @@ export function CorreoForm({
         Conecta el buzón de tu empresa y los avisos de tickets saldrán desde él.
         Si no lo configuras, salen desde Astraion con el nombre de tu empresa.
       </p>
+
+      {/*
+        LO PRIMERO, PORQUE ES LO QUE NADIE SABÍA.
+
+        Sin buzón propio y sin proveedor global, el transporte es la consola: el
+        aviso se escribe en el registro del servidor y ahí se queda. Eso no se
+        veía por ninguna parte —la pantalla hablaba de «salen desde Astraion»,
+        que es lo que pasaría CON proveedor— y el botón de prueba lo confirmaba.
+        Un despliegue podía llevar meses sin mandar un aviso sin que nadie
+        tuviera cómo enterarse.
+      */}
+      {transporte === "consola" && (
+        <div className="mt-4 flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+          <div className="text-sm">
+            <p className="font-medium text-destructive">
+              Ahora mismo no sale ningún aviso.
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              Este despliegue no tiene buzón propio ni proveedor de correo, así
+              que los avisos de tickets se escriben en el registro del servidor
+              y no llegan a nadie. Conecta el buzón de aquí abajo para
+              encenderlos.
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="mt-4 flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3">
         <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />

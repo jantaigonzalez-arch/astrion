@@ -3,8 +3,10 @@
 import { z } from "zod";
 import { revalidateTenant } from "@/lib/revalidate";
 import {
+  avisarAlta,
   avisarAsignacion,
   avisarComentario,
+  avisarEquipoDeAlta,
   avisarEstado,
 } from "@/lib/mail/tickets";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -143,6 +145,29 @@ export async function createTicket(
     // medición con casos que nunca van a tener desenlace.
 
     revalidateTenant();
+
+    /*
+      LOS DOS AVISOS DEL ALTA, y ninguno se mandaba.
+
+      `avisarAlta` estaba escrito —plantilla incluida— y no lo llamaba nadie:
+      quien levantaba un ticket no recibía ni el folio. Y faltaba la otra mitad,
+      que es la que hace que el ticket se atienda: el equipo no se enteraba de
+      que había entrado uno, y la única forma de saberlo era mirar la cola.
+
+      Van DESPUÉS de revalidar y ninguno lanza —los dos se tragan su error—: si
+      el correo está caído, el ticket ya está creado y lo que se pierde es el
+      aviso. Al revés sería cambiar un problema pequeño por uno grave.
+    */
+    const paraAviso = {
+      id: row.id,
+      reference: row.reference,
+      subject: parsed.data.subject,
+      createdById: session.user.id,
+      assignedToId: null,
+    };
+    await avisarAlta(paraAviso);
+    await avisarEquipoDeAlta(paraAviso, session.user.id);
+
     return { ok: true, reference: row.reference };
   } catch (e) {
     console.error("[ticket] create error:", e);
@@ -258,6 +283,27 @@ export async function createServiceTicket(
     // Un levantamiento del staff nace en la cola: se predice de una vez.
 
     revalidateTenant();
+
+    /*
+      Aquí el ticket lo levanta el EQUIPO para un cliente, así que los dos
+      avisos cambian de destinatario respecto al alta desde el portal:
+
+        · el acuse va al laboratorio —`createdById` es el cliente, no quien
+          teclea—, que es quien tiene que saber que su servicio quedó
+          registrado y con qué folio;
+        · el aviso al equipo excluye a quien lo levantó, no al cliente. Por eso
+          `avisarEquipoDeAlta` recibe `session.user.id` y no `clientId`.
+    */
+    const paraAviso = {
+      id: row.id,
+      reference: row.reference,
+      subject: parsed.data.subject,
+      createdById: parsed.data.clientId,
+      assignedToId: null,
+    };
+    await avisarAlta(paraAviso);
+    await avisarEquipoDeAlta(paraAviso, session.user.id);
+
     return { ok: true, reference: row.reference };
   } catch (e) {
     console.error("[ticket] service create error:", e);
