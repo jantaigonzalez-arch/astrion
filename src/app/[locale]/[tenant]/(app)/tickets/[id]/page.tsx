@@ -22,7 +22,6 @@ import { getSettings } from "@/lib/data/settings";
 import { computeProfit } from "@/lib/profit";
 import { ProfitCard } from "@/components/portal/profit-card";
 import { Link } from "@/lib/nav";
-import { updateTicketStatus } from "@/lib/actions/tickets";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge, PriorityBadge } from "@/components/portal/badges";
@@ -30,12 +29,11 @@ import { ServiceSheet } from "@/components/portal/service-sheet";
 import { CommentForm } from "@/components/portal/comment-form";
 import { ReviewPanel } from "@/components/portal/review-panel";
 import { AssignPanel } from "@/components/portal/assign-panel";
+import { StatusPanel } from "@/components/portal/status-panel";
 import { Badge } from "@/components/ui/badge";
 import { currentRole } from "@/lib/tenancy/context";
 import {
   CATEGORY_LABELS,
-  STATUS_LABELS,
-  STAFF_SETTABLE_STATUSES,
   TYPE_LABELS,
   TYPE_STYLES,
   label,
@@ -43,9 +41,6 @@ import {
   type TicketStatusValue,
   type TicketTypeValue,
 } from "@/lib/tickets";
-
-const selectCls =
-  "h-9 rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
 
 export default async function TicketDetailPage({
   params,
@@ -381,18 +376,14 @@ export default async function TicketDetailPage({
           )}
 
           {isStaff && ticket.status !== "pending_review" && ticket.status !== "rejected" && (
-            <Card className="p-5">
-              <h3 className="mb-3 text-sm font-semibold">Cambiar estado</h3>
-              <form action={updateTicketStatus} className="flex gap-2">
-                <input type="hidden" name="ticketId" value={ticket.id} />
-                <select name="status" defaultValue={ticket.status} className={`${selectCls} flex-1`}>
-                  {STAFF_SETTABLE_STATUSES.map((s) => (
-                    <option key={s} value={s}>{label(STATUS_LABELS, s, locale)}</option>
-                  ))}
-                </select>
-                <Button type="submit" size="sm">Guardar</Button>
-              </form>
-            </Card>
+            <StatusPanel
+              /* El `key` es lo que re-sincroniza el selector cuando el estado
+                 cambia por otra vía. Ver la cabecera de `StatusPanel`. */
+              key={ticket.status}
+              ticketId={ticket.id}
+              status={ticket.status}
+              locale={locale}
+            />
           )}
         </div>
       </div>
