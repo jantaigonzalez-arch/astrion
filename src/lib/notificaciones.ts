@@ -109,6 +109,30 @@ export type AvisoEnPantalla = {
 export async function misAvisos(limite = 20): Promise<AvisoEnPantalla[]> {
   const session = await auth();
   if (!session?.user?.id) return [];
+  try {
+    return await leerAvisos(session.user.id, limite);
+  } catch (e) {
+    // LA CAMPANA NO PUEDE TUMBAR EL PORTAL.
+    //
+    // Esto se lee en el layout, o sea en TODAS las pantallas: una excepción
+    // aquí no deja sin campana, deja sin aplicación —cada página respondería
+    // 500 para todos los clientes a la vez—. El caso real es un despliegue
+    // cuyo esquema de inquilino va por detrás del código, que es lo que estuvo
+    // a punto de pasar cuando el contenedor de migraciones solo corría el plano
+    // de control.
+    //
+    // Degradar a «no hay avisos» es la caída correcta: se pierde un adorno de
+    // la barra y el sistema entero sigue en pie. Mismo criterio que los avisos
+    // por correo, que tampoco tumban la acción que los disparó.
+    console.error("[avisos] no se pudieron leer", e);
+    return [];
+  }
+}
+
+async function leerAvisos(
+  userId: string,
+  limite: number,
+): Promise<AvisoEnPantalla[]> {
   const db = await tenantDb();
   return db
     .select({
@@ -123,7 +147,7 @@ export async function misAvisos(limite = 20): Promise<AvisoEnPantalla[]> {
     })
     .from(notifications)
     .innerJoin(tickets, eq(tickets.id, notifications.ticketId))
-    .where(eq(notifications.userId, session.user.id))
+    .where(eq(notifications.userId, userId))
     .orderBy(desc(notifications.createdAt))
     .limit(limite);
 }
@@ -132,14 +156,21 @@ export async function misAvisos(limite = 20): Promise<AvisoEnPantalla[]> {
 export async function contarSinLeer(): Promise<number> {
   const session = await auth();
   if (!session?.user?.id) return 0;
-  const db = await tenantDb();
-  const [fila] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(notifications)
-    .where(
-      and(eq(notifications.userId, session.user.id), isNull(notifications.readAt)),
-    );
-  return fila?.n ?? 0;
+  try {
+    const db = await tenantDb();
+    const [fila] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(notifications)
+      .where(
+        and(eq(notifications.userId, session.user.id), isNull(notifications.readAt)),
+      );
+    return fila?.n ?? 0;
+  } catch (e) {
+    // Cae a cero por lo mismo que `misAvisos` cae a lista vacía: esto se
+    // pregunta en el layout de todas las pantallas.
+    console.error("[avisos] no se pudo contar", e);
+    return 0;
+  }
 }
 
 /**

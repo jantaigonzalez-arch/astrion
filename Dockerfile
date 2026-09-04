@@ -52,7 +52,28 @@ COPY src ./src
 #
 # Solo el plano de control. Las de negocio las aplica `scripts/tenant.ts
 # migrate` a cada esquema, porque hay que recorrer uno por empresa.
-CMD ["npx", "drizzle-kit", "migrate"]
+# LAS DOS MITADES DEL ESQUEMA, EN ORDEN.
+#
+# `drizzle-kit migrate` aplica SOLO el plano de control (`drizzle/`): tenants,
+# users, memberships. Las tablas de negocio viven en `tenant_<slug>` y las lleva
+# `drizzle-tenant/`, que este contenedor nunca corría — se aplicaban a mano y
+# nadie lo recordaba, porque hasta ahora ninguna migración de inquilino había
+# llegado junto a código que la necesitara el mismo día.
+#
+# La primera que lo hizo habría tumbado el portal entero: la aplicación consulta
+# la tabla nueva en el layout de todas las pantallas, así que sin ella cada
+# página responde 500 para todos los clientes a la vez.
+#
+# En serie con `&&`, y en este orden: el plano de control primero porque
+# `tenant_schemas` —de donde sale la lista de esquemas a migrar— vive ahí. Si
+# cualquiera de las dos falla, el contenedor sale con error y `web` NO arranca:
+# sigue sirviendo la versión vieja contra el esquema viejo, que es el estado
+# correcto en el que quedarse. Ver `depends_on` en docker-compose.prod.yml.
+#
+# `scripts/tenant.ts migrate` es idempotente: lleva en `tenant_schemas` cuál fue
+# la última aplicada a cada esquema y solo corre lo que falte. Correrlo en cada
+# despliegue no cuesta nada cuando no hay pendientes.
+CMD ["sh", "-c", "npx drizzle-kit migrate && npx tsx scripts/tenant.ts migrate"]
 
 # ---------- runner: lo mínimo para servir ----------
 FROM node:22-alpine AS runner

@@ -305,6 +305,15 @@ Las migraciones se aplican solas: el servicio `migrate` corre antes que `web`,
 y `web` solo arranca si terminó bien (`service_completed_successfully`). Así
 nunca queda una versión de la app corriendo contra un schema viejo.
 
+**Las dos mitades**, y esto no siempre fue cierto: `migrate` corre primero
+`drizzle-kit migrate` —el plano de control, `drizzle/`— y después
+`scripts/tenant.ts migrate`, que aplica `drizzle-tenant/` a cada esquema
+`tenant_<slug>`. Hasta la 0023 el contenedor solo hacía lo primero y las de
+inquilino se aplicaban a mano; la primera que llegó junto a código que la
+necesitaba habría tumbado el portal entero, porque la app consulta la tabla
+nueva en el layout de todas las pantallas. Las dos van en serie con `&&`: si
+cualquiera falla, `web` no arranca.
+
 > **Nunca `db:push` en producción.** Sincroniza el schema por diferencia, sin
 > historial ni control de lo que hace, y puede descartar datos. El deploy usa
 > `drizzle-kit migrate`, que aplica los `.sql` versionados y registra cuáles ya
