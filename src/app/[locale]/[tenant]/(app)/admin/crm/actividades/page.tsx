@@ -1,7 +1,6 @@
 import { setRequestLocale } from "next-intl/server";
 import { CalendarCheck } from "lucide-react";
 import { auth } from "@/lib/auth";
-import { isAdminRole } from "@/lib/roles";
 import { getActivities } from "@/lib/data/crm";
 import { ACTIVITY_LABELS, ACTIVITY_STYLES, label } from "@/lib/crm";
 import { Card } from "@/components/ui/card";
@@ -9,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { ActivityToggle } from "@/components/portal/crm/deal-panels";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 export default async function ActivitiesPage({
   params,
@@ -23,7 +22,7 @@ export default async function ActivitiesPage({
   setRequestLocale(locale);
 
   const session = await auth();
-  const admin = isAdminRole(await currentRole());
+  const admin = await puedeEn("ventas", "administrar");
   const ownerId = admin ? (scope === "mine" ? session!.user.id : undefined) : session!.user.id;
   const onlyPending = filtro !== "todas";
 

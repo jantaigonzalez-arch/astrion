@@ -1,11 +1,12 @@
 "use server";
 
 import { z } from "zod";
+import { MODULOS, NIVELES, type Ajustes, type Modulo, type Nivel } from "@/lib/permisos";
 import { revalidateTenant } from "@/lib/revalidate";
 import { and, eq, ne } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { getDb } from "@/lib/db";
-import { requireTenant, tenantDb, currentRole } from "@/lib/tenancy/context";
+import { requireTenant, tenantDb, puedeEn } from "@/lib/tenancy/context";
 import { crmOrganizations } from "@/lib/db/schema";
 import { memberships, users } from "@/lib/db/platform";
 import { auth } from "@/lib/auth";
@@ -28,6 +29,30 @@ import { ASSIGNABLE_ROLES, isAdminRole } from "@/lib/roles";
  * cada acción empieza por ahí.
  */
 
+/**
+ * Del formulario al mapa que se guarda.
+ *
+ * Solo entra lo que es un módulo conocido con un nivel conocido. Lo demás se
+ * DESCARTA en vez de guardarse: cadena vacía significa «que decida el rol», y
+ * cualquier otra cosa es una manipulación del formulario o un módulo que esta
+ * versión ya no tiene. Guardar un nivel inventado dejaría una fila que nadie
+ * sabe interpretar en la columna que decide quién entra a dónde.
+ *
+ * Es la misma red que `ajustesGuardados()` pone al LEER, y las dos hacen falta:
+ * ésta impide que la basura entre, aquélla impide que una fila vieja rompa la
+ * lectura. Una sola no alcanza — la columna sobrevive a los despliegues.
+ */
+function aAjustes(crudo: Record<string, string>): Ajustes {
+  const out: Ajustes = {};
+  for (const m of MODULOS) {
+    const v = crudo[m];
+    if (!v) continue; // "" = sin ajuste, sigue al rol
+    if (!(NIVELES as readonly string[]).includes(v)) continue;
+    out[m as Modulo] = v as Nivel;
+  }
+  return out;
+}
+
 /* ---------------- Editar a alguien de la empresa ---------------- */
 const UpdateUserSchema = z.object({
   id: z.string().uuid(),
@@ -36,6 +61,19 @@ const UpdateUserSchema = z.object({
   phone: z.string().max(40).optional(),
   role: z.enum(ASSIGNABLE_ROLES),
   active: z.boolean(),
+  /*
+    Los ajustes de acceso, uno por módulo, como campos sueltos del formulario.
+
+    Llegan como `permiso.compras=ver`, y no como un JSON en un campo oculto,
+    porque así el formulario funciona sin JavaScript y porque cada `<select>` es
+    su propio campo con su propio nombre — que es lo que hace que el navegador
+    sepa reenviarlos y que un error de uno no arrastre a los otros.
+
+    «Que decida el rol» viaja como cadena vacía y NO como un valor más: es la
+    ausencia de ajuste, y guardarla como un nivel congelaría la plantilla del
+    rol en esa cuenta. Ver `Ajustes` en `lib/permisos.ts`.
+  */
+  permisos: z.record(z.string(), z.string()).default({}),
   // Organización del CRM que representa a esta cuenta ("" = sin vincular).
   crmOrganizationId: z
     .string()
@@ -56,11 +94,14 @@ export async function updateUser(
   formData: FormData,
 ): Promise<UpdateUserState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("configuracion", "administrar"))) {
     return { ok: false, error: "auth" };
   }
 
   const parsed = UpdateUserSchema.safeParse({
+    permisos: Object.fromEntries(
+      MODULOS.map((m) => [m, String(formData.get(`permiso.${m}`) ?? "")]),
+    ),
     id: formData.get("id"),
     name: formData.get("name"),
     company: formData.get("company") || undefined,
@@ -107,7 +148,11 @@ export async function updateUser(
 
     await control
       .update(memberships)
-      .set({ role: parsed.data.role, active: parsed.data.active })
+      .set({
+        role: parsed.data.role,
+        active: parsed.data.active,
+        permissions: aAjustes(parsed.data.permisos),
+      })
       .where(
         and(
           eq(memberships.userId, parsed.data.id),
@@ -149,7 +194,7 @@ export async function resetUserPassword(
   formData: FormData,
 ): Promise<UpdateUserState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("configuracion", "administrar"))) {
     return { ok: false, error: "auth" };
   }
 
@@ -203,7 +248,7 @@ export async function createUser(
   formData: FormData,
 ): Promise<CreateUserState> {
   // Solo un administrador puede dar de alta cuentas (acceso por invitación).
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("configuracion", "administrar"))) {
     return { ok: false, error: "auth" };
   }
 

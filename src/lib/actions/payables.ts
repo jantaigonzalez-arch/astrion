@@ -2,29 +2,10 @@
 
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { isAdminRole } from "@/lib/roles";
-import { tenantDb, currentRole } from "@/lib/tenancy/context";
+import { tenantDb, puedeEn } from "@/lib/tenancy/context";
 import { revalidateTenant } from "@/lib/revalidate";
-import {
-  applyAdvance,
-  applyCreditNote,
-  cancelCreditNote,
-  cancelSupplierInvoice,
-  paySupplierInvoice,
-  registerAdvance,
-  registerCreditNote,
-  registerSupplierInvoice,
-  repartirEnParcialidades,
-  splitInvoice,
-  unapplyAdvance,
-  unapplyCreditNote,
-} from "@/lib/domain/payables";
-import {
-  PreviewRollback,
-  runImportBatch,
-  type ChargeRow,
-  type ImportOutcome,
-} from "@/lib/domain/payable-import";
+import { applyAdvance, applyCreditNote, cancelCreditNote, cancelSupplierInvoice, paySupplierInvoice, registerAdvance, registerCreditNote, registerSupplierInvoice, repartirEnParcialidades, splitInvoice, unapplyAdvance, unapplyCreditNote } from "@/lib/domain/payables";
+import { PreviewRollback, runImportBatch, type ChargeRow, type ImportOutcome } from "@/lib/domain/payable-import";
 import { leerAbonosCsv, leerCargosCsv } from "@/lib/import/payables-csv";
 import { parseCfdi, tipoDeDocumento } from "@/lib/import/cfdi";
 
@@ -75,7 +56,7 @@ export async function createSupplierInvoice(
   formData: FormData,
 ): Promise<PayableState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("pagar", "administrar"))) {
     return { ok: false, error: "Solo un administrador captura facturas de proveedor." };
   }
 
@@ -139,7 +120,7 @@ export async function payInvoice(
   formData: FormData,
 ): Promise<PayableState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("pagar", "administrar"))) {
     return { ok: false, error: "Solo un administrador registra pagos." };
   }
 
@@ -180,7 +161,7 @@ export async function cancelInvoice(
   formData: FormData,
 ): Promise<PayableState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("pagar", "administrar"))) {
     return { ok: false, error: "Solo un administrador cancela facturas." };
   }
 
@@ -226,7 +207,7 @@ export async function createCreditNote(
   formData: FormData,
 ): Promise<PayableState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("pagar", "administrar"))) {
     return { ok: false, error: "Solo un administrador captura notas de crédito." };
   }
 
@@ -274,7 +255,7 @@ export async function applyCreditNoteToInvoice(
   formData: FormData,
 ): Promise<PayableState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("pagar", "administrar"))) {
     return { ok: false, error: "Solo un administrador aplica notas de crédito." };
   }
 
@@ -324,7 +305,7 @@ export async function unapplyCredit(
   formData: FormData,
 ): Promise<PayableState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("pagar", "administrar"))) {
     return { ok: false, error: "Solo un administrador quita una aplicación." };
   }
 
@@ -372,7 +353,7 @@ export async function cancelCreditNoteAction(
   formData: FormData,
 ): Promise<PayableState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("pagar", "administrar"))) {
     return { ok: false, error: "Solo un administrador cancela notas de crédito." };
   }
 
@@ -464,7 +445,7 @@ async function correrImportacion(
   persist: boolean,
 ): Promise<ImportState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("pagar", "administrar"))) {
     return { ok: false, error: "Solo un administrador importa cuentas por pagar." };
   }
 
@@ -581,7 +562,7 @@ export async function splitInvoiceAction(
   formData: FormData,
 ): Promise<PayableState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("pagar", "administrar"))) {
     return { ok: false, error: "Solo un administrador divide una factura." };
   }
 
@@ -653,7 +634,7 @@ export async function createAdvance(
   formData: FormData,
 ): Promise<PayableState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("pagar", "administrar"))) {
     return { ok: false, error: "Solo un administrador registra anticipos." };
   }
 
@@ -692,7 +673,7 @@ export async function applyAdvanceToInvoice(
   formData: FormData,
 ): Promise<PayableState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("pagar", "administrar"))) {
     return { ok: false, error: "Solo un administrador imputa anticipos." };
   }
 

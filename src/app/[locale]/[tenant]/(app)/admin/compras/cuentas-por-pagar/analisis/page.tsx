@@ -1,19 +1,9 @@
 import { setRequestLocale } from "next-intl/server";
 import { ArrowLeft, Ban, Clock, HandCoins, PiggyBank } from "lucide-react";
-import { isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
-import { currentRole } from "@/lib/tenancy/context";
-import {
-  getCashOutByMonth,
-  getIdleMoney,
-  getPaymentCalendar,
-  getSupplierBehavior,
-} from "@/lib/data/payables";
-import {
-  CashOutChart,
-  PaymentCalendarChart,
-  ShareBar,
-} from "@/components/portal/purchasing/payables-charts";
+import { puedeEn } from "@/lib/tenancy/context";
+import { getCashOutByMonth, getIdleMoney, getPaymentCalendar, getSupplierBehavior } from "@/lib/data/payables";
+import { CashOutChart, PaymentCalendarChart, ShareBar } from "@/components/portal/purchasing/payables-charts";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,7 +26,7 @@ export default async function AnalisisCuentasPorPagarPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("pagar", "ver"))) {
     await redirectInTenant("/admin/compras", locale);
   }
 

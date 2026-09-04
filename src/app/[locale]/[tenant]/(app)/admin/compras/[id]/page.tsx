@@ -1,19 +1,14 @@
 import { setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Package } from "lucide-react";
-import { isSupport, isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getPurchaseOrder } from "@/lib/data/purchasing";
 import { PurchaseStatusBadge } from "@/components/portal/purchasing/status-badge";
-import {
-  CancelOrderForm,
-  ReceiveForm,
-  SendOrderButton,
-} from "@/components/portal/purchasing/order-actions";
+import { CancelOrderForm, ReceiveForm, SendOrderButton } from "@/components/portal/purchasing/order-actions";
 import { Card } from "@/components/ui/card";
 import { Link } from "@/lib/nav";
 import type { PurchaseOrderStatus } from "@/lib/db/schema";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 export default async function OrdenPage({
   params,
@@ -23,7 +18,7 @@ export default async function OrdenPage({
   const { locale, id } = await params;
   setRequestLocale(locale);
 
-  if (!isSupport(await currentRole())) {
+  if (!(await puedeEn("compras", "ver"))) {
     await redirectInTenant("/dashboard", locale);
   }
 
@@ -172,7 +167,7 @@ export default async function OrdenPage({
         </Card>
       )}
 
-      {isAdminRole(await currentRole()) &&
+      {(await puedeEn("compras", "administrar")) &&
         status !== "cancelled" &&
         status !== "received" && (
           <CancelOrderForm orderId={order.id} status={status} />

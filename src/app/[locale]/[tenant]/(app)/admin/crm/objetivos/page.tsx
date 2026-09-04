@@ -1,6 +1,5 @@
 import { setRequestLocale } from "next-intl/server";
 import { Target, Trash2 } from "lucide-react";
-import { isAdminRole } from "@/lib/roles";
 import { getCrmOwners, getPipelines, ensureDefaultPipeline } from "@/lib/data/crm";
 import { getGoalsWithProgress } from "@/lib/data/crm-insights";
 import { createGoal, deleteGoal } from "@/lib/actions/crm-extras";
@@ -10,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { GoalProgress } from "@/components/portal/crm/crm-charts";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 const selectCls =
   "flex h-10 w-full rounded-lg border border-input bg-background px-3.5 text-sm shadow-sm focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
@@ -23,7 +22,7 @@ export default async function GoalsPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  const admin = isAdminRole(await currentRole());
+  const admin = await puedeEn("analisis", "administrar");
 
   await ensureDefaultPipeline();
   const [goals, owners, pipelines] = await Promise.all([

@@ -1,19 +1,10 @@
 "use server";
 
 import { auth } from "@/lib/auth";
-import { isAdminRole } from "@/lib/roles";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 import { revalidateDashboards } from "@/lib/revalidate";
 import { redirectAfterAction } from "@/lib/nav-server";
-import {
-  createDashboard,
-  deleteDashboard,
-  setDashboardModules,
-  publishDashboard,
-  renameDashboard,
-  reorderDashboard,
-  unpublishDashboard,
-} from "@/lib/ml/dashboards";
+import { createDashboard, deleteDashboard, setDashboardModules, publishDashboard, renameDashboard, reorderDashboard, unpublishDashboard } from "@/lib/ml/dashboards";
 import { caja, type Caja } from "@/lib/ml/placements";
 
 /**
@@ -28,7 +19,7 @@ import { caja, type Caja } from "@/lib/ml/placements";
 export type DashState = { ok: boolean; message?: string; error?: string };
 
 async function soloAdmin(): Promise<string | null> {
-  return isAdminRole(await currentRole())
+  return (await puedeEn("analisis", "administrar"))
     ? null
     : "Solo un administrador compone los tableros.";
 }

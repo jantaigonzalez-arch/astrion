@@ -4,8 +4,7 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { tenants } from "@/lib/db/platform";
 import { auth } from "@/lib/auth";
-import { isAdminRole } from "@/lib/roles";
-import { currentRole, requireTenant } from "@/lib/tenancy/context";
+import { requireTenant, puedeEn } from "@/lib/tenancy/context";
 import { revalidateTenant } from "@/lib/revalidate";
 import { sellar, abrir } from "@/lib/secretos";
 import { enviar, probarSmtp } from "@/lib/mail";
@@ -28,7 +27,7 @@ import { enviar, probarSmtp } from "@/lib/mail";
 export type CorreoState = { ok: boolean; error?: string; message?: string };
 
 async function soloAdmin(): Promise<string | null> {
-  return isAdminRole(await currentRole())
+  return (await puedeEn("configuracion", "administrar"))
     ? null
     : "Solo un administrador configura el correo de la empresa.";
 }

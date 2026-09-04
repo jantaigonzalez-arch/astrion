@@ -1,16 +1,12 @@
 import { setRequestLocale } from "next-intl/server";
 import { Building2, Plus } from "lucide-react";
 import { auth } from "@/lib/auth";
-import { isAdminRole } from "@/lib/roles";
 import { getOrganizations } from "@/lib/data/crm";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
-import { currentRole } from "@/lib/tenancy/context";
-import {
-  OrganizationsList,
-  type OrganizationRow,
-} from "@/components/portal/organizations-list";
+import { puedeEn } from "@/lib/tenancy/context";
+import { OrganizationsList, type OrganizationRow } from "@/components/portal/organizations-list";
 
 /**
  * Catálogo completo: clientes y leads juntos.
@@ -33,7 +29,7 @@ export default async function OrganizationsPage({
   setRequestLocale(locale);
 
   const session = await auth();
-  const admin = isAdminRole(await currentRole());
+  const admin = await puedeEn("ventas", "administrar");
   const orgs = await getOrganizations(admin ? undefined : session!.user.id);
 
   // Se aplana a lo que la lista necesita: el componente es de cliente, así que

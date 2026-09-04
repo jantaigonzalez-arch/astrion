@@ -51,6 +51,11 @@ export type TenantMember = {
   createdAt: Date;
   /** Rol EN ESTA empresa. La misma persona puede tener otro en otra. */
   role: MembershipRole;
+  /**
+   * Ajustes de acceso por módulo, encima del rol. `unknown` porque es `jsonb`:
+   * pasa por `ajustesGuardados()` antes de usarse. Ver `lib/permisos.ts`.
+   */
+  permissions: unknown;
   /** La cuenta puede iniciar sesión en la plataforma. */
   accountActive: boolean;
   /** Sigue perteneciendo a esta empresa. */
@@ -66,6 +71,8 @@ const MEMBER_COLUMNS = {
   image: users.image,
   createdAt: users.createdAt,
   role: memberships.role,
+  /** Ajustes de acceso por módulo. Ver `lib/permisos.ts`. */
+  permissions: memberships.permissions,
   accountActive: users.active,
   memberActive: memberships.active,
 };

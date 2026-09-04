@@ -2,27 +2,16 @@ import { Suspense } from "react";
 import { setRequestLocale } from "next-intl/server";
 import { Handshake, Plus, Target, TrendingUp, Trophy } from "lucide-react";
 import { auth } from "@/lib/auth";
-import { isAdminRole } from "@/lib/roles";
-import {
-  ensureDefaultPipeline,
-  getClosedDeals,
-  getCrmStats,
-  getPipelineBoard,
-  getPipelines,
-} from "@/lib/data/crm";
+import { ensureDefaultPipeline, getClosedDeals, getCrmStats, getPipelineBoard, getPipelines } from "@/lib/data/crm";
 import { money } from "@/lib/crm";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { PipelineBoard } from "@/components/portal/crm/pipeline-board";
-import { getTenantContext } from "@/lib/tenancy/context";
-import { currentRole } from "@/lib/tenancy/context";
+import { getTenantContext, puedeEn } from "@/lib/tenancy/context";
 import { DashboardFab } from "@/components/portal/dashboard-fab";
-import {
-  AnalysisSection,
-  AnalysisSectionSkeleton,
-} from "@/components/portal/analysis-section";
+import { AnalysisSection, AnalysisSectionSkeleton } from "@/components/portal/analysis-section";
 
 export default async function CrmBoardPage({
   params,
@@ -36,7 +25,7 @@ export default async function CrmBoardPage({
   setRequestLocale(locale);
 
   const session = await auth();
-  const admin = isAdminRole(await currentRole());
+  const admin = await puedeEn("ventas", "administrar");
 
   // El vendedor ve su cartera; el admin ve todo y puede filtrar a la suya.
   const ownerId = admin ? (scope === "mine" ? session!.user.id : undefined) : session!.user.id;

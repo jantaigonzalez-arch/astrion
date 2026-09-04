@@ -1,12 +1,11 @@
 import { setRequestLocale } from "next-intl/server";
 import { ArrowLeft } from "lucide-react";
-import { isSupport } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getSuppliers } from "@/lib/data/purchasing";
 import { getSpareParts } from "@/lib/data/parts";
 import { OrderBuilder } from "@/components/portal/purchasing/order-builder";
 import { Link } from "@/lib/nav";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 export default async function NuevaOrdenPage({
   params,
@@ -16,7 +15,7 @@ export default async function NuevaOrdenPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!isSupport(await currentRole())) {
+  if (!(await puedeEn("compras", "editar"))) {
     await redirectInTenant("/dashboard", locale);
   }
 

@@ -1,28 +1,16 @@
 import { setRequestLocale } from "next-intl/server";
 import { ArrowRight, Boxes, FileSignature, Pencil, UserRound } from "lucide-react";
 import { auth } from "@/lib/auth";
-import { isAdminRole } from "@/lib/roles";
-import {
-  CAMPOS_ORDEN_CONTRATOS,
-  ORDEN_CONTRATOS_DEFECTO,
-  VIGENCIAS,
-  conteosContratos,
-  countContracts,
-  getContracts,
-} from "@/lib/data/contracts";
+import { CAMPOS_ORDEN_CONTRATOS, ORDEN_CONTRATOS_DEFECTO, VIGENCIAS, conteosContratos, countContracts, getContracts } from "@/lib/data/contracts";
 import { parsePage } from "@/lib/pagination";
 import { parseFiltro, parseOrden, queryLimpia } from "@/lib/listado";
 import { Pagination } from "@/components/portal/pagination";
-import {
-  BarraFiltros,
-  FiltroFichas,
-  OrdenFichas,
-} from "@/components/portal/listado-controles";
+import { BarraFiltros, FiltroFichas, OrdenFichas } from "@/components/portal/listado-controles";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 function money(v: string | null, currency: "MXN" | "USD", locale: string) {
   if (!v) return "—";
@@ -53,7 +41,7 @@ export default async function ContractsPage({
   setRequestLocale(locale);
 
   const session = await auth();
-  const admin = isAdminRole(await currentRole());
+  const admin = await puedeEn("clientes", "administrar");
   // El vendedor ve solo sus contratos; el admin, todos.
   const deQuien = admin ? undefined : session!.user.id;
   const sp = await searchParams;

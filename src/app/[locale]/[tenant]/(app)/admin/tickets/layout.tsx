@@ -1,6 +1,5 @@
-import { isSupport } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 // La cola de tickets es solo para soporte (agente/admin): el vendedor no entra.
 export default async function AdminTicketsLayout({
@@ -11,7 +10,7 @@ export default async function AdminTicketsLayout({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  if (!isSupport(await currentRole())) {
+  if (!(await puedeEn("servicio", "ver"))) {
     await redirectInTenant("/dashboard", locale);
   }
   return <>{children}</>;

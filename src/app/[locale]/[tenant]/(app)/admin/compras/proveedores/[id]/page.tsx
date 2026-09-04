@@ -1,24 +1,12 @@
 import { notFound } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
 import { ArrowLeft, CalendarClock, Gauge, TrendingUp, Wallet } from "lucide-react";
-import { isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
-import { currentRole } from "@/lib/tenancy/context";
-import {
-  getPayables,
-  getSupplierControls,
-  getSupplierCreditHistory,
-  getSupplierCreditNotes,
-} from "@/lib/data/payables";
-import {
-  CREDIT_NOTE_STATUS_LABEL,
-  INVOICE_STATUS_LABEL,
-} from "@/lib/domain/payables";
+import { puedeEn } from "@/lib/tenancy/context";
+import { getPayables, getSupplierControls, getSupplierCreditHistory, getSupplierCreditNotes } from "@/lib/data/payables";
+import { CREDIT_NOTE_STATUS_LABEL, INVOICE_STATUS_LABEL } from "@/lib/domain/payables";
 import { hoyCivil } from "@/lib/fechas";
-import {
-  AdvanceForm,
-  SuspensionPanel,
-} from "@/components/portal/purchasing/supplier-controls";
+import { AdvanceForm, SuspensionPanel } from "@/components/portal/purchasing/supplier-controls";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,7 +29,7 @@ export default async function ProveedorPage({
   const { locale, id } = await params;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("compras", "administrar"))) {
     await redirectInTenant("/admin/compras", locale);
   }
 

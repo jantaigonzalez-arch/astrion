@@ -1,17 +1,12 @@
 import { setRequestLocale } from "next-intl/server";
 import { ArrowRightLeft, CheckCircle2 } from "lucide-react";
-import { isSalesRole } from "@/lib/roles";
 import { getLeads } from "@/lib/data/tickets";
-import {
-  ensureDefaultPipeline,
-  getConvertedLeadIds,
-  getPipelines,
-} from "@/lib/data/crm";
+import { ensureDefaultPipeline, getConvertedLeadIds, getPipelines } from "@/lib/data/crm";
 import { convertLeadToDeal } from "@/lib/actions/crm";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 const LEAD_STYLES: Record<string, string> = {
   new: "bg-primary/12 text-primary ring-primary/20",
@@ -30,7 +25,7 @@ export default async function AdminLeadsPage({
   setRequestLocale(locale);
 
   // Solo el área comercial puede llevar un lead al embudo.
-  const canConvert = isSalesRole(await currentRole());
+  const canConvert = await puedeEn("ventas", "editar");
 
   const leads = await getLeads();
   let pipelineId: string | null = null;

@@ -1,25 +1,15 @@
 import { setRequestLocale } from "next-intl/server";
 import { AlertTriangle, Clock, Download, Percent, Wallet } from "lucide-react";
 import { auth } from "@/lib/auth";
-import { isAdminRole } from "@/lib/roles";
 import { ensureDefaultPipeline, getCrmStats, getPipelines } from "@/lib/data/crm";
-import {
-  getAvgCycleDays,
-  getForecastByMonth,
-  getFunnelByStage,
-  getLostReasons,
-  getMonthlyClosed,
-  getOwnerRanking,
-  getRottingDeals,
-  getSourceBreakdown,
-} from "@/lib/data/crm-insights";
+import { getAvgCycleDays, getForecastByMonth, getFunnelByStage, getLostReasons, getMonthlyClosed, getOwnerRanking, getRottingDeals, getSourceBreakdown } from "@/lib/data/crm-insights";
 import { SOURCE_LABELS, label, money } from "@/lib/crm";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { RankBars } from "@/components/portal/charts";
 import { ClosedByMonth, FunnelChart } from "@/components/portal/crm/crm-charts";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 export default async function CrmInsightsPage({
   params,
@@ -33,7 +23,7 @@ export default async function CrmInsightsPage({
   setRequestLocale(locale);
 
   const session = await auth();
-  const admin = isAdminRole(await currentRole());
+  const admin = await puedeEn("analisis", "administrar");
   const ownerId = admin
     ? scope === "mine"
       ? session!.user.id

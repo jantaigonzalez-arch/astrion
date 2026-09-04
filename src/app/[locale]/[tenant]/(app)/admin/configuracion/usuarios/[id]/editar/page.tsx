@@ -3,19 +3,15 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { redirectInTenant } from "@/lib/nav-server";
-import { tenantDb } from "@/lib/tenancy/context";
+import { tenantDb, puedeEn } from "@/lib/tenancy/context";
 import { crmOrganizations } from "@/lib/db/schema";
 import { getTenantMember } from "@/lib/data/people";
+import { ajustesGuardados } from "@/lib/permisos";
 import { getOrgOptions } from "@/lib/data/crm";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Link } from "@/lib/nav";
-import { currentRole } from "@/lib/tenancy/context";
-import { isAdminRole } from "@/lib/roles";
-import {
-  EditUserForm,
-  ResetPasswordForm,
-} from "@/components/portal/edit-user-form";
+import { EditUserForm, ResetPasswordForm } from "@/components/portal/edit-user-form";
 
 export default async function EditUserPage({
   params,
@@ -26,7 +22,7 @@ export default async function EditUserPage({
   setRequestLocale(locale);
 
   const session = await auth();
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("configuracion", "administrar"))) {
     await redirectInTenant("/admin/tickets", locale);
   }
 
@@ -89,6 +85,7 @@ export default async function EditUserPage({
               company: user.company,
               phone: user.phone,
               role: user.role,
+              permisos: ajustesGuardados(user.permissions),
               active: user.memberActive,
             }}
             isSelf={user.id === session!.user.id}

@@ -1,18 +1,13 @@
 import { setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
-import { isSupport, ROLE_LABELS } from "@/lib/roles";
+import { ROLE_LABELS } from "@/lib/roles";
 import { getTicketById } from "@/lib/data/tickets";
 import { rolesByUser } from "@/lib/data/people";
 import { Link } from "@/lib/nav";
 import { Button } from "@/components/ui/button";
 import { PrintButton } from "@/components/portal/print-button";
-import { currentRole } from "@/lib/tenancy/context";
-import {
-  CATEGORY_LABELS,
-  STATUS_LABELS,
-  PRIORITY_LABELS,
-  label,
-} from "@/lib/tickets";
+import { puedeEn } from "@/lib/tenancy/context";
+import { CATEGORY_LABELS, STATUS_LABELS, PRIORITY_LABELS, label } from "@/lib/tickets";
 
 export default async function TicketReportPage({
   params,
@@ -23,7 +18,7 @@ export default async function TicketReportPage({
   setRequestLocale(locale);
 
   // Reporte generado por el equipo de servicio (agente/admin).
-  if (!isSupport(await currentRole())) notFound();
+  if (!(await puedeEn("servicio", "ver"))) notFound();
 
   const ticket = await getTicketById(id);
   if (!ticket) notFound();

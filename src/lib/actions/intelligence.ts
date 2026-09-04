@@ -1,17 +1,9 @@
 "use server";
 
 import { auth } from "@/lib/auth";
-import { isAdminRole } from "@/lib/roles";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 import { revalidateDashboards } from "@/lib/revalidate";
-import {
-  createQuestion,
-  deleteQuestion,
-  issueForecast,
-  promoteModel,
-  retireModel,
-  trainQuestion,
-} from "@/lib/intelligence/questions";
+import { createQuestion, deleteQuestion, issueForecast, promoteModel, retireModel, trainQuestion } from "@/lib/intelligence/questions";
 
 /**
  * Acciones de la capa de inteligencia.
@@ -30,7 +22,7 @@ import {
 export type IntelState = { ok: boolean; message?: string; error?: string };
 
 async function soloAdmin(): Promise<string | null> {
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("analisis", "administrar"))) {
     return "Solo un administrador configura la capa de inteligencia.";
   }
   return null;

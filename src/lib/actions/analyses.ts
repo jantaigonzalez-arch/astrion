@@ -1,7 +1,6 @@
 "use server";
 
-import { isAdminRole } from "@/lib/roles";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 import { revalidateDashboards } from "@/lib/revalidate";
 import { resetPlacement, setPlacement } from "@/lib/ml/placements";
 
@@ -21,7 +20,7 @@ export async function togglePlacementAction(
   _prev: AnalysisState,
   formData: FormData,
 ): Promise<AnalysisState> {
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("analisis", "administrar"))) {
     return { ok: false, error: "Solo un administrador configura los análisis." };
   }
 
@@ -51,7 +50,7 @@ export async function acceptRecommendationAction(
   _prev: AnalysisState,
   formData: FormData,
 ): Promise<AnalysisState> {
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("analisis", "administrar"))) {
     return { ok: false, error: "Solo un administrador configura los análisis." };
   }
 
@@ -80,7 +79,7 @@ export async function resetPlacementAction(
   _prev: AnalysisState,
   formData: FormData,
 ): Promise<AnalysisState> {
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("analisis", "administrar"))) {
     return { ok: false, error: "Solo un administrador configura los análisis." };
   }
 

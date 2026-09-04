@@ -1,16 +1,12 @@
 import { setRequestLocale } from "next-intl/server";
 import { Building2, Plus } from "lucide-react";
 import { auth } from "@/lib/auth";
-import { isAdminRole } from "@/lib/roles";
 import { getLeadOrganizations } from "@/lib/data/crm";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
-import { currentRole } from "@/lib/tenancy/context";
-import {
-  OrganizationsList,
-  type OrganizationRow,
-} from "@/components/portal/organizations-list";
+import { puedeEn } from "@/lib/tenancy/context";
+import { OrganizationsList, type OrganizationRow } from "@/components/portal/organizations-list";
 
 /**
  * Leads: organizaciones sin ninguna compra registrada.
@@ -35,7 +31,7 @@ export default async function LeadOrganizationsPage({
   setRequestLocale(locale);
 
   const session = await auth();
-  const admin = isAdminRole(await currentRole());
+  const admin = await puedeEn("ventas", "administrar");
   // El vendedor ve su cartera Y lo que no es de nadie: prospectar lo sin
   // asignar es su trabajo. Lo que no ve es la cartera de otro vendedor.
   const orgs = await getLeadOrganizations(admin ? undefined : session!.user.id);

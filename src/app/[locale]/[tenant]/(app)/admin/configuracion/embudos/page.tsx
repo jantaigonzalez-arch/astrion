@@ -1,6 +1,5 @@
 import { setRequestLocale } from "next-intl/server";
 import { ChevronDown, ChevronUp, Plus, Save, Trash2 } from "lucide-react";
-import { isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { ensureDefaultPipeline, getPipelines } from "@/lib/data/crm";
 import { getLabels } from "@/lib/data/crm-insights";
@@ -11,7 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 export default async function CrmSettingsPage({
   params,
@@ -21,7 +20,7 @@ export default async function CrmSettingsPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("configuracion", "administrar"))) {
     await redirectInTenant("/admin/crm", locale);
   }
 

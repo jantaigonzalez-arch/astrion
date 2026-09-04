@@ -1,13 +1,12 @@
 import { setRequestLocale } from "next-intl/server";
 import { AlertTriangle } from "lucide-react";
-import { isSupport } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getRequisitions } from "@/lib/data/requisitions";
 import { RequisitionStatusBadge } from "@/components/portal/purchasing/requisition-badge";
 import { Card } from "@/components/ui/card";
 import { Link } from "@/lib/nav";
 import type { RequisitionStatus } from "@/lib/db/schema";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 export default async function RequisicionesPage({
   params,
@@ -17,7 +16,7 @@ export default async function RequisicionesPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!isSupport(await currentRole())) {
+  if (!(await puedeEn("compras", "ver"))) {
     await redirectInTenant("/dashboard", locale);
   }
 

@@ -1,13 +1,12 @@
 import { setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
-import { isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getContractById, getSalesReps } from "@/lib/data/contracts";
 import { getEquipmentTree } from "@/lib/data/equipment";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { EditContractForm } from "@/components/portal/edit-contract-form";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 export default async function EditContractPage({
   params,
@@ -17,7 +16,7 @@ export default async function EditContractPage({
   const { locale, id } = await params;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("clientes", "administrar"))) {
     await redirectInTenant(`/admin/contratos/${id}`, locale);
   }
 

@@ -1,5 +1,5 @@
 import type { MembershipRole } from "@/lib/db/platform";
-import { isAdminRole } from "@/lib/roles";
+import { alcanza, nivelEfectivo, puedeEntrar, type Ajustes } from "@/lib/permisos";
 
 /**
  * QUÉ PANTALLAS VE CADA ROL. Solo el modelo: aquí no se pinta nada.
@@ -99,13 +99,25 @@ export type TableroItem = {
  * soporte y se abría en blanco. Contar bloques sin mirar de quién son cuenta
  * los del administrador para todo el mundo.
  */
-export function tableroVisiblePara(role: MembershipRole, t: TableroItem): boolean {
-  if (isAdminRole(role)) return true;
+/** Componer tableros es administrar Análisis. Una sola definición, dos usos. */
+function puedeComponerTableros(role: MembershipRole, ajustes?: Ajustes): boolean {
+  return alcanza(nivelEfectivo(role, ajustes, "analisis"), "administrar");
+}
+
+export function tableroVisiblePara(
+  role: MembershipRole,
+  t: TableroItem,
+  ajustes?: Ajustes,
+): boolean {
+  // Quien ADMINISTRA Análisis ve hasta lo que está sin publicar: es quien
+  // compone. Por permiso y no por `isAdminRole`, para que dárselo a alguien sin
+  // subirle el rol funcione de verdad — que es el punto entero del modelo.
+  if (puedeComponerTableros(role, ajustes)) return true;
   if (!t.publicado) return false;
   if (t.bloquesPublicos === 0) return false;
   if (t.homes.length === 0) return false;
 
-  const mias = pantallasDelRol(role);
+  const mias = pantallasDelRol(role, ajustes);
   return t.homes.some((h) => mias.has(h));
 }
 
@@ -119,8 +131,11 @@ export function tableroVisiblePara(role: MembershipRole, t: TableroItem): boolea
  * administración. Preguntárselo al mismo sitio es lo que impide que un día
  * digan cosas distintas.
  */
-export function pantallasDelRol(role: MembershipRole): Set<string> {
-  return new Set(menuDelRol(role).flatMap((g) => g.items.map((i) => i.href)));
+export function pantallasDelRol(
+  role: MembershipRole,
+  ajustes?: Ajustes,
+): Set<string> {
+  return new Set(menuDelRol(role, false, ajustes).flatMap((g) => g.items.map((i) => i.href)));
 }
 
 /**
@@ -136,9 +151,10 @@ function conTableros(
   groups: NavGroup[],
   tableros: TableroItem[],
   role: MembershipRole,
+  ajustes?: Ajustes,
 ): NavGroup[] {
   const items = tableros
-    .filter((t) => tableroVisiblePara(role, t))
+    .filter((t) => tableroVisiblePara(role, t, ajustes))
     .map(
       (t): NavItem => ({
         href: `/admin/dashboard/${t.slug}`,
@@ -151,7 +167,7 @@ function conTableros(
   // no haya ninguno todavía: sin este renglón, crear un tablero desde cero solo
   // se podría desde el botón de una pantalla que no tenga — un camino que hay
   // que descubrir por accidente.
-  if (isAdminRole(role)) {
+  if (puedeComponerTableros(role, ajustes)) {
     items.push({ href: "/admin/dashboard/nuevo", label: "Nuevo tablero" });
   }
 
@@ -187,7 +203,11 @@ function conTableros(
  * en realidad es de dónde salen todos: el resumen del día, antes de elegir a
  * qué entrar.
  */
-function menuDelRol(role: MembershipRole, deVisita = false): NavGroup[] {
+function menuDelRol(
+  role: MembershipRole,
+  deVisita = false,
+  ajustes?: Ajustes,
+): NavGroup[] {
   const panel: NavItem = {
     href: "/dashboard",
     /**
@@ -265,15 +285,6 @@ function menuDelRol(role: MembershipRole, deVisita = false): NavGroup[] {
     { href: "/admin/crm/objetivos", label: "Objetivos" },
   ];
 
-  if (role === "sales") {
-    return [
-      { items: [panel] },
-      { section: "Ventas", items: ventas },
-      { section: "Clientes", items: clientes },
-      { section: "Análisis", items: analisis },
-    ];
-  }
-
   // Servicio es atender: la cola, lo que se levanta, lo que se resuelve.
   const servicio: NavItem[] = [
     { href: "/admin/tickets", label: "Cola de tickets" },
@@ -310,15 +321,6 @@ function menuDelRol(role: MembershipRole, deVisita = false): NavGroup[] {
    
   };
 
-  if (role === "agent") {
-    return [
-      { items: [panel] },
-      { section: "Servicio", items: servicio },
-      { section: "Inventario", items: inventario },
-      { section: "Compras", items: compras },
-    ];
-  }
-
   // El orden de las secciones sigue el CIRCUITO, no el organigrama.
   //
   // Ventas iba debajo de Compras, y desde que existen las requisiciones eso se
@@ -331,14 +333,33 @@ function menuDelRol(role: MembershipRole, deVisita = false): NavGroup[] {
   // mover Ventas: son la misma pregunta en dos tiempos —qué hay hoy y qué viene
   // en camino—, y meter Ventas entre ellos habría arreglado una lectura
   // rompiendo otra.
-  return [
+  /*
+    UN SOLO MENÚ, FILTRADO POR LO QUE CADA QUIEN PUEDE.
+
+    Antes había una lista por rol: una para el vendedor, otra para el agente y
+    ésta para administración. Tres copias de la misma estructura que había que
+    mantener de acuerdo entre sí, y que ADEMÁS no podían expresar el caso que
+    este modelo vino a resolver — el agente al que se le da Cuentas por pagar no
+    es ninguno de los tres moldes.
+
+    Ahora se arma el menú completo y se quita lo que la persona no alcanza. El
+    orden es el mismo de antes, así que cada rol sigue viendo lo suyo en el
+    mismo sitio: al vendedor, filtrar deja Ventas, Clientes y Análisis, que es
+    exactamente la lista que tenía escrita a mano. Hay un probe que lo comprueba
+    rol por rol contra el comportamiento anterior.
+
+    Filtrar por `puedeEntrar` —y no por el rol— es lo que hace que la barra y el
+    guardia de cada pantalla no puedan discrepar: leen la misma regla. Es la
+    lección de la cabecera de este archivo, ahora con una sola fuente de verdad
+    en vez de dos que se parecen.
+  */
+  const completo: NavGroup[] = [
     { items: [panel] },
     { section: "Servicio", items: servicio },
     { section: "Ventas", items: ventas },
     { section: "Clientes", items: clientes },
     { section: "Inventario", items: inventario },
     { section: "Compras", items: [...compras, porPagar] },
-    // Rentabilidad solo la ve el administrador: mide el margen del negocio.
     {
       section: "Análisis",
       items: [
@@ -354,16 +375,24 @@ function menuDelRol(role: MembershipRole, deVisita = false): NavGroup[] {
       ],
     },
   ];
+
+  return completo
+    .map((g) => ({ ...g, items: g.items.filter((i) => puedeEntrar(role, ajustes, i.href)) }))
+    // Una sección sin renglones es un encabezado sobre el vacío. El grupo del
+    // panel no tiene `section` y nunca queda vacío, así que no hay que
+    // protegerlo aparte.
+    .filter((g) => g.items.length > 0);
 }
 
 /** El menú completo de un rol, con su sección de tableros al final. */
 export function navFor(
   role: MembershipRole,
   tableros: TableroItem[],
+  ajustes: Ajustes | undefined,
   /** Personal de Astraion dentro de la empresa de un cliente. Solo cambia cómo
    *  se llama el primer renglón; no cambia qué pantallas se ven, que eso lo
    *  decide el rol y nada más. */
   deVisita = false,
 ): NavGroup[] {
-  return conTableros(menuDelRol(role, deVisita), tableros, role);
+  return conTableros(menuDelRol(role, deVisita, ajustes), tableros, role, ajustes);
 }

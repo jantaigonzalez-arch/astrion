@@ -4,17 +4,11 @@ import { z } from "zod";
 import { revalidateTenant } from "@/lib/revalidate";
 import { redirectAfterAction } from "@/lib/nav-server";
 import { and, eq } from "drizzle-orm";
-import { tenantDb, currentRole } from "@/lib/tenancy/context";
-import {
-  contracts,
-  contractEquipment,
-  crmDeals,
-  crmOrganizations,
-  equipment,
-} from "@/lib/db/schema";
+import { tenantDb, puedeEn } from "@/lib/tenancy/context";
+import { contracts, contractEquipment, crmDeals, crmOrganizations, equipment } from "@/lib/db/schema";
 import { getTenantMember } from "@/lib/data/people";
 import { auth } from "@/lib/auth";
-import { isAdminRole, isSalesRole } from "@/lib/roles";
+import { isSalesRole } from "@/lib/roles";
 import { recordDeletion } from "@/lib/domain/events";
 
 export type ContractState = {
@@ -101,7 +95,7 @@ export async function createContract(
   formData: FormData,
 ): Promise<ContractState> {
   // El administrador da de alta los contratos.
-  if (!isAdminRole(await currentRole())) return { ok: false, error: "auth" };
+  if (!(await puedeEn("clientes", "administrar"))) return { ok: false, error: "auth" };
 
   const parsed = ContractSchema.safeParse({
     number: formData.get("number"),
@@ -181,7 +175,7 @@ export async function updateContract(
   formData: FormData,
 ): Promise<ContractState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("clientes", "administrar"))) {
     return { ok: false, error: "auth" };
   }
 
@@ -263,7 +257,7 @@ export async function updateContract(
 
 export async function deleteContract(formData: FormData) {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) return;
+  if (!session?.user || !(await puedeEn("clientes", "administrar"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = await tenantDb();
@@ -315,7 +309,7 @@ export async function deleteContract(formData: FormData) {
  */
 export async function toggleContractEquipment(formData: FormData) {
   const session = await auth();
-  if (!session?.user || !isSalesRole(await currentRole())) return;
+  if (!session?.user || !(await puedeEn("clientes", "editar"))) return;
 
   const contractId = String(formData.get("contractId") ?? "");
   const equipmentId = String(formData.get("equipmentId") ?? "");

@@ -1,8 +1,7 @@
 import { setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { Eye, LayoutDashboard } from "lucide-react";
-import { isAdminRole } from "@/lib/roles";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 import { redirectInTenant } from "@/lib/nav-server";
 import { Link } from "@/lib/nav";
 import { dashboardFor } from "@/lib/ml/dashboards";
@@ -10,10 +9,7 @@ import { MODULOS, resolveAnalysis } from "@/lib/ml/analyses";
 import type { Block } from "@/lib/ml/blocks-types";
 import { formaGuardada } from "@/lib/ml/formas";
 import { Button } from "@/components/ui/button";
-import {
-  DashboardBuilder,
-  type BloqueView,
-} from "@/components/portal/dashboard-builder";
+import { DashboardBuilder, type BloqueView } from "@/components/portal/dashboard-builder";
 
 /**
  * Componer un tablero, sobre el tablero de verdad.
@@ -49,7 +45,7 @@ export default async function ComponerPage({
   const { locale, slug } = await params;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("analisis", "administrar"))) {
     await redirectInTenant(`/admin/dashboard/${slug}`, locale);
   }
 

@@ -1,24 +1,16 @@
 import { setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
 import { ArrowLeft, FileMinus, HandCoins, Receipt } from "lucide-react";
-import { isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getPayable } from "@/lib/data/payables";
 import { INVOICE_STATUS_LABEL, PAYMENT_METHOD_LABEL } from "@/lib/domain/payables";
 import { hoyCivil } from "@/lib/fechas";
-import {
-  CancelInvoiceForm,
-  PaymentForm,
-  UnapplyForm,
-} from "@/components/portal/purchasing/payment-forms";
-import {
-  InstallmentPlan,
-  SplitInvoiceForm,
-} from "@/components/portal/purchasing/installment-forms";
+import { CancelInvoiceForm, PaymentForm, UnapplyForm } from "@/components/portal/purchasing/payment-forms";
+import { InstallmentPlan, SplitInvoiceForm } from "@/components/portal/purchasing/installment-forms";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "@/lib/nav";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 import { cn } from "@/lib/utils";
 
 export default async function FacturaPage({
@@ -29,7 +21,7 @@ export default async function FacturaPage({
   const { locale, id } = await params;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("pagar", "ver"))) {
     await redirectInTenant("/admin/compras", locale);
   }
 

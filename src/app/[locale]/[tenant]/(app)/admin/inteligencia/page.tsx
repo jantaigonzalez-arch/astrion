@@ -1,25 +1,12 @@
 import { setRequestLocale } from "next-intl/server";
 import { Brain, PlugZap } from "lucide-react";
-import { isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 import { catalogo, perfilar, salud } from "@/lib/intelligence/client";
-import {
-  forecastFor,
-  listQuestions,
-  modelsFor,
-} from "@/lib/intelligence/questions";
+import { forecastFor, listQuestions, modelsFor } from "@/lib/intelligence/questions";
 import { Card } from "@/components/ui/card";
-import {
-  IntelligenceQuestionCard,
-  type CandidateView,
-  type ModelView,
-  type QuestionView,
-} from "@/components/portal/intelligence-question-card";
-import {
-  IntelligenceNewQuestion,
-  type ModuloOption,
-} from "@/components/portal/intelligence-new-question";
+import { IntelligenceQuestionCard, type CandidateView, type ModelView, type QuestionView } from "@/components/portal/intelligence-question-card";
+import { IntelligenceNewQuestion, type ModuloOption } from "@/components/portal/intelligence-new-question";
 
 /**
  * La capa de inteligencia: donde el usuario CONFIGURA qué quiere que el sistema
@@ -43,7 +30,7 @@ export default async function InteligenciaPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("analisis", "administrar"))) {
     await redirectInTenant("/dashboard", locale);
   }
 

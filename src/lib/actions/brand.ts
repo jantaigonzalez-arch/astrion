@@ -3,8 +3,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { tenants, FOLIO_PREFIX_RE } from "@/lib/db/platform";
-import { isAdminRole } from "@/lib/roles";
-import { requireTenant, currentRole } from "@/lib/tenancy/context";
+import { requireTenant, puedeEn } from "@/lib/tenancy/context";
 import { saveImage } from "@/lib/uploads";
 import { updateTag } from "next/cache";
 import { brandTag } from "@/lib/data/platform";
@@ -26,7 +25,7 @@ export async function updateTenantBrand(
   _prev: BrandState,
   formData: FormData,
 ): Promise<BrandState> {
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("configuracion", "administrar"))) {
     return { ok: false, error: "Solo un administrador cambia la marca." };
   }
 

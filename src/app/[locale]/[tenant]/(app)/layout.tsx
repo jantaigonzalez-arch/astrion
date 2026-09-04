@@ -81,6 +81,7 @@ export default async function TenantAppLayout({
       <div className="flex min-h-screen">
         <Sidebar
           role={ctx!.role}
+          permisos={ctx!.permisos}
           brand={brand}
           defaultCollapsed={sidebarCollapsed}
           tableros={tableros}

@@ -6,8 +6,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
-import { currentRole } from "@/lib/tenancy/context";
-import { isAdminRole, ROLE_LABELS } from "@/lib/roles";
+import { puedeEn } from "@/lib/tenancy/context";
+import { ROLE_LABELS } from "@/lib/roles";
 
 const ROLE_STYLES: Record<string, string> = {
   owner: "bg-destructive/12 text-destructive ring-destructive/25",
@@ -24,7 +24,7 @@ export default async function AdminUsersPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
-  const isAdmin = isAdminRole(await currentRole());
+  const isAdmin = await puedeEn("configuracion", "administrar");
   const [users, orgsByClient] = await Promise.all([
     getUsers(),
     getOrganizationsByClient(),

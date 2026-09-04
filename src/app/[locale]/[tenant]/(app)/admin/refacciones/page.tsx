@@ -1,17 +1,13 @@
 import { Suspense } from "react";
 import { setRequestLocale } from "next-intl/server";
-import { isSupport } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getSpareParts } from "@/lib/data/parts";
 import { getIncomingByPart } from "@/lib/data/purchasing";
 import { AddPartForm } from "@/components/portal/part-forms";
 import { PartsInventory } from "@/components/portal/parts-inventory";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 import { DashboardFab } from "@/components/portal/dashboard-fab";
-import {
-  AnalysisSection,
-  AnalysisSectionSkeleton,
-} from "@/components/portal/analysis-section";
+import { AnalysisSection, AnalysisSectionSkeleton } from "@/components/portal/analysis-section";
 
 export default async function SparePartsPage({
   params,
@@ -21,7 +17,7 @@ export default async function SparePartsPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!isSupport(await currentRole())) {
+  if (!(await puedeEn("inventario", "ver"))) {
     await redirectInTenant("/dashboard", locale);
   }
 

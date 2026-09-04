@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { AssignableRole } from "@/lib/roles";
+import { PermisosMatriz } from "@/components/portal/permisos-matriz";
+import type { Ajustes } from "@/lib/permisos";
 
 const initial: UpdateUserState = { ok: false };
 const selectCls =
@@ -48,6 +50,8 @@ export type EditableUser = {
   company: string | null;
   phone: string | null;
   role: AssignableRole;
+  /** Ajustes de acceso por módulo ya guardados. Ver `lib/permisos.ts`. */
+  permisos: Ajustes;
   /** Pertenencia a ESTA empresa, no la cuenta global. Ver `people.ts`. */
   active: boolean;
 };
@@ -142,6 +146,16 @@ export function EditUserForm({
             </label>
           </div>
         </div>
+
+        {/*
+          La matriz va DESPUÉS del rol, que es el orden en que se decide: primero
+          la plantilla, después los ajustes. Y no se enseña para un cliente: un
+          laboratorio no entra a ningún módulo interno, así que ocho renglones en
+          «Sin acceso» solo servirían para sugerir que se le puede dar uno.
+        */}
+        {role !== "client" && (
+          <PermisosMatriz rol={role} ajustes={user.permisos} />
+        )}
 
         {/* Vínculo con el CRM: solo tiene sentido para laboratorios. */}
         {role === "client" && (

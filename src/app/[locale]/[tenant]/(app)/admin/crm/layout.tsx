@@ -1,7 +1,6 @@
-import { isSalesRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { CrmTabs } from "@/components/portal/crm/crm-tabs";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 // Guard: el CRM es del área comercial (vendedor y administrador).
 export default async function CrmLayout({
@@ -12,7 +11,7 @@ export default async function CrmLayout({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  if (!isSalesRole(await currentRole())) {
+  if (!(await puedeEn("ventas", "ver"))) {
     await redirectInTenant("/dashboard", locale);
   }
 

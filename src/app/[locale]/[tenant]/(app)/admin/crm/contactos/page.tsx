@@ -1,12 +1,11 @@
 import { setRequestLocale } from "next-intl/server";
 import { Plus, Users2 } from "lucide-react";
 import { auth } from "@/lib/auth";
-import { isAdminRole } from "@/lib/roles";
 import { getContacts } from "@/lib/data/crm";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 export default async function ContactsPage({
   params,
@@ -17,7 +16,7 @@ export default async function ContactsPage({
   setRequestLocale(locale);
 
   const session = await auth();
-  const admin = isAdminRole(await currentRole());
+  const admin = await puedeEn("ventas", "administrar");
   const contacts = await getContacts(admin ? undefined : session!.user.id);
 
   return (

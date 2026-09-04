@@ -1,17 +1,13 @@
 import { setRequestLocale } from "next-intl/server";
-import { isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
-import { requireTenant, currentRole } from "@/lib/tenancy/context";
+import { requireTenant, puedeEn } from "@/lib/tenancy/context";
 import { getClientsWithEquipment } from "@/lib/data/equipment";
 import { getSalesReps } from "@/lib/data/contracts";
 import { getDealById } from "@/lib/data/crm";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
-import {
-  ContractForm,
-  type ContractDefaults,
-} from "@/components/portal/contract-form";
+import { ContractForm, type ContractDefaults } from "@/components/portal/contract-form";
 
 export default async function NewContractPage({
   params,
@@ -24,7 +20,7 @@ export default async function NewContractPage({
   const { deal: dealParam } = await searchParams;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("clientes", "editar"))) {
     await redirectInTenant("/admin/contratos", locale);
   }
 

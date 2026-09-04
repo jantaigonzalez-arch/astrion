@@ -1,23 +1,8 @@
 import { Suspense } from "react";
 import { setRequestLocale } from "next-intl/server";
-import {
-  AlertTriangle,
-  BarChart3,
-  CalendarClock,
-  Plus,
-  Upload,
-  Wallet,
-} from "lucide-react";
-import { isAdminRole } from "@/lib/roles";
+import { AlertTriangle, BarChart3, CalendarClock, Plus, Upload, Wallet } from "lucide-react";
 import { redirectInTenant } from "@/lib/nav-server";
-import {
-  AGING_LABEL,
-  countPayables,
-  getPayables,
-  getPayablesAging,
-  getPayablesSummary,
-  type AgingKey,
-} from "@/lib/data/payables";
+import { AGING_LABEL, countPayables, getPayables, getPayablesAging, getPayablesSummary, type AgingKey } from "@/lib/data/payables";
 import { parsePage } from "@/lib/pagination";
 import { Pagination } from "@/components/portal/pagination";
 import { INVOICE_STATUS_LABEL } from "@/lib/domain/payables";
@@ -25,13 +10,10 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 import { cn } from "@/lib/utils";
 import { DashboardFab } from "@/components/portal/dashboard-fab";
-import {
-  AnalysisSection,
-  AnalysisSectionSkeleton,
-} from "@/components/portal/analysis-section";
+import { AnalysisSection, AnalysisSectionSkeleton } from "@/components/portal/analysis-section";
 
 export default async function CuentasPorPagarPage({
   params,
@@ -46,7 +28,7 @@ export default async function CuentasPorPagarPage({
 
   // Cuentas por pagar es de administración, no de soporte: reconocer una deuda
   // y sacar dinero de la empresa no es lo mismo que recibir mercancía.
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("pagar", "ver"))) {
     await redirectInTenant("/admin/compras", locale);
   }
 

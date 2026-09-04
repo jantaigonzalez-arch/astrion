@@ -1,0 +1,52 @@
+-- ACCESO POR PERSONA, ENCIMA DEL ROL.
+--
+-- Hasta aquí el permiso era el rol y nada más: agente, vendedor, administrador.
+-- Funciona mientras todo el mundo encaje en uno de los cinco moldes, y deja de
+-- funcionar en cuanto alguien no encaja — el agente que además captura
+-- facturas, el vendedor que no debe ver los informes, quien levanta órdenes de
+-- compra pero no debe autorizar su pago. La única salida era subirle el rol, y
+-- subir un rol da MUCHO más de lo que se quería dar.
+--
+-- ---------------------------------------------------------------------------
+-- EL MAPA ES PARCIAL A PROPÓSITO
+--
+-- `{"compras": "ver"}` dice «en Compras, ver», y NO dice nada de los otros
+-- siete módulos: ésos siguen al rol. La ausencia de una clave significa
+-- «lo que diga la plantilla», no «sin acceso».
+--
+-- Por eso el valor por omisión es `{}` y no la matriz completa. Dos
+-- consecuencias, y las dos hacían falta:
+--
+--   · Esta migración NO cambia el acceso de nadie. Las 15 membresías que ya
+--     existen quedan con el mapa vacío, o sea exactamente con lo que tenían.
+--     Se despliega sin reconfigurar una sola cuenta.
+--   · El día que se ajuste lo que da un rol, el cambio alcanza a quien ya está
+--     dado de alta. Con la matriz completa, cada cuenta se habría quedado con
+--     una fotografía congelada del día que se creó.
+--
+-- ---------------------------------------------------------------------------
+-- POR QUÉ `jsonb` Y NO UNA TABLA
+--
+-- Son ocho claves como mucho y se leen SIEMPRE junto a la membresía —la
+-- consulta de membresías ya trae esta fila en cada petición—. Una tabla aparte
+-- obligaría a un join en cada comprobación de permiso, que es en cada pantalla
+-- y en cada acción, para no guardar nada más que lo que cabe aquí.
+--
+-- Lo que se lee de esta columna pasa por `ajustesGuardados()` antes de usarse:
+-- es `jsonb` y puede traer un módulo que la versión que lo lee ya no conozca.
+--
+-- ---------------------------------------------------------------------------
+-- ESCRITA A MANO, COMO LA 0023, LA 0024 Y LA 0025
+--
+-- `drizzle-kit generate` no se puede usar contra este esquema: los snapshots de
+-- `drizzle/meta/` llegan hasta la 0022 mientras el journal va por la 0025, así
+-- que diffea contra un estado de hace tres migraciones y propone recrear
+-- `platform_users` y borrar columnas que están en uso. Está reportado aparte;
+-- mientras tanto, esto se escribe a mano y se comprueba contra la copia local.
+--
+-- `ADD COLUMN` con `NOT NULL DEFAULT` no reescribe la tabla en Postgres 11+:
+-- el valor por omisión se guarda en el catálogo y las filas viejas lo leen de
+-- ahí. En una tabla de 15 filas daría igual, pero la nota importa el día que
+-- sean cien mil.
+
+ALTER TABLE "memberships" ADD COLUMN "permissions" jsonb DEFAULT '{}'::jsonb NOT NULL;

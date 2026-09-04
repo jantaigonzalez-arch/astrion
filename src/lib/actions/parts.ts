@@ -3,10 +3,9 @@
 import { z } from "zod";
 import { revalidateTenant } from "@/lib/revalidate";
 import { eq } from "drizzle-orm";
-import { tenantDb, currentRole } from "@/lib/tenancy/context";
+import { tenantDb, puedeEn } from "@/lib/tenancy/context";
 import { spareParts } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
-import { isSupport } from "@/lib/roles";
 import { applyInventoryMovement } from "@/lib/domain/inventory";
 
 export type PartState = {
@@ -42,7 +41,7 @@ export async function createPart(
   formData: FormData,
 ): Promise<PartState> {
   const session = await auth();
-  if (!session?.user || !isSupport(await currentRole())) {
+  if (!session?.user || !(await puedeEn("inventario", "editar"))) {
     return { ok: false, error: "auth" };
   }
 
@@ -114,7 +113,7 @@ export async function updatePart(
   formData: FormData,
 ): Promise<PartState> {
   const session = await auth();
-  if (!session?.user || !isSupport(await currentRole())) {
+  if (!session?.user || !(await puedeEn("inventario", "editar"))) {
     return { ok: false, error: "auth" };
   }
 

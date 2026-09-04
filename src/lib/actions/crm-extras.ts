@@ -2,31 +2,21 @@
 
 import { revalidateTenant } from "@/lib/revalidate";
 import { and, eq } from "drizzle-orm";
-import { tenantDb, currentRole } from "@/lib/tenancy/context";
-import {
-  crmAutomations,
-  crmDealLabels,
-  crmDealProducts,
-  crmDeals,
-  crmEmailTemplates,
-  crmGoals,
-  crmLabels,
-  crmStages,
-} from "@/lib/db/schema";
+import { tenantDb, puedeEn } from "@/lib/tenancy/context";
+import { crmAutomations, crmDealLabels, crmDealProducts, crmDeals, crmEmailTemplates, crmGoals, crmLabels, crmStages } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
-import { isAdminRole, isSalesRole } from "@/lib/roles";
 import { lineTotal } from "@/lib/crm";
 import { recordDeletion } from "@/lib/domain/events";
 
 async function requireSales() {
   const session = await auth();
-  if (!isSalesRole(await currentRole())) return null;
+  if (!(await puedeEn("ventas", "editar"))) return null;
   return session!;
 }
 
 async function requireAdmin() {
   const session = await auth();
-  if (!isAdminRole(await currentRole())) return null;
+  if (!(await puedeEn("ventas", "administrar"))) return null;
   return session!;
 }
 

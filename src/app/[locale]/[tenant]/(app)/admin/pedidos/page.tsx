@@ -1,13 +1,8 @@
 import { setRequestLocale } from "next-intl/server";
 import { TriangleAlert } from "lucide-react";
-import { isInternal } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
-import { currentRole } from "@/lib/tenancy/context";
-import {
-  getSalesOrders,
-  getSalesOrdersSummary,
-  type SalesOrderRow,
-} from "@/lib/data/crm";
+import { puedeEn } from "@/lib/tenancy/context";
+import { getSalesOrders, getSalesOrdersSummary, type SalesOrderRow } from "@/lib/data/crm";
 import { parsePage } from "@/lib/pagination";
 import { Pagination } from "@/components/portal/pagination";
 import { Badge } from "@/components/ui/badge";
@@ -35,7 +30,7 @@ export default async function PedidosPage({
   // `isInternal` y no `isSupport`: el vendedor tiene que poder contestarle al
   // cliente si su pedido ya se está comprando. Ver el estado no es lo mismo que
   // moverlo — requisitar y autorizar siguen siendo de operación.
-  if (!isInternal(await currentRole())) {
+  if (!(await puedeEn("ventas", "ver"))) {
     await redirectInTenant("/dashboard", locale);
   }
 

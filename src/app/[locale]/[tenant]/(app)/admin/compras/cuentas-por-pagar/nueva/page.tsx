@@ -1,6 +1,5 @@
 import { setRequestLocale } from "next-intl/server";
 import { ArrowLeft } from "lucide-react";
-import { isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getSuppliers } from "@/lib/data/purchasing";
 import { getInvoiceableOrders } from "@/lib/data/payables";
@@ -8,7 +7,7 @@ import { hoyCivil } from "@/lib/fechas";
 import { InvoiceForm } from "@/components/portal/purchasing/invoice-form";
 import { Card } from "@/components/ui/card";
 import { Link } from "@/lib/nav";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 export default async function NuevaFacturaPage({
   params,
@@ -18,7 +17,7 @@ export default async function NuevaFacturaPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("pagar", "administrar"))) {
     await redirectInTenant("/admin/compras", locale);
   }
 

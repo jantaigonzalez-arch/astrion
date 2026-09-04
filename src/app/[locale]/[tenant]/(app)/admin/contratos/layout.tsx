@@ -1,6 +1,5 @@
-import { isSalesRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 // Contratos: vendedor y administrador.
 export default async function ContractsLayout({
@@ -11,7 +10,7 @@ export default async function ContractsLayout({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  if (!isSalesRole(await currentRole())) {
+  if (!(await puedeEn("clientes", "ver"))) {
     await redirectInTenant("/dashboard", locale);
   }
   return <>{children}</>;

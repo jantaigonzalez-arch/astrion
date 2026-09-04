@@ -1,9 +1,8 @@
 "use server";
 
 import { revalidateTenant } from "@/lib/revalidate";
-import { tenantDb, currentRole } from "@/lib/tenancy/context";
+import { tenantDb, puedeEn } from "@/lib/tenancy/context";
 import { settings } from "@/lib/db/schema";
-import { isAdminRole } from "@/lib/roles";
 
 export type SettingsState = { ok: boolean; error?: string };
 
@@ -33,7 +32,7 @@ export async function updateFxRate(
   _prev: SettingsState,
   formData: FormData,
 ): Promise<SettingsState> {
-  if (!isAdminRole(await currentRole())) return { ok: false, error: "auth" };
+  if (!(await puedeEn("configuracion", "administrar"))) return { ok: false, error: "auth" };
 
   const raw = String(formData.get("usdRate") ?? "").replace(/[^0-9.]/g, "");
   const n = Number(raw);
@@ -68,7 +67,7 @@ export async function updateSettings(
   _prev: SettingsState,
   formData: FormData,
 ): Promise<SettingsState> {
-  if (!isAdminRole(await currentRole())) return { ok: false, error: "auth" };
+  if (!(await puedeEn("configuracion", "administrar"))) return { ok: false, error: "auth" };
 
   const laborCostPerHour = money(formData.get("laborCostPerHour"));
   const laborRatePerHour = money(formData.get("laborRatePerHour"));

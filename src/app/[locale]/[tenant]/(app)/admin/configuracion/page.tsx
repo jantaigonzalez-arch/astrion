@@ -1,5 +1,4 @@
 import { setRequestLocale } from "next-intl/server";
-import { isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getSettings } from "@/lib/data/settings";
 import { getTenantBrand } from "@/lib/data/platform";
@@ -8,7 +7,7 @@ import { BrandForm } from "@/components/portal/brand-form";
 import { CurrencyForm } from "@/components/portal/currency-form";
 import { CorreoForm } from "@/components/portal/correo-form";
 import { getCorreoDeLaEmpresa } from "@/lib/data/correo";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 export default async function SettingsPage({
   params,
@@ -18,7 +17,7 @@ export default async function SettingsPage({
   const { locale, tenant } = await params;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("configuracion", "administrar"))) {
     await redirectInTenant("/dashboard", locale);
   }
 

@@ -1,8 +1,7 @@
 import { setRequestLocale } from "next-intl/server";
 import { ArrowLeft } from "lucide-react";
-import { isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 import { PLANTILLA_ABONOS, PLANTILLA_CARGOS } from "@/lib/import/payables-csv";
 import { ImportPayables } from "@/components/portal/purchasing/import-payables";
 import { Button } from "@/components/ui/button";
@@ -17,7 +16,7 @@ export default async function ImportarCuentasPorPagarPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("pagar", "administrar"))) {
     await redirectInTenant("/admin/compras", locale);
   }
 

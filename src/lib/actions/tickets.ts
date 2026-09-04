@@ -8,7 +8,7 @@ import {
   avisarEstado,
 } from "@/lib/mail/tickets";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { tenantDb, currentRole } from "@/lib/tenancy/context";
+import { tenantDb, puedeEn } from "@/lib/tenancy/context";
 import {
   tickets,
   ticketComments,
@@ -48,7 +48,7 @@ export async function createTicket(
 ): Promise<TicketFormState> {
   const session = await auth();
   if (!session?.user) return { ok: false, error: "auth" };
-  const isStaff = isSupport(await currentRole());
+  const isStaff = (await puedeEn("servicio", "editar"));
 
   const parsed = CreateSchema.safeParse({
     subject: formData.get("subject"),
@@ -160,7 +160,7 @@ export async function createServiceTicket(
   formData: FormData,
 ): Promise<TicketFormState> {
   const session = await auth();
-  if (!session?.user || !isSupport(await currentRole())) {
+  if (!session?.user || !(await puedeEn("servicio", "editar"))) {
     return { ok: false, error: "auth" };
   }
 
@@ -268,7 +268,7 @@ export async function createServiceTicket(
 /* ---------- Revisión: aprobar / rechazar solicitudes ---------- */
 export async function approveTicket(formData: FormData) {
   const session = await auth();
-  if (!session?.user || !isSupport(await currentRole())) return;
+  if (!session?.user || !(await puedeEn("servicio", "editar"))) return;
 
   const ticketId = String(formData.get("ticketId"));
   if (!ticketId) return;
@@ -295,7 +295,7 @@ export async function approveTicket(formData: FormData) {
 
 export async function rejectTicket(formData: FormData) {
   const session = await auth();
-  if (!session?.user || !isSupport(await currentRole())) return;
+  if (!session?.user || !(await puedeEn("servicio", "editar"))) return;
 
   const ticketId = String(formData.get("ticketId"));
   const reason = String(formData.get("reason") ?? "").trim();
@@ -322,8 +322,7 @@ export async function addComment(formData: FormData) {
 
   const ticketId = String(formData.get("ticketId"));
   const body = String(formData.get("body") ?? "").trim();
-  const role = await currentRole();
-  const staff = isSupport(role);
+  const staff = await puedeEn("servicio", "editar");
   const internal = formData.get("internal") === "on" && staff;
   if (!ticketId || body.length < 1) return;
 
@@ -565,7 +564,7 @@ export async function addComment(formData: FormData) {
 
 export async function updateTicketStatus(formData: FormData) {
   const session = await auth();
-  if (!session?.user || !isSupport(await currentRole())) return;
+  if (!session?.user || !(await puedeEn("servicio", "editar"))) return;
 
   const ticketId = String(formData.get("ticketId"));
   const status = String(formData.get("status"));
@@ -640,7 +639,7 @@ export async function updateTicketStatus(formData: FormData) {
 
 export async function assignTicket(formData: FormData) {
   const session = await auth();
-  if (!session?.user || !isSupport(await currentRole())) return;
+  if (!session?.user || !(await puedeEn("servicio", "editar"))) return;
 
   const ticketId = String(formData.get("ticketId") ?? "");
   const raw = formData.get("assignedToId");

@@ -1,11 +1,10 @@
 import { setRequestLocale } from "next-intl/server";
-import { isSupport, isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getSuppliers } from "@/lib/data/purchasing";
 import { AddSupplierForm } from "@/components/portal/purchasing/supplier-forms";
 import { SupplierRows } from "@/components/portal/purchasing/supplier-rows";
 import { Card } from "@/components/ui/card";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 export default async function ProveedoresPage({
   params,
@@ -15,10 +14,10 @@ export default async function ProveedoresPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!isSupport(await currentRole())) {
+  if (!(await puedeEn("compras", "ver"))) {
     await redirectInTenant("/dashboard", locale);
   }
-  const admin = isAdminRole(await currentRole());
+  const admin = await puedeEn("compras", "administrar");
 
   const rows = await getSuppliers();
 

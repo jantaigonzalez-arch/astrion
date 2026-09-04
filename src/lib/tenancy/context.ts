@@ -13,6 +13,14 @@ import {
 } from "@/lib/db/platform";
 import { auth } from "@/lib/auth";
 import { currentPlatformRole } from "@/lib/platform-session";
+import {
+  ajustesGuardados,
+  alcanza,
+  nivelEfectivo,
+  type Ajustes,
+  type Modulo,
+  type Nivel,
+} from "@/lib/permisos";
 
 /**
  * Contexto de inquilino: qué empresa está viendo el usuario en esta petición,
@@ -202,6 +210,17 @@ export type TenantContext = {
   folioPrefix: string;
   /** Rol del usuario EN ESTA empresa. */
   role: MembershipRole;
+  /**
+   * Ajustes de acceso por módulo, encima de lo que da el rol.
+   *
+   * Viaja en el contexto y no se consulta aparte porque se lee en CADA pantalla
+   * y en cada acción: pedirlo por su cuenta sería una consulta más por permiso
+   * comprobado. Ya viene en la fila de la membresía que esta función carga.
+   *
+   * Vacío significa «lo que diga el rol», que es lo que tiene toda cuenta que
+   * nadie ha ajustado. Ver `lib/permisos.ts`.
+   */
+  permisos: Ajustes;
   /** true si entró por consola de plataforma y no por membresía propia. */
   impersonated: boolean;
 };
@@ -227,6 +246,7 @@ export async function listMemberships(userId: string) {
       status: tenants.status,
       folioPrefix: tenants.folioPrefix,
       role: memberships.role,
+      permissions: memberships.permissions,
       schemaName: tenantSchemas.schemaName,
     })
     .from(memberships)
@@ -304,6 +324,7 @@ export const getTenantContext = cache(async function getTenantContext(): Promise
         schemaName: own.schemaName,
         folioPrefix: own.folioPrefix ?? FALLBACK_FOLIO_PREFIX,
         role: own.role,
+        permisos: ajustesGuardados(own.permissions),
         impersonated: false,
       };
     }
@@ -331,6 +352,9 @@ export const getTenantContext = cache(async function getTenantContext(): Promise
           schemaName: t.schemaName,
           folioPrefix: t.folioPrefix ?? FALLBACK_FOLIO_PREFIX,
           role: "admin",
+          // Sin ajustes: un operador de Astraion no tiene membresía de la que
+          // salgan, y entra en solo lectura de todas formas.
+          permisos: {},
           impersonated: true,
         };
       }
@@ -346,6 +370,7 @@ export const getTenantContext = cache(async function getTenantContext(): Promise
     schemaName: only.schemaName,
     folioPrefix: only.folioPrefix ?? FALLBACK_FOLIO_PREFIX,
     role: only.role,
+    permisos: ajustesGuardados(only.permissions),
     impersonated: false,
   };
 });
@@ -379,6 +404,37 @@ export async function requireTenant(): Promise<TenantContext> {
 export async function currentRole(): Promise<MembershipRole | null> {
   const ctx = await getTenantContext();
   return ctx?.role ?? null;
+}
+
+/**
+ * Qué puede esta persona en un módulo, ya con sus ajustes aplicados.
+ *
+ * Es la pregunta que sustituye a `isSupport(await currentRole())` y compañía
+ * allí donde lo que se protege es un módulo. Los predicados de `roles.ts` no
+ * desaparecen: siguen sirviendo para lo que NO es un módulo del menú —entrar al
+ * área interna, y las facultades del dueño sobre la cuenta—.
+ *
+ * `ninguno` cuando no hay empresa activa, que es lo mismo que responden los
+ * predicados con `null` y por el mismo motivo: casi toda llamada es un `if` que
+ * redirige, y una excepción daría un 500 donde toca una pantalla de «no
+ * existe».
+ */
+export async function nivelEn(modulo: Modulo): Promise<Nivel> {
+  const ctx = await getTenantContext();
+  if (!ctx) return "ninguno";
+  return nivelEfectivo(ctx.role, ctx.permisos, modulo);
+}
+
+/**
+ * ¿Llega esta persona al nivel que exige un módulo?
+ *
+ * Los niveles son acumulativos, así que `puedeEn("compras", "editar")` también
+ * es cierto para quien administra. Preguntar por el mínimo que hace falta —y no
+ * por el nivel exacto— es lo que evita tener que enumerar los de arriba en cada
+ * guardia, que es de donde salen los olvidos.
+ */
+export async function puedeEn(modulo: Modulo, nivel: Nivel): Promise<boolean> {
+  return alcanza(await nivelEn(modulo), nivel);
 }
 
 /**

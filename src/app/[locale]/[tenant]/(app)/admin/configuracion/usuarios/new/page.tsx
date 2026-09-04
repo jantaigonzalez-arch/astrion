@@ -4,8 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { CreateUserForm } from "@/components/portal/create-user-form";
-import { currentRole } from "@/lib/tenancy/context";
-import { isAdminRole } from "@/lib/roles";
+import { puedeEn } from "@/lib/tenancy/context";
 
 export default async function NewUserPage({
   params,
@@ -16,7 +15,7 @@ export default async function NewUserPage({
   setRequestLocale(locale);
 
   // Solo administradores dan de alta cuentas.
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("configuracion", "administrar"))) {
     await redirectInTenant("/admin/tickets", locale);
   }
 

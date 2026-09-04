@@ -183,6 +183,13 @@
       "when": 1786846838963,
       "tag": "0025_smtp_de_la_empresa",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786846838964,
+      "tag": "0026_permisos_por_persona",
+      "breakpoints": true
     }
   ]
 }

@@ -4,21 +4,10 @@ import { z } from "zod";
 import { revalidateTenant } from "@/lib/revalidate";
 import { redirectAfterAction } from "@/lib/nav-server";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
-import { tenantDb, currentRole } from "@/lib/tenancy/context";
-import {
-  crmActivities,
-  crmAutomations,
-  crmContacts,
-  crmDealEvents,
-  crmDeals,
-  crmNotes,
-  crmOrganizations,
-  crmStages,
-  leads,
-  settings,
-} from "@/lib/db/schema";
+import { tenantDb, puedeEn } from "@/lib/tenancy/context";
+import { crmActivities, crmAutomations, crmContacts, crmDealEvents, crmDeals, crmNotes, crmOrganizations, crmStages, leads, settings } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
-import { isAdminRole, isSalesRole } from "@/lib/roles";
+import { isSalesRole } from "@/lib/roles";
 import { getTenantMember } from "@/lib/data/people";
 import { nextDealReference } from "@/lib/domain/references";
 import { recordDeletion, recordEvent } from "@/lib/domain/events";
@@ -61,7 +50,7 @@ const optText = (max: number) =>
 /** Solo perfiles comerciales (vendedor/admin) operan el CRM. */
 async function requireSales() {
   const session = await auth();
-  if (!isSalesRole(await currentRole())) return null;
+  if (!(await puedeEn("ventas", "editar"))) return null;
   return session!;
 }
 
@@ -565,7 +554,7 @@ export async function setDealStatus(formData: FormData) {
 
 export async function deleteDeal(formData: FormData) {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) return;
+  if (!session?.user || !(await puedeEn("ventas", "administrar"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = await tenantDb();
@@ -753,7 +742,7 @@ export async function claimOrganization(formData: FormData) {
 
 export async function deleteOrganization(formData: FormData) {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) return;
+  if (!session?.user || !(await puedeEn("ventas", "administrar"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = await tenantDb();
@@ -890,7 +879,7 @@ export async function updateContact(
 
 export async function deleteContact(formData: FormData) {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) return;
+  if (!session?.user || !(await puedeEn("ventas", "administrar"))) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   const db = await tenantDb();
@@ -1040,7 +1029,7 @@ export async function deleteNote(formData: FormData) {
 
 export async function createStage(formData: FormData) {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) return;
+  if (!session?.user || !(await puedeEn("ventas", "administrar"))) return;
 
   const pipelineId = String(formData.get("pipelineId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
@@ -1065,7 +1054,7 @@ export async function createStage(formData: FormData) {
 
 export async function updateStage(formData: FormData) {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) return;
+  if (!session?.user || !(await puedeEn("ventas", "administrar"))) return;
 
   const id = String(formData.get("id") ?? "");
   const name = String(formData.get("name") ?? "").trim();
@@ -1090,7 +1079,7 @@ export async function updateStage(formData: FormData) {
 /** Sube o baja una etapa en el embudo (intercambia el orden con su vecina). */
 export async function moveStage(formData: FormData) {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) return;
+  if (!session?.user || !(await puedeEn("ventas", "administrar"))) return;
 
   const id = String(formData.get("id") ?? "");
   const dir = String(formData.get("dir") ?? "");
@@ -1129,7 +1118,7 @@ export async function moveStage(formData: FormData) {
 /** Elimina una etapa solo si está vacía (evita perder negocios). */
 export async function deleteStage(formData: FormData) {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) return;
+  if (!session?.user || !(await puedeEn("ventas", "administrar"))) return;
 
   const id = String(formData.get("id") ?? "");
   if (!id) return;

@@ -3,25 +3,12 @@
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
-import { isSupport, isAdminRole } from "@/lib/roles";
-import { tenantDb, currentRole } from "@/lib/tenancy/context";
+import { tenantDb, puedeEn } from "@/lib/tenancy/context";
 import { revalidateTenant } from "@/lib/revalidate";
-import {
-  purchaseOrderLines,
-  purchaseOrders,
-  spareParts,
-  suppliers,
-} from "@/lib/db/schema";
+import { purchaseOrderLines, purchaseOrders, spareParts, suppliers } from "@/lib/db/schema";
 import { nextPurchaseOrderReference } from "@/lib/domain/references";
 import { recordEvent, recordDeletion } from "@/lib/domain/events";
-import {
-  assertSupplierPurchasable,
-  cancelPurchaseOrder,
-  receivePurchaseOrder,
-  reinstateSupplier,
-  sendPurchaseOrder,
-  suspendSupplier,
-} from "@/lib/domain/purchasing";
+import { assertSupplierPurchasable, cancelPurchaseOrder, receivePurchaseOrder, reinstateSupplier, sendPurchaseOrder, suspendSupplier } from "@/lib/domain/purchasing";
 
 /**
  * Acciones de compras.
@@ -71,7 +58,7 @@ export async function createSupplier(
   _prev: PurchaseState,
   formData: FormData,
 ): Promise<PurchaseState> {
-  if (!isSupport(await currentRole())) {
+  if (!(await puedeEn("compras", "editar"))) {
     return { ok: false, error: "No tienes permiso para dar de alta proveedores." };
   }
 
@@ -129,7 +116,7 @@ export async function updateSupplier(
   _prev: PurchaseState,
   formData: FormData,
 ): Promise<PurchaseState> {
-  if (!isSupport(await currentRole())) {
+  if (!(await puedeEn("compras", "editar"))) {
     return { ok: false, error: "No tienes permiso para editar proveedores." };
   }
 
@@ -204,7 +191,7 @@ export async function deleteSupplier(
   formData: FormData,
 ): Promise<PurchaseState> {
   const session = await auth();
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("compras", "administrar"))) {
     return { ok: false, error: "Solo un administrador da de baja proveedores." };
   }
 
@@ -282,7 +269,7 @@ export async function createPurchaseOrder(
   formData: FormData,
 ): Promise<PurchaseState> {
   const session = await auth();
-  if (!isSupport(await currentRole())) {
+  if (!(await puedeEn("compras", "editar"))) {
     return { ok: false, error: "No tienes permiso para crear órdenes de compra." };
   }
 
@@ -425,7 +412,7 @@ export async function sendOrder(
   formData: FormData,
 ): Promise<PurchaseState> {
   const session = await auth();
-  if (!isSupport(await currentRole())) {
+  if (!(await puedeEn("compras", "editar"))) {
     return { ok: false, error: "No tienes permiso." };
   }
 
@@ -463,7 +450,7 @@ export async function receiveOrder(
   formData: FormData,
 ): Promise<PurchaseState> {
   const session = await auth();
-  if (!isSupport(await currentRole())) {
+  if (!(await puedeEn("compras", "editar"))) {
     return { ok: false, error: "No tienes permiso para recibir mercancía." };
   }
 
@@ -505,7 +492,7 @@ export async function cancelOrder(
   formData: FormData,
 ): Promise<PurchaseState> {
   const session = await auth();
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("compras", "administrar"))) {
     return { ok: false, error: "Solo un administrador cancela órdenes." };
   }
 
@@ -554,7 +541,7 @@ export async function suspendSupplierAction(
   formData: FormData,
 ): Promise<PurchaseState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("compras", "administrar"))) {
     return { ok: false, error: "Solo un administrador suspende proveedores." };
   }
 
@@ -585,7 +572,7 @@ export async function reinstateSupplierAction(
   formData: FormData,
 ): Promise<PurchaseState> {
   const session = await auth();
-  if (!session?.user || !isAdminRole(await currentRole())) {
+  if (!session?.user || !(await puedeEn("compras", "administrar"))) {
     return { ok: false, error: "Solo un administrador levanta la suspensión." };
   }
 

@@ -34,6 +34,7 @@ import { PoweredByAstraion } from "@/components/portal/powered-by";
 import type { MembershipRole } from "@/lib/db/platform";
 import { isAdminRole, ROLE_LABELS } from "@/lib/roles";
 import { navFor, type NavItem, type TableroItem } from "@/lib/portal/menu";
+import type { Ajustes } from "@/lib/permisos";
 import { cn } from "@/lib/utils";
 
 /**
@@ -132,12 +133,15 @@ export const SIDEBAR_COOKIE = "evo_sidebar";
  */
 export function Sidebar({
   role,
+  permisos,
   brand,
   defaultCollapsed = false,
   tableros = [],
   deVisita = false,
 }: {
   role: MembershipRole;
+  /** Ajustes de acceso por módulo. Ver `lib/permisos.ts`. */
+  permisos?: Ajustes;
   brand: TenantBrand;
   defaultCollapsed?: boolean;
   tableros?: TableroItem[];
@@ -145,7 +149,7 @@ export function Sidebar({
   deVisita?: boolean;
 }) {
   const pathname = usePathname();
-  const groups = navFor(role, tableros, deVisita);
+  const groups = navFor(role, tableros, permisos, deVisita);
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
 
   /**

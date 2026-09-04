@@ -1,7 +1,6 @@
 import { setRequestLocale } from "next-intl/server";
 import { LayoutDashboard } from "lucide-react";
-import { isAdminRole } from "@/lib/roles";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 import { redirectInTenant } from "@/lib/nav-server";
 import { MODULOS } from "@/lib/ml/analyses";
 import { NewDashboardForm } from "@/components/portal/new-dashboard-form";
@@ -34,7 +33,7 @@ export default async function NuevoTableroPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("analisis", "administrar"))) {
     await redirectInTenant("/dashboard", locale);
   }
 

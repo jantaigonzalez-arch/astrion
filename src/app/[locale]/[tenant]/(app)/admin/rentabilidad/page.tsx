@@ -1,23 +1,9 @@
 import { Suspense } from "react";
 import { setRequestLocale } from "next-intl/server";
-import {
-  Clock,
-  Lock,
-  TrendingDown,
-  TrendingUp,
-  Wallet,
-  Receipt,
-} from "lucide-react";
-import { isAdminRole } from "@/lib/roles";
+import { Clock, Lock, TrendingDown, TrendingUp, Wallet, Receipt } from "lucide-react";
 import { Link } from "@/lib/nav";
 import { redirectInTenant } from "@/lib/nav-server";
-import {
-  getProfitDetail,
-  getProfitOverview,
-  type Period,
-  type ProfitOverview,
-  type Rates,
-} from "@/lib/data/profitability";
+import { getProfitDetail, getProfitOverview, type Period, type ProfitOverview, type Rates } from "@/lib/data/profitability";
 import { getSettings } from "@/lib/data/settings";
 import { listTenantMembers } from "@/lib/data/people";
 import { mxn } from "@/lib/profit";
@@ -25,13 +11,9 @@ import { parsePage } from "@/lib/pagination";
 import { Card } from "@/components/ui/card";
 import { MonthlyTrend, RankBars, ProfitSplit } from "@/components/portal/charts";
 import { Pagination } from "@/components/portal/pagination";
-import {
-  ChartSkeleton,
-  StatCardsSkeleton,
-  TableSkeleton,
-} from "@/components/portal/skeletons";
+import { ChartSkeleton, StatCardsSkeleton, TableSkeleton } from "@/components/portal/skeletons";
 import { cn } from "@/lib/utils";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 import { DashboardFab } from "@/components/portal/dashboard-fab";
 
 const PERIODS = {
@@ -67,7 +49,7 @@ export default async function ProfitabilityPage({
   const sp = await searchParams;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("analisis", "administrar"))) {
     await redirectInTenant("/dashboard", locale);
   }
 

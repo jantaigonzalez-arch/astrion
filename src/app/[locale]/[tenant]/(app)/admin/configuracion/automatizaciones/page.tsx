@@ -1,21 +1,16 @@
 import { setRequestLocale } from "next-intl/server";
 import { Trash2, Workflow, Zap } from "lucide-react";
-import { isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { ensureDefaultPipeline, getPipelines } from "@/lib/data/crm";
 import { getAutomations } from "@/lib/data/crm-insights";
-import {
-  createAutomation,
-  deleteAutomation,
-  toggleAutomation,
-} from "@/lib/actions/crm-extras";
+import { createAutomation, deleteAutomation, toggleAutomation } from "@/lib/actions/crm-extras";
 import { ACTIVITY_LABELS, ACTIVITY_TYPES, label } from "@/lib/crm";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 const selectCls =
   "flex h-10 w-full rounded-lg border border-input bg-background px-3.5 text-sm shadow-sm focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
@@ -28,7 +23,7 @@ export default async function AutomationsPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("configuracion", "administrar"))) {
     await redirectInTenant("/admin/crm", locale);
   }
 

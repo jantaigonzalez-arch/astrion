@@ -1,8 +1,7 @@
 import { setRequestLocale } from "next-intl/server";
-import { isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { SettingsTabs } from "@/components/portal/settings-tabs";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 
 /**
  * Área de configuración de la empresa.
@@ -30,7 +29,7 @@ export default async function ConfiguracionLayout({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("configuracion", "administrar"))) {
     await redirectInTenant("/dashboard", locale);
   }
 

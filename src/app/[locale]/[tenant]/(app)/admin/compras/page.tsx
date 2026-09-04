@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import { setRequestLocale } from "next-intl/server";
 import { Plus } from "lucide-react";
-import { isSupport } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getPurchaseOrders } from "@/lib/data/purchasing";
 import { parsePage } from "@/lib/pagination";
@@ -11,12 +10,9 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import type { PurchaseOrderStatus } from "@/lib/db/schema";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 import { DashboardFab } from "@/components/portal/dashboard-fab";
-import {
-  AnalysisSection,
-  AnalysisSectionSkeleton,
-} from "@/components/portal/analysis-section";
+import { AnalysisSection, AnalysisSectionSkeleton } from "@/components/portal/analysis-section";
 
 export default async function ComprasPage({
   params,
@@ -28,7 +24,7 @@ export default async function ComprasPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!isSupport(await currentRole())) {
+  if (!(await puedeEn("compras", "ver"))) {
     await redirectInTenant("/dashboard", locale);
   }
 

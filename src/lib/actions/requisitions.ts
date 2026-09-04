@@ -3,18 +3,10 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
-import { isAdminRole, isSupport } from "@/lib/roles";
-import { currentRole, tenantDb } from "@/lib/tenancy/context";
+import { currentRole, tenantDb, puedeEn } from "@/lib/tenancy/context";
 import { revalidateTenant } from "@/lib/revalidate";
 import { requisitionLines, requisitions } from "@/lib/db/schema";
-import {
-  approveRequisition,
-  cancelRequisition,
-  convertToPurchaseOrders,
-  createRequisitionFromDeal,
-  rejectRequisition,
-  submitRequisition,
-} from "@/lib/domain/requisitions";
+import { approveRequisition, cancelRequisition, convertToPurchaseOrders, createRequisitionFromDeal, rejectRequisition, submitRequisition } from "@/lib/domain/requisitions";
 
 /**
  * Acciones de requisiciones.
@@ -52,8 +44,8 @@ export async function createRequisitionFromDealAction(
   _prev: RequisitionState,
   formData: FormData,
 ): Promise<RequisitionState> {
-  const { userId, role } = await quien();
-  if (!isSupport(role)) {
+  const { userId } = await quien();
+  if (!(await puedeEn("compras", "editar"))) {
     return { ok: false, error: "No tienes permiso para levantar requisiciones." };
   }
 
@@ -103,8 +95,7 @@ export async function resolveRequisitionLine(
   _prev: RequisitionState,
   formData: FormData,
 ): Promise<RequisitionState> {
-  const { role } = await quien();
-  if (!isSupport(role)) return { ok: false, error: "Sin permiso." };
+  if (!(await puedeEn("compras", "editar"))) return { ok: false, error: "Sin permiso." };
 
   const lineId = uuid.safeParse(formData.get("lineId"));
   if (!lineId.success) return { ok: false, error: "Renglón inválido." };
@@ -170,8 +161,7 @@ export async function removeRequisitionLine(
   _prev: RequisitionState,
   formData: FormData,
 ): Promise<RequisitionState> {
-  const { role } = await quien();
-  if (!isSupport(role)) return { ok: false, error: "Sin permiso." };
+  if (!(await puedeEn("compras", "editar"))) return { ok: false, error: "Sin permiso." };
 
   const lineId = uuid.safeParse(formData.get("lineId"));
   if (!lineId.success) return { ok: false, error: "Renglón inválido." };
@@ -222,8 +212,8 @@ export async function submitRequisitionAction(
   _prev: RequisitionState,
   formData: FormData,
 ): Promise<RequisitionState> {
-  const { userId, role } = await quien();
-  if (!isSupport(role)) return { ok: false, error: "Sin permiso." };
+  const { userId } = await quien();
+  if (!(await puedeEn("compras", "editar"))) return { ok: false, error: "Sin permiso." };
 
   const id = uuid.safeParse(formData.get("id"));
   if (!id.success) return { ok: false, error: "Requisición inválida." };
@@ -246,10 +236,10 @@ export async function approveRequisitionAction(
   _prev: RequisitionState,
   formData: FormData,
 ): Promise<RequisitionState> {
-  const { userId, role } = await quien();
+  const { userId } = await quien();
   // Autorizar es administración y solo administración: es el único punto donde
   // alguien distinto al que pide asume el gasto.
-  if (!isAdminRole(role)) {
+  if (!(await puedeEn("compras", "administrar"))) {
     return { ok: false, error: "Solo administración autoriza requisiciones." };
   }
 
@@ -274,8 +264,8 @@ export async function rejectRequisitionAction(
   _prev: RequisitionState,
   formData: FormData,
 ): Promise<RequisitionState> {
-  const { userId, role } = await quien();
-  if (!isAdminRole(role)) {
+  const { userId } = await quien();
+  if (!(await puedeEn("compras", "administrar"))) {
     return { ok: false, error: "Solo administración resuelve requisiciones." };
   }
 
@@ -304,8 +294,8 @@ export async function cancelRequisitionAction(
   _prev: RequisitionState,
   formData: FormData,
 ): Promise<RequisitionState> {
-  const { userId, role } = await quien();
-  if (!isAdminRole(role)) {
+  const { userId } = await quien();
+  if (!(await puedeEn("compras", "administrar"))) {
     return { ok: false, error: "Solo administración cancela requisiciones." };
   }
 
@@ -336,8 +326,8 @@ export async function convertRequisitionAction(
   _prev: RequisitionState,
   formData: FormData,
 ): Promise<RequisitionState> {
-  const { userId, role } = await quien();
-  if (!isAdminRole(role)) {
+  const { userId } = await quien();
+  if (!(await puedeEn("compras", "administrar"))) {
     return { ok: false, error: "Solo administración genera órdenes de compra." };
   }
 

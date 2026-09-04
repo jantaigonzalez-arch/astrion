@@ -1,10 +1,9 @@
 import { Suspense } from "react";
 import { setRequestLocale } from "next-intl/server";
 import { Building2 } from "lucide-react";
-import { isSalesRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getClients } from "@/lib/data/crm";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 import { ClientsList, type ClientListRow } from "@/components/portal/clients-list";
 import { DashboardFab } from "@/components/portal/dashboard-fab";
 import { Skeleton, TableSkeleton } from "@/components/portal/skeletons";
@@ -32,7 +31,7 @@ export default async function ClientesPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!isSalesRole(await currentRole())) {
+  if (!(await puedeEn("clientes", "ver"))) {
     await redirectInTenant("/dashboard", locale);
   }
 

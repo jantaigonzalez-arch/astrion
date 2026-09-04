@@ -3,14 +3,9 @@
 import { z } from "zod";
 import { revalidateTenant } from "@/lib/revalidate";
 import { eq } from "drizzle-orm";
-import { tenantDb, currentRole } from "@/lib/tenancy/context";
-import {
-  equipment,
-  equipmentModules,
-  equipmentSubmodules,
-} from "@/lib/db/schema";
+import { tenantDb, puedeEn } from "@/lib/tenancy/context";
+import { equipment, equipmentModules, equipmentSubmodules } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
-import { isSupport } from "@/lib/roles";
 import { saveImage } from "@/lib/uploads";
 import { recordDeletion } from "@/lib/domain/events";
 import { EQUIPMENT_BRANDS } from "@/lib/equipment";
@@ -20,7 +15,7 @@ export type EquipState = { ok: boolean; error?: string };
 async function requireStaff() {
   const session = await auth();
   // Solo soporte (agente/admin) administra el inventario de equipos.
-  if (!isSupport(await currentRole())) return null;
+  if (!(await puedeEn("servicio", "editar"))) return null;
   return session;
 }
 

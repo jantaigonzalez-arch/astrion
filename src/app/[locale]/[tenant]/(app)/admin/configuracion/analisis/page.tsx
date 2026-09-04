@@ -1,8 +1,7 @@
 import { setRequestLocale } from "next-intl/server";
 import { Telescope } from "lucide-react";
-import { isAdminRole } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
-import { currentRole } from "@/lib/tenancy/context";
+import { puedeEn } from "@/lib/tenancy/context";
 import { placementMap, recommendations } from "@/lib/ml/placements";
 import { AnalysisSettings } from "@/components/portal/analysis-settings";
 
@@ -27,7 +26,7 @@ export default async function AnalysisSettingsPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!isAdminRole(await currentRole())) {
+  if (!(await puedeEn("configuracion", "administrar"))) {
     await redirectInTenant("/dashboard", locale);
   }
 

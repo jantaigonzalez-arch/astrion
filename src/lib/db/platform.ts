@@ -287,6 +287,26 @@ export const memberships = pgTable(
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
     role: membershipRole("role").notNull().default("client"),
+    /**
+     * Ajustes de acceso por módulo, ENCIMA de lo que da el rol.
+     *
+     * Mapa parcial `{ "compras": "ver" }`, y que sea parcial es la idea entera:
+     * la ausencia de un módulo significa «lo que diga el rol», no «sin acceso».
+     * Por eso el valor por omisión es un objeto vacío y no la matriz completa —
+     * una cuenta sin ajustes se comporta exactamente como antes de que esta
+     * columna existiera, y cambiar la plantilla de un rol sigue alcanzando a
+     * quien ya estaba dado de alta.
+     *
+     * `jsonb` y no una tabla aparte: son ocho claves como mucho, se leen
+     * siempre junto a la membresía —`listMemberships` ya trae esta fila— y una
+     * tabla obligaría a un join en cada comprobación de permiso, que es en cada
+     * pantalla y en cada acción.
+     *
+     * Lo que se lee de aquí pasa por `ajustesGuardados()` antes de usarse: es
+     * `jsonb`, así que puede traer un módulo que esta versión ya no conozca.
+     * Ver `lib/permisos.ts`.
+     */
+    permissions: jsonb("permissions").notNull().default({}),
     active: boolean("active").notNull().default(true),
     invitedAt: timestamp("invited_at", { withTimezone: true }),
     acceptedAt: timestamp("accepted_at", { withTimezone: true }),
