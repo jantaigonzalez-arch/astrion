@@ -22,6 +22,8 @@ export type TenantRow = {
   name: string;
   status: "trial" | "active" | "suspended" | "cancelled";
   plan: string;
+  /** Fin de la prueba. Nulo = no se le acaba. Ver `lib/suscripcion.ts`. */
+  trialEndsAt: Date | null;
   mlContribution: boolean;
   schemaName: string | null;
   migratedVersion: string | null;
@@ -85,6 +87,7 @@ export async function getTenants(): Promise<TenantRow[]> {
       name: tenants.name,
       status: tenants.status,
       plan: tenants.plan,
+      trialEndsAt: tenants.trialEndsAt,
       mlContribution: tenants.mlContribution,
       createdAt: tenants.createdAt,
       schemaName: tenantSchemas.schemaName,

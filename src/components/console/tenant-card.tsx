@@ -4,6 +4,7 @@ import { enterTenant, setMlContribution } from "@/lib/actions/platform";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SuscripcionPanel } from "@/components/console/suscripcion-panel";
 import { cn } from "@/lib/utils";
 
 /**
@@ -91,6 +92,18 @@ export function TenantCard({
           </form>
         )}
       </div>
+
+      {/* El reloj de la empresa. Solo para quien puede moverlo: enseñárselo a
+          soporte, que no puede tocarlo, sería ofrecer botones apagados. Y no en
+          la versión compacta, que es una bienvenida y no un panel. */}
+      {!compacta && isSuper && (
+        <SuscripcionPanel
+          tenantId={t.id}
+          status={t.status}
+          trialEndsAt={t.trialEndsAt}
+          plan={t.plan}
+        />
+      )}
 
       {compacta ? null : (
         <>

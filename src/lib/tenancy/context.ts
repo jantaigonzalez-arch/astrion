@@ -13,6 +13,7 @@ import {
 } from "@/lib/db/platform";
 import { auth } from "@/lib/auth";
 import { currentPlatformRole } from "@/lib/platform-session";
+import { estadoDe, type EstadoSuscripcion } from "@/lib/suscripcion";
 import {
   ajustesGuardados,
   alcanza,
@@ -208,6 +209,8 @@ export type TenantContext = {
   schemaName: string;
   /** Prefijo de los folios de esta empresa: `EVO-000123`. */
   folioPrefix: string;
+  /** Plan contratado. Se resuelve con `planDe`; ver `lib/suscripcion.ts`. */
+  plan: string;
   /** Rol del usuario EN ESTA empresa. */
   role: MembershipRole;
   /**
@@ -223,6 +226,15 @@ export type TenantContext = {
   permisos: Ajustes;
   /** true si entró por consola de plataforma y no por membresía propia. */
   impersonated: boolean;
+  /**
+   * Si la empresa está al corriente, y hasta cuándo.
+   *
+   * Viaja en el contexto porque lo miran tres sitios —el guardia del portal, la
+   * tarjeta de configuración y el cliente de base de datos— y resolverlo por
+   * separado en cada uno sería preguntar tres veces lo mismo y arriesgarse a
+   * que un día no coincidan. Ver `lib/suscripcion.ts`.
+   */
+  suscripcion: EstadoSuscripcion;
 };
 
 /**
@@ -245,6 +257,9 @@ export async function listMemberships(userId: string) {
       name: tenants.name,
       status: tenants.status,
       folioPrefix: tenants.folioPrefix,
+      plan: tenants.plan,
+      tenantStatus: tenants.status,
+      trialEndsAt: tenants.trialEndsAt,
       role: memberships.role,
       permissions: memberships.permissions,
       schemaName: tenantSchemas.schemaName,
@@ -323,9 +338,15 @@ export const getTenantContext = cache(async function getTenantContext(): Promise
         name: own.name,
         schemaName: own.schemaName,
         folioPrefix: own.folioPrefix ?? FALLBACK_FOLIO_PREFIX,
+        plan: own.plan,
         role: own.role,
         permisos: ajustesGuardados(own.permissions),
         impersonated: false,
+        suscripcion: estadoDe({
+          status: own.tenantStatus,
+          trialEndsAt: own.trialEndsAt,
+          plan: own.plan,
+        }),
       };
     }
     // Sin membresía: solo pasa si es personal de la plataforma. Para un
@@ -338,6 +359,9 @@ export const getTenantContext = cache(async function getTenantContext(): Promise
           slug: tenants.slug,
           name: tenants.name,
           folioPrefix: tenants.folioPrefix,
+          plan: tenants.plan,
+          tenantStatus: tenants.status,
+          trialEndsAt: tenants.trialEndsAt,
           schemaName: tenantSchemas.schemaName,
         })
         .from(tenants)
@@ -351,11 +375,16 @@ export const getTenantContext = cache(async function getTenantContext(): Promise
           name: t.name,
           schemaName: t.schemaName,
           folioPrefix: t.folioPrefix ?? FALLBACK_FOLIO_PREFIX,
+          plan: t.plan,
           role: "admin",
           // Sin ajustes: un operador de Astraion no tiene membresía de la que
           // salgan, y entra en solo lectura de todas formas.
           permisos: {},
           impersonated: true,
+          // Un operador de Astraion entra AUNQUE la suscripción esté vencida:
+          // justamente para poder mirar por qué y arreglarlo. Y entra en solo
+          // lectura, como siempre.
+          suscripcion: { clave: "activa", entra: true },
         };
       }
     }
@@ -369,9 +398,15 @@ export const getTenantContext = cache(async function getTenantContext(): Promise
     name: only.name,
     schemaName: only.schemaName,
     folioPrefix: only.folioPrefix ?? FALLBACK_FOLIO_PREFIX,
+    plan: only.plan,
     role: only.role,
     permisos: ajustesGuardados(only.permissions),
     impersonated: false,
+    suscripcion: estadoDe({
+      status: only.tenantStatus,
+      trialEndsAt: only.trialEndsAt,
+      plan: only.plan,
+    }),
   };
 });
 
@@ -444,12 +479,28 @@ export async function puedeEn(modulo: Modulo, nivel: Nivel): Promise<boolean> {
  */
 export async function tenantDb() {
   const ctx = await requireTenant();
+  /*
+    SIN SUSCRIPCIÓN AL CORRIENTE, SOLO LECTURA. Y lo hace cumplir Postgres.
+
+    El guardia del portal ya manda a la pantalla de suscripción, pero un
+    `redirect` en un layout no impide que la página se renderice en paralelo
+    —está escrito en media docena de pantallas de este proyecto— ni cubre a una
+    server action invocada a mano. Esto sí: la conexión se abre con
+    `default_transaction_read_only`, así que un `INSERT` se rechaza en el motor
+    y no en una comprobación que alguien pueda olvidar.
+
+    Es el mismo mecanismo que ya sostiene la visita de un operador de Astraion,
+    reutilizado tal cual. Solo lectura y no conexión negada porque la pantalla
+    de suscripción tiene que poder decirle a la empresa qué le pasa, y para eso
+    necesita leer.
+  */
+  const bloqueado = !ctx.suscripcion.entra;
   // Personal de Astraion dentro de la empresa de un cliente: SOLO LECTURA, y
   // se decide aquí porque aquí pasa toda consulta de negocio. Un operador no
   // existe en `users`, así que ni siquiera podría firmar lo que escribiera —
   // las 33 columnas de negocio que registran quién hizo qué apuntan allí. Ver
   // la cabecera de `platformUsers`.
-  return clientFor(ctx.schemaName, ctx.impersonated);
+  return clientFor(ctx.schemaName, ctx.impersonated || bloqueado);
 }
 
 /** Para tareas fuera de una petición (cron, importadores): esquema explícito. */

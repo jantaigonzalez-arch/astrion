@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getTenantContext } from "@/lib/tenancy/context";
 import { getTenantBrand } from "@/lib/data/platform";
-import { tenantBase } from "@/lib/nav-server";
+import { redirectInTenant, tenantBase } from "@/lib/nav-server";
 import { Sidebar, SIDEBAR_COOKIE } from "@/components/portal/sidebar";
 import { SoloLectura } from "@/components/portal/solo-lectura";
 import { Topbar } from "@/components/portal/topbar";
@@ -57,6 +57,27 @@ export default async function TenantAppLayout({
   // La marca es de ESTA empresa. Se resuelve una vez aquí y baja a las dos
   // piezas de chrome que la muestran.
   //
+  /*
+    EL CANDADO DE LA SUSCRIPCIÓN.
+
+    Va aquí, antes de leer nada, porque es la puerta del portal entero: la
+    prueba vencida o la cuenta suspendida no dejan entrar a ninguna pantalla, y
+    no tiene sentido consultar tableros ni avisos de una empresa que no va a
+    ver ninguno.
+
+    `/suscripcion` vive FUERA de `(app)`, así que este desvío no la alcanza y no
+    hay bucle. Y no es la única defensa: `tenantDb()` devuelve además una
+    conexión de solo lectura mientras el acceso esté cerrado, porque un
+    `redirect` en un layout no impide que la página se renderice en paralelo ni
+    cubre una server action invocada a mano.
+
+    Un operador de Astraion no pasa por aquí: su contexto se marca siempre al
+    corriente, justamente para poder entrar a ver por qué la empresa no puede.
+  */
+  if (!ctx!.suscripcion.entra) {
+    await redirectInTenant("/suscripcion", locale);
+  }
+
   // Va junto a los tableros y no antes: son dos lecturas independientes y
   // encadenarlas sumaría sus tiempos en cada navegación del portal.
   // Las dos en paralelo: son independientes y encadenarlas sumaría sus tiempos

@@ -161,6 +161,19 @@ export const tenants = pgTable(
     name: varchar("name", { length: 160 }).notNull(),
     status: tenantStatus("status").notNull().default("trial"),
     plan: varchar("plan", { length: 40 }).notNull().default("poc"),
+    /**
+     * Cuándo se le acaba la prueba. NULO = NO SE LE ACABA.
+     *
+     * Y esa distinción es la que hace seguro encender el cobro sobre una base
+     * que ya tiene clientes dentro: al añadir esta columna, todos los inquilinos
+     * existentes quedan en nulo, o sea que a nadie se le cierra la puerta por un
+     * despliegue. La cuenta atrás empieza cuando alguien la pone a propósito
+     * desde la consola, no por efecto de una migración.
+     *
+     * Solo significa algo con `status = 'trial'`: una cuenta ya pagada no tiene
+     * prueba que vencer, y una suspendida está cerrada por otro motivo.
+     */
+    trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
 
     /* --- Marca de la empresa ---
      * Vive en el plano de control, y no en los `settings` de su esquema, por

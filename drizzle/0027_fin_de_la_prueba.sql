@@ -1,0 +1,30 @@
+-- CUÁNDO SE LE ACABA LA PRUEBA A CADA EMPRESA.
+--
+-- `tenants.status` ya distinguía `trial` de `active`, pero no había forma de
+-- decir hasta cuándo dura la prueba: el estado se cambiaba a mano y nadie
+-- llevaba la cuenta. Sin una fecha, «30 días de prueba» es una promesa que
+-- alguien tiene que recordar.
+--
+-- ---------------------------------------------------------------------------
+-- NULO SIGNIFICA «NO SE LE ACABA», Y ESO NO ES UN DESCUIDO
+--
+-- Es lo que hace segura esta migración sobre una base que YA tiene un cliente
+-- trabajando dentro. Al añadir la columna, todos los inquilinos existentes
+-- quedan en nulo, así que ninguno se queda fuera por efecto de un despliegue.
+--
+-- La alternativa —rellenar con `created_at + 30 días`— habría dejado al único
+-- inquilino de producción con la prueba vencida el mismo día que esto subiera,
+-- y con el candado nuevo eso es la empresa entera sin poder entrar. Un dato de
+-- relleno no puede tener esa consecuencia.
+--
+-- La cuenta atrás empieza cuando alguien la pone a propósito desde la consola.
+--
+-- ---------------------------------------------------------------------------
+-- SOLO PESA EN `trial`
+--
+-- Una cuenta `active` no tiene prueba que vencer y una `suspended` está cerrada
+-- por otro motivo. La fecha se guarda igual —sirve para saber cuándo fue— pero
+-- quien decide si se entra es `lib/suscripcion.ts`, mirando estado y fecha
+-- juntos.
+
+ALTER TABLE "tenants" ADD COLUMN "trial_ends_at" timestamp with time zone;
