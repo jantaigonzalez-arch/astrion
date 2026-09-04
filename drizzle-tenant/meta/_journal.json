@@ -162,6 +162,13 @@
       "when": 1786852307343,
       "tag": "0022_lienzo_libre",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786852307344,
+      "tag": "0023_bandeja_de_avisos",
+      "breakpoints": true
     }
   ]
 }

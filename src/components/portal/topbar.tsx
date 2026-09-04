@@ -10,10 +10,20 @@ export function Topbar({
   name,
   email,
   brand,
+  campana,
 }: {
   name?: string | null;
   email?: string | null;
   brand: TenantBrand;
+  /**
+   * La campana, ya resuelta en el servidor.
+   *
+   * Llega hecha y no como datos porque leer los avisos es una consulta a la
+   * base, y esta barra es un componente de cliente —tiene desplegables y
+   * estado—. Pasarla montada deja la consulta donde corresponde y evita que la
+   * barra tenga que saber nada de notificaciones.
+   */
+  campana?: React.ReactNode;
 }) {
   const initials = (name ?? email ?? "?")
     .split(" ")
@@ -51,6 +61,7 @@ export function Topbar({
       <div className="ml-auto flex items-center gap-3">
         {/* Sitio fijo en toda la aplicación: es lo que lo vuelve costumbre. */}
         <AnalysisAssistant />
+        {campana}
         <ThemeToggle />
         <div className="flex items-center gap-2.5">
           <div className="flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-signal text-xs font-semibold text-white">

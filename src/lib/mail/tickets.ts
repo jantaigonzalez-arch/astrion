@@ -5,6 +5,7 @@ import { memberships, users } from "@/lib/db/platform";
 import { getTenantContext } from "@/lib/tenancy/context";
 import { tenantBase } from "@/lib/nav-server";
 import { enviar } from "@/lib/mail";
+import { crearAvisos, type TipoDeAviso } from "@/lib/notificaciones";
 
 /**
  * Los avisos del sistema de tickets.
@@ -39,17 +40,91 @@ import { enviar } from "@/lib/mail";
  * sigue: el ticket vale más que el correo.
  */
 
-type Persona = { email: string; name: string | null };
+type Persona = { email: string; name: string | null; esCliente: boolean };
 
-async function personas(ids: Array<string | null>): Promise<Map<string, Persona>> {
+/**
+ * Quiénes son, y por qué canal les toca enterarse.
+ *
+ * `esCliente` decide el correo: el laboratorio no vive aquí dentro —entra
+ * cuando tiene un problema y se va—, así que para él el correo sigue siendo el
+ * canal. Al equipo se le avisa por la campana y se le deja de mandar correo,
+ * que es lo que evita que los avisos se conviertan en ruido y acaben filtrados.
+ *
+ * El rol se lee de la membresía EN ESTA EMPRESA y no de la cuenta: la misma
+ * persona puede ser cliente en un laboratorio y agente en otro, y el canal
+ * depende de dónde está parada. Quien no tenga membresía —una cuenta dada de
+ * baja que dejó comentarios— cuenta como cliente: es el lado que sí recibe
+ * correo, y equivocarse hacia «le llega» es preferible a que no se entere.
+ */
+async function personas(
+  ids: Array<string | null>,
+  tenantId: string,
+): Promise<Map<string, Persona>> {
   const limpios = [...new Set(ids.filter((x): x is string => Boolean(x)))];
   if (limpios.length === 0) return new Map();
   const db = getDb();
   const filas = await db
-    .select({ id: users.id, email: users.email, name: users.name })
+    .select({
+      id: users.id,
+      email: users.email,
+      name: users.name,
+      role: memberships.role,
+    })
     .from(users)
+    .leftJoin(
+      memberships,
+      and(eq(memberships.userId, users.id), eq(memberships.tenantId, tenantId)),
+    )
     .where(inArray(users.id, limpios));
-  return new Map(filas.map((f) => [f.id, { email: f.email, name: f.name }]));
+  return new Map(
+    filas.map((f) => [
+      f.id,
+      { email: f.email, name: f.name, esCliente: f.role !== "agent" && f.role !== "admin" && f.role !== "owner" && f.role !== "sales" },
+    ]),
+  );
+}
+
+/**
+ * UN AVISO, DOS CANALES, UNA SOLA DECISIÓN.
+ *
+ * Escribe la campana para todos los destinatarios y manda el correo solo a los
+ * que son cliente. Está aquí y no repartido por cada `avisar*` para que el
+ * reparto de canales no pueda divergir entre un aviso y otro: era exactamente
+ * así como el correo al equipo se coló en tres sitios distintos.
+ *
+ * Nunca lanza. Un aviso que falla no puede tumbar la acción que lo disparó.
+ */
+async function repartir(opts: {
+  tenantId: string;
+  ticketId: string;
+  tipo: TipoDeAviso;
+  destinatarios: Persona[];
+  titulo: string;
+  cuerpo: string[];
+  boton: { texto: string; href: string };
+  pie: string;
+  asunto: string;
+  /** Los ids, en el mismo orden que `destinatarios`. */
+  ids: string[];
+}): Promise<void> {
+  await crearAvisos({
+    paraUsuarios: opts.ids,
+    ticketId: opts.ticketId,
+    tipo: opts.tipo,
+    titulo: opts.titulo,
+    cuerpo: opts.cuerpo[0] ?? null,
+  });
+
+  const porCorreo = opts.destinatarios.filter((p) => p.esCliente).map((p) => p.email);
+  if (porCorreo.length === 0) return;
+
+  const { html, texto } = plantilla({
+    titulo: opts.titulo,
+    cuerpo: opts.cuerpo,
+    boton: opts.boton,
+    pie: opts.pie,
+  });
+  await enviar(opts.tenantId, { para: porCorreo, asunto: opts.asunto, html, texto });
 }
 
 /** La dirección pública del ticket, en el dominio de SU empresa. */
@@ -98,7 +173,6 @@ type Ticket = {
   createdById: string;
   assignedToId: string | null;
 };
-
 /**
  * Alguien comentó: se avisa a la otra parte.
  *
@@ -121,13 +195,18 @@ export async function avisarComentario(
     const destinoId = autorId === t.createdById ? t.assignedToId : t.createdById;
     if (!destinoId || destinoId === autorId) return;
 
-    const gente = await personas([destinoId, autorId]);
+    const gente = await personas([destinoId, autorId], ctx.tenantId);
     const destino = gente.get(destinoId);
     if (!destino) return;
     const autor = gente.get(autorId);
 
     const href = await enlace(ctx.slug, t.id);
-    const { html, texto } = plantilla({
+    await repartir({
+      tenantId: ctx.tenantId,
+      ticketId: t.id,
+      tipo: "ticket.comentado",
+      destinatarios: [destino],
+      ids: [destinoId],
       titulo: `${t.reference} · nueva respuesta`,
       cuerpo: [
         `${autor?.name ?? "Alguien"} escribió en el ticket «${t.subject}».`,
@@ -138,13 +217,7 @@ export async function avisarComentario(
       ],
       boton: { texto: "Ver el ticket", href },
       pie: `${ctx.name} · recibes esto porque participas en ${t.reference}.`,
-    });
-
-    await enviar(ctx.tenantId, {
-      para: destino.email,
       asunto: `${t.reference} · nueva respuesta`,
-      html,
-      texto,
     });
   } catch (e) {
     console.error("[mail] aviso de comentario", e);
@@ -158,23 +231,22 @@ export async function avisarAsignacion(t: Ticket, actorId: string): Promise<void
     const ctx = await getTenantContext();
     if (!ctx) return;
 
-    const gente = await personas([t.assignedToId]);
+    const gente = await personas([t.assignedToId], ctx.tenantId);
     const destino = gente.get(t.assignedToId);
     if (!destino) return;
 
     const href = await enlace(ctx.slug, t.id);
-    const { html, texto } = plantilla({
+    await repartir({
+      tenantId: ctx.tenantId,
+      ticketId: t.id,
+      tipo: "ticket.asignado",
+      destinatarios: [destino],
+      ids: [t.assignedToId],
       titulo: `${t.reference} · te lo asignaron`,
       cuerpo: [`Te asignaron el ticket «${t.subject}».`],
       boton: { texto: "Abrir el ticket", href },
       pie: `${ctx.name} · recibes esto porque eres el responsable de ${t.reference}.`,
-    });
-
-    await enviar(ctx.tenantId, {
-      para: destino.email,
       asunto: `${t.reference} · te lo asignaron`,
-      html,
-      texto,
     });
   } catch (e) {
     console.error("[mail] aviso de asignación", e);
@@ -199,13 +271,18 @@ export async function avisarEstado(
     const ctx = await getTenantContext();
     if (!ctx) return;
 
-    const gente = await personas([t.createdById]);
+    const gente = await personas([t.createdById], ctx.tenantId);
     const destino = gente.get(t.createdById);
     if (!destino) return;
 
     const verbo = nuevo === "resolved" ? "resuelto" : "cerrado";
     const href = await enlace(ctx.slug, t.id);
-    const { html, texto } = plantilla({
+    await repartir({
+      tenantId: ctx.tenantId,
+      ticketId: t.id,
+      tipo: "ticket.resuelto",
+      destinatarios: [destino],
+      ids: [t.createdById],
       titulo: `${t.reference} · ${verbo}`,
       cuerpo: [
         `Tu ticket «${t.subject}» quedó ${verbo}.`,
@@ -215,13 +292,7 @@ export async function avisarEstado(
       ],
       boton: { texto: "Ver el ticket", href },
       pie: `${ctx.name} · recibes esto porque levantaste ${t.reference}.`,
-    });
-
-    await enviar(ctx.tenantId, {
-      para: destino.email,
       asunto: `${t.reference} · ${verbo}`,
-      html,
-      texto,
     });
   } catch (e) {
     console.error("[mail] aviso de estado", e);
@@ -234,12 +305,17 @@ export async function avisarAlta(t: Ticket): Promise<void> {
     const ctx = await getTenantContext();
     if (!ctx) return;
 
-    const gente = await personas([t.createdById]);
+    const gente = await personas([t.createdById], ctx.tenantId);
     const destino = gente.get(t.createdById);
     if (!destino) return;
 
     const href = await enlace(ctx.slug, t.id);
-    const { html, texto } = plantilla({
+    await repartir({
+      tenantId: ctx.tenantId,
+      ticketId: t.id,
+      tipo: "ticket.creado",
+      destinatarios: [destino],
+      ids: [t.createdById],
       titulo: `${t.reference} · recibimos tu solicitud`,
       cuerpo: [
         `Registramos «${t.subject}» con el folio ${t.reference}.`,
@@ -247,13 +323,7 @@ export async function avisarAlta(t: Ticket): Promise<void> {
       ],
       boton: { texto: "Seguir el ticket", href },
       pie: `${ctx.name} · guarda el folio ${t.reference} para cualquier consulta.`,
-    });
-
-    await enviar(ctx.tenantId, {
-      para: destino.email,
       asunto: `${t.reference} · recibimos tu solicitud`,
-      html,
-      texto,
     });
   } catch (e) {
     console.error("[mail] aviso de alta", e);
@@ -269,14 +339,16 @@ export async function avisarAlta(t: Ticket): Promise<void> {
  * el primer correo que rebota es el de una persona que ya no trabaja ahí.
  *
  * Los permisos por módulo no entran aquí a propósito. Un aviso no es una puerta:
- * quien tenga Servicio en «Sin acceso» recibirá un correo que no puede abrir, y
- * eso es un correo de más, no una fuga. Filtrarlo exigiría resolver el permiso
- * efectivo de cada miembro —consulta por persona— para ahorrar un mensaje.
+ * quien tenga Servicio en «Sin acceso» verá un renglón que no puede abrir, y eso
+ * es un aviso de más, no una fuga. Filtrarlo exigiría resolver el permiso
+ * efectivo de cada miembro —una consulta por persona— para ahorrar un renglón.
  */
-async function equipoQueAtiende(tenantId: string): Promise<Persona[]> {
+async function equipoQueAtiende(
+  tenantId: string,
+): Promise<Array<Persona & { id: string }>> {
   const db = getDb();
   const filas = await db
-    .select({ email: users.email, name: users.name })
+    .select({ id: users.id, email: users.email, name: users.name })
     .from(memberships)
     .innerJoin(users, eq(users.id, memberships.userId))
     .where(
@@ -287,7 +359,8 @@ async function equipoQueAtiende(tenantId: string): Promise<Persona[]> {
         inArray(memberships.role, ["agent", "admin", "owner"]),
       ),
     );
-  return filas;
+  // Son del equipo por definición de la consulta: campana sí, correo no.
+  return filas.map((f) => ({ ...f, esCliente: false }));
 }
 
 /**
@@ -306,12 +379,11 @@ async function equipoQueAtiende(tenantId: string): Promise<Persona[]> {
  * propio aviso. Mandarlo a todos es lo correcto mientras la cola sea de todos;
  * el día que haya reparto por especialidad, este es el sitio donde se acota.
  *
- * ── SE MANDA EN COPIA OCULTA ──────────────────────────────────────────────
+ * ── Y LES LLEGA POR CAMPANA, NO POR CORREO ────────────────────────────────
  *
- * `para` recibe la lista entera, y quien la manda es el proveedor con todos los
- * destinatarios en el mismo campo. Se pasa como arreglo porque `Correo.para` ya
- * lo admite; si el equipo crece hasta que eso moleste, se parte en envíos
- * individuales aquí y nadie más se entera.
+ * Lo decide `repartir` a partir de `esCliente`, que aquí es falso para todos.
+ * Es el aviso más frecuente de los cinco —uno por cada ticket que entra— y por
+ * tanto el que antes habría enseñado al equipo a filtrar el correo.
  */
 export async function avisarEquipoDeAlta(
   t: Ticket,
@@ -322,17 +394,20 @@ export async function avisarEquipoDeAlta(
     if (!ctx) return;
 
     const equipo = await equipoQueAtiende(ctx.tenantId);
-    // Nunca a quien lo acaba de levantar: recibir un correo contándote lo que
-    // acabas de hacer enseña a ignorar los correos. Es la misma regla que
-    // siguen los otros tres avisos.
-    const gente = await personas([actorId]);
-    const yo = gente.get(actorId)?.email;
-    const destinos = equipo.map((p) => p.email).filter((e) => e !== yo);
-    if (destinos.length === 0) return;
+    // Nunca a quien lo acaba de levantar: enterarte de lo que acabas de hacer
+    // enseña a ignorar los avisos. Misma regla que los otros cuatro.
+    const destinatarios = equipo.filter((p) => p.id !== actorId);
+    if (destinatarios.length === 0) return;
 
+    const gente = await personas([actorId], ctx.tenantId);
     const quien = gente.get(actorId)?.name ?? null;
     const href = await enlace(ctx.slug, t.id);
-    const { html, texto } = plantilla({
+    await repartir({
+      tenantId: ctx.tenantId,
+      ticketId: t.id,
+      tipo: "ticket.creado",
+      destinatarios,
+      ids: destinatarios.map((p) => p.id),
       titulo: `${t.reference} · entró un ticket nuevo`,
       cuerpo: [
         `${quien ? `${quien} levantó` : "Entró"} «${t.subject}».`,
@@ -340,13 +415,7 @@ export async function avisarEquipoDeAlta(
       ],
       boton: { texto: "Abrir el ticket", href },
       pie: `${ctx.name} · recibes esto porque atiendes la cola de servicio.`,
-    });
-
-    await enviar(ctx.tenantId, {
-      para: destinos,
       asunto: `${t.reference} · ticket nuevo`,
-      html,
-      texto,
     });
   } catch (e) {
     console.error("[mail] aviso de alta al equipo", e);
@@ -359,7 +428,7 @@ export type { Ticket as TicketParaAviso };
 /**
  * Expuesto solo para ejercitar las plantillas y la lista de destinatarios desde
  * un script de prueba. `equipoQueAtiende` decide a quién le llega el aviso de un
- * ticket nuevo, y eso hay que poder comprobarlo contra la base real sin montar
- * una petición.
+ * ticket nuevo y `personas` decide POR QUÉ CANAL le llega a cada quien: las dos
+ * cosas hay que poder comprobarlas contra la base real sin montar una petición.
  */
-export const _interno = { plantilla, equipoQueAtiende };
+export const _interno = { plantilla, equipoQueAtiende, personas };

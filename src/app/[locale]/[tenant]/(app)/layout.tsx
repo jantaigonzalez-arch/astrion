@@ -10,6 +10,8 @@ import { Sidebar, SIDEBAR_COOKIE } from "@/components/portal/sidebar";
 import { SoloLectura } from "@/components/portal/solo-lectura";
 import { Topbar } from "@/components/portal/topbar";
 import { TenantBar } from "@/components/portal/tenant-bar";
+import { Campana } from "@/components/portal/campana";
+import { contarSinLeer, misAvisos } from "@/lib/notificaciones";
 import { tablerosDelMenu } from "@/lib/ml/dashboards";
 
 export default async function TenantAppLayout({
@@ -60,10 +62,43 @@ export default async function TenantAppLayout({
   // Las dos en paralelo: son independientes y encadenarlas sumaría sus tiempos
   // en cada navegación. Las dos están en caché por empresa, así que en una
   // navegación normal ninguna toca la base.
-  const [marca, tableros] = await Promise.all([
+  const [marca, tableros, avisosCrudos, sinLeer] = await Promise.all([
     getTenantBrand(tenant),
     tablerosDelMenu(),
+    // Los avisos NO están en caché ni pueden estarlo: son de cada persona y
+    // cambian en cuanto alguien comenta. Van en el mismo `Promise.all` para
+    // que su tiempo no se sume al de las otras dos.
+    //
+    // De visita se saltan: un operador de Astraion no es miembro y no tiene
+    // avisos, así que preguntarlos sería una consulta que siempre devuelve nada.
+    ctx!.impersonated ? Promise.resolve([]) : misAvisos(),
+    ctx!.impersonated ? Promise.resolve(0) : contarSinLeer(),
   ]);
+
+  /*
+    La fecha se formatea AQUÍ y no en la campana.
+
+    La campana es un componente de cliente, y una fecha formateada en el
+    navegador sale distinta de la que renderizó el servidor —zona horaria y
+    locale del visitante contra los del contenedor—, que es un desajuste de
+    hidratación clásico y silencioso. Formateada en el servidor, las dos mitades
+    dicen lo mismo.
+  */
+  const formato = new Intl.DateTimeFormat(locale === "en" ? "en-US" : "es-MX", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const avisos = avisosCrudos.map((a) => ({
+    id: a.id,
+    ticketId: a.ticketId,
+    reference: a.reference,
+    title: a.title,
+    body: a.body,
+    leido: a.readAt !== null,
+    cuando: formato.format(a.createdAt),
+  }));
 
   const brand = marca ?? {
     name: ctx!.name,
@@ -102,6 +137,21 @@ export default async function TenantAppLayout({
             name={session!.user.name}
             email={session!.user.email}
             brand={brand}
+            /*
+              La campana se monta aquí, en el layout, para que esté en TODA la
+              aplicación: enterarse de algo no puede depender de en qué pantalla
+              estabas. Es el mismo criterio que puso al asistente en un sitio
+              fijo.
+
+              De visita no se pinta: un operador de Astraion entra en solo
+              lectura y no es miembro de la empresa, así que no tiene avisos
+              propios que ver y la campana solo diría cero para siempre.
+            */
+            campana={
+              ctx!.impersonated ? undefined : (
+                <Campana avisos={avisos} sinLeer={sinLeer} />
+              )
+            }
           />
           <main className="print-main flex-1 bg-background p-6 lg:p-8">{children}</main>
         </div>

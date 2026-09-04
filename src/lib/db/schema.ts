@@ -302,6 +302,76 @@ export const leads = pgTable("leads", {
   index("leads_status_created_idx").on(t.status, t.createdAt),
 ]);
 
+/* ------------------------- Bandeja de avisos ------------------------- */
+
+/**
+ * LO QUE A CADA PERSONA LE FALTA VER, dentro del propio sistema.
+ *
+ * ── POR QUÉ NO BASTABA EL CORREO ──────────────────────────────────────────
+ *
+ * Porque quien trabaja aquí dentro no debería tener que salir a su bandeja de
+ * correo para enterarse de lo que pasa en la pantalla que ya tiene abierta. Y
+ * porque el correo al equipo se acumula hasta que se filtra: un agente que
+ * recibe un mensaje por cada ticket, cada comentario y cada asignación deja de
+ * leerlos en una semana, y a partir de ahí tampoco lee el que sí importaba.
+ *
+ * El reparto que sale de eso: TODO EL MUNDO tiene campana, y solo el cliente
+ * recibe además correo. El cliente no vive aquí —entra cuando tiene un problema
+ * y se va—, así que para él el correo sigue siendo el canal, y la campana es lo
+ * que se encuentra si entra. Ver `lib/notificaciones.ts`.
+ *
+ * ── UNA FILA POR PERSONA Y POR AVISO ──────────────────────────────────────
+ *
+ * No una fila por evento con una lista de destinatarios. `read_at` es de CADA
+ * persona: con una fila compartida, que uno la marque leída se la marcaría a
+ * los siete, que es justo lo que una bandeja no puede hacer.
+ *
+ * ── EL TICKET ES UNA LLAVE DE VERDAD ──────────────────────────────────────
+ *
+ * `ON DELETE CASCADE`: un aviso que apunta a un ticket borrado es un renglón
+ * que lleva a una pantalla que no existe. Hoy los cinco avisos son de tickets;
+ * el día que haya de otra cosa, ampliar esto es una migración, y que se note es
+ * preferible a un `subject_id` suelto que admita filas colgando de nada.
+ */
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** A quién le toca verlo. Del plano de control: una identidad, muchas empresas. */
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id, { onDelete: "cascade" }),
+    /** Qué pasó: `ticket.created`, `ticket.commented`, `ticket.assigned`… */
+    kind: varchar("kind", { length: 40 }).notNull(),
+    /**
+     * Lo que se lee en la campana, ya redactado y CON EL FOLIO DENTRO.
+     *
+     * Se guarda hecho en vez de componerse al pintarlo: así la lista no
+     * necesita un join por renglón, y un aviso sigue diciendo lo que decía
+     * aunque el ticket haya cambiado de asunto desde entonces. Un aviso es lo
+     * que pasó ese día, no un espejo del estado de hoy.
+     */
+    title: varchar("title", { length: 200 }).notNull(),
+    body: varchar("body", { length: 400 }),
+    /** Nulo = sin leer. Es POR PERSONA; ver la nota de arriba. */
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    // La lista de la campana: lo mío, lo más reciente arriba.
+    index("notifications_user_idx").on(t.userId, t.createdAt),
+    // El contador del punto rojo. Parcial porque solo se cuenta lo NO leído, y
+    // ese conjunto es diminuto comparado con el histórico: el índice se
+    // mantiene pequeño para siempre en vez de crecer con todo lo ya visto.
+    index("notifications_sin_leer_idx")
+      .on(t.userId)
+      .where(sql`${t.readAt} is null`),
+  ],
+);
+
 /* ------------------------- Catálogo (CMS admin) ------------------------- */
 export const services = pgTable("services", {
   id: uuid("id").primaryKey().defaultRandom(),
