@@ -30,6 +30,24 @@ export default async function PedidosPage({
   // `isInternal` y no `isSupport`: el vendedor tiene que poder contestarle al
   // cliente si su pedido ya se está comprando. Ver el estado no es lo mismo que
   // moverlo — requisitar y autorizar siguen siendo de operación.
+  /*
+    ESTO CIERRA UN AGUJERO, y el cambio es deliberado.
+
+    El guardia era `isInternal`, o sea que un agente podía abrir esta pantalla
+    escribiendo la dirección — pero NUNCA la tuvo en su menú, porque la sección
+    Ventas no es suya. Es exactamente la discrepancia que la cabecera de
+    `portal/menu.ts` cuenta con el tablero de Ventas: la barra escondía y la URL
+    enseñaba.
+
+    Con el permiso por módulo la barra y el guardia leen la misma regla, así que
+    la puerta se cierra sola. Comprobado antes de tocarlo: nada enlaza aquí
+    salvo la barra lateral, y la requisición no nace de esta pantalla sino de la
+    ficha del negocio, que vive bajo `/admin/crm` y que un agente tampoco podía
+    abrir. Ningún camino de trabajo se rompe.
+
+    Si algún día un agente tiene que ver los pedidos, ahora hay cómo decirlo sin
+    convertirlo en vendedor: Ventas en «Ver», desde su ficha.
+  */
   if (!(await puedeEn("ventas", "ver"))) {
     await redirectInTenant("/dashboard", locale);
   }

@@ -20,7 +20,11 @@ export default async function NewContractPage({
   const { deal: dealParam } = await searchParams;
   setRequestLocale(locale);
 
-  if (!(await puedeEn("clientes", "editar"))) {
+  // `administrar` y no `editar`: dar de alta un contrato era de administración
+  // antes de este modelo, y es lo que sigue exigiendo `createContract`. Con
+  // `editar`, un vendedor abría el formulario y el guardado lo rechazaba — una
+  // pantalla que promete algo que no puede cumplir.
+  if (!(await puedeEn("clientes", "administrar"))) {
     await redirectInTenant("/admin/contratos", locale);
   }
 
