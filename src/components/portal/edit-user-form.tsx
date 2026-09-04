@@ -219,8 +219,24 @@ export function ResetPasswordForm({ userId, email }: { userId: string; email: st
       <h2 className="flex items-center gap-2 font-semibold">
         <KeyRound className="size-4 text-primary" /> Restablecer contraseña
       </h2>
+      {/*
+        SON DOS PASOS Y ANTES NO SE DECÍA.
+
+        «Genera una nueva contraseña y compártela con el usuario» describe
+        generar y compartir, y se salta justo el paso del medio: guardarla. Con
+        «Generar» pegado al campo y el botón de guardar en la esquina y con
+        estilo secundario, la lectura natural era que generar YA hacía el
+        trabajo — se copiaba la contraseña, se mandaba por mensaje y la persona
+        no podía entrar, porque nunca se guardó nada.
+
+        Ahora los pasos van numerados en el texto y el botón que guarda es el
+        primario. Lo que hace `Generar` está dicho: rellena el campo.
+      */}
       <p className="mt-1 text-sm text-muted-foreground">
-        Genera una nueva contraseña y compártela con el usuario.
+        Son dos pasos: <strong className="text-foreground">1)</strong> escribe una
+        contraseña o pulsa «Generar», que solo rellena el campo, y{" "}
+        <strong className="text-foreground">2)</strong> pulsa «Guardar contraseña».
+        Hasta que no la guardes, la cuenta sigue con la anterior.
       </p>
 
       <form action={action} className="mt-4 grid gap-3">
@@ -242,29 +258,49 @@ export function ResetPasswordForm({ userId, email }: { userId: string; email: st
 
         <ErrorMsg error={state.error} />
         {state.ok && (
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-success/30 bg-success/5 px-3 py-2 text-sm">
-            <CheckCircle2 className="size-4 text-success" />
-            <span className="font-mono">{email} / {password}</span>
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(`${email} / ${password}`);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1500);
-              }}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Copiar"
-            >
-              <Copy className="size-4" />
-            </button>
-            {copied && <span className="text-xs text-success">¡copiado!</span>}
+          /*
+            La confirmación DICE que se guardó, con palabras.
+
+            Antes era un renglón verde con «correo / contraseña» y un icono, sin
+            una sola frase: quien lo miraba veía dos datos y ninguna respuesta a
+            la única pregunta que tenía, que era si había quedado guardada. Está
+            comprobado que la acción guarda —el hash cambia y la contraseña
+            nueva abre sesión—; lo que faltaba era decirlo.
+
+            Y el aviso de que no se vuelve a ver: lo que se guarda es el hash,
+            así que salir de esta pantalla sin copiarla significa generar otra.
+          */
+          <div className="rounded-lg border border-success/30 bg-success/5 px-3 py-2.5 text-sm">
+            <p className="flex items-center gap-2 font-medium text-success">
+              <CheckCircle2 className="size-4 shrink-0" />
+              Contraseña guardada. Ya puede entrar con ella.
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="font-mono text-xs">{email} / {password}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(`${email} / ${password}`);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                }}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Copiar correo y contraseña"
+              >
+                <Copy className="size-4" />
+              </button>
+              {copied && <span className="text-xs text-success">¡copiado!</span>}
+            </div>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Cópiala ahora: se guarda cifrada y no se puede volver a mostrar.
+            </p>
           </div>
         )}
 
         <div className="flex justify-end">
-          <Button type="submit" variant="outline" disabled={pending || password.length < 8}>
+          <Button type="submit" disabled={pending || password.length < 8}>
             {pending ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
-            Restablecer
+            Guardar contraseña
           </Button>
         </div>
       </form>
