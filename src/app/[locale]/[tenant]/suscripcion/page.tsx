@@ -6,7 +6,7 @@ import { redirectInTenant } from "@/lib/nav-server";
 import { TenantMark } from "@/components/portal/tenant-mark";
 import { PoweredByAstraion } from "@/components/portal/powered-by";
 import { Card } from "@/components/ui/card";
-import { planDe } from "@/lib/suscripcion";
+import { planDe, precioDelPlan } from "@/lib/suscripcion";
 import { OpcionesDePago } from "@/components/portal/opciones-de-pago";
 import { CerrarSesion } from "@/components/portal/cerrar-sesion";
 
@@ -79,11 +79,7 @@ export default async function SuscripcionPage({
             <p className="mt-4 rounded-lg bg-secondary/50 px-3 py-2 text-sm">
               Plan <span className="font-medium text-foreground">{plan.nombre}</span>{" "}
               · {plan.escalon} ·{" "}
-              {new Intl.NumberFormat("en-US", {
-                style: "currency",
-                currency: "USD",
-                maximumFractionDigits: 0,
-              }).format(plan.precioUsd)}{" "}
+              {precioDelPlan(plan)}{" "}
               al mes <span className="text-muted-foreground">+ IVA</span>
             </p>
           )}

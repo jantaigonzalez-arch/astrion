@@ -62,6 +62,21 @@ export const PLANES = {
 export type PlanId = keyof typeof PLANES;
 
 /**
+ * El precio, escrito de forma que no se pueda leer mal.
+ *
+ * «$320» a secas es 320 PESOS para cualquiera que lo lea en México —el símbolo
+ * es el mismo en las dos monedas— y esta es una pantalla que pide dinero: un
+ * malentendido de 17 a 1 no se descubre hasta que llega el cargo.
+ *
+ * Por eso la moneda va escrita al lado del símbolo y no se confía en el
+ * formateador: `Intl` con `en-US` produce «$320», que es correcto para quien
+ * lee en Estados Unidos y ambiguo para quien lee aquí.
+ */
+export function precioDelPlan(p: { precioUsd: number }): string {
+  return `$${p.precioUsd.toLocaleString("en-US")} USD`;
+}
+
+/**
  * El plan, si se reconoce.
  *
  * `null` para lo que no esté en el catálogo —hoy `poc`, que es lo que llevan

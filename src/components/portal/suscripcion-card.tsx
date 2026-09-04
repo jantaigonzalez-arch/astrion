@@ -1,14 +1,7 @@
 import { CalendarClock, CircleCheck, Gift, Orbit } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { planDe, type EstadoSuscripcion } from "@/lib/suscripcion";
+import { planDe, precioDelPlan, type EstadoSuscripcion } from "@/lib/suscripcion";
 import { OpcionesDePago } from "@/components/portal/opciones-de-pago";
-
-const precio = (usd: number) =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(usd);
 
 /**
  * La suscripción, en su propia pestaña de Configuración.
@@ -65,7 +58,7 @@ export function SuscripcionCard({
           {p && (
             <div className="text-right">
               <div className="text-2xl font-semibold tracking-tight">
-                {precio(p.precioUsd)}
+                {precioDelPlan(p)}
               </div>
               <div className="text-xs text-muted-foreground">al mes + IVA</div>
             </div>
