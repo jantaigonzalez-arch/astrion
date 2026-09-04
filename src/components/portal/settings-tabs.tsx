@@ -8,6 +8,7 @@ import {
   Mail,
   Workflow,
   Telescope,
+  Orbit,
   type LucideIcon,
 } from "lucide-react";
 import { Link, usePathname } from "@/lib/nav";
@@ -37,6 +38,10 @@ const TABS: Tab[] = [
   // operación andando y alguien decide que un análisis sobra o falta, no al
   // montar la empresa.
   { href: "/admin/configuracion/analisis", label: "Qué se analiza", Icon: Telescope },
+  // Al final y no al principio: es de la CUENTA, no de cómo trabaja la
+  // empresa. Quien entra a Configuración viene casi siempre a otra cosa, y
+  // ponerla primero convertiría esta área en una pantalla de cobro.
+  { href: "/admin/configuracion/suscripcion", label: "Suscripción", Icon: Orbit },
 ];
 
 export function SettingsTabs() {

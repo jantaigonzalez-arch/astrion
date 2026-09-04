@@ -36,18 +36,26 @@ export type EstadoInquilino = (typeof tenantStatus)["enumValues"][number];
  * Júpiter para más— y sin que el nombre prometa un tamaño que no corresponde.
  *
  * Hoy hay uno solo: **Tierra**, que es el planeta donde hay operación. Es el
- * plan completo, el que usa una empresa que trabaja de verdad con el sistema.
+ * plan ESTÁNDAR —la pantalla lo dice con esa palabra— porque es lo que recibe
+ * quien contrata: el sistema completo, sin recortes ni módulos que se compren
+ * aparte. `escalon` es lo que se lee en la tarjeta; `nombre` es cómo se llama.
  *
- * El precio vive aquí y en pesos, no en dólares: una cuenta de Stripe México no
- * puede cobrar en dólares a una tarjeta mexicana, y un precio en dólares se
- * mueve solo cada vez que se mueve el tipo de cambio.
+ * ── EL PRECIO VA EN DÓLARES ───────────────────────────────────────────────
+ *
+ * Es como se decidió venderlo. Queda anotado que COBRAR en dólares a una
+ * tarjeta mexicana no lo permite una cuenta de Stripe México: cuando llegue la
+ * pasarela habrá que fijar el importe en pesos al tipo de cambio del día, o
+ * abrir la cuenta en otro país. Lo que se muestra aquí es el precio de lista,
+ * que es una decisión comercial y no un detalle de la pasarela.
  */
 export const PLANES = {
   tierra: {
     nombre: "Tierra",
-    lema: "El plan completo: toda la operación en un sitio.",
+    /** Cómo se nombra el nivel en la pantalla. Ver la nota de arriba. */
+    escalon: "Estándar",
+    lema: "El sistema completo: servicio, ventas, compras y análisis.",
     /** Al mes, ANTES de IVA. */
-    precioMxn: 5950,
+    precioUsd: 320,
   },
 } as const;
 

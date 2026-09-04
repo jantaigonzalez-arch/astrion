@@ -1,5 +1,5 @@
 import { setRequestLocale } from "next-intl/server";
-import { CreditCard, Headset, Lock } from "lucide-react";
+import { Lock } from "lucide-react";
 import { getTenantContext } from "@/lib/tenancy/context";
 import { getTenantBrand } from "@/lib/data/platform";
 import { redirectInTenant } from "@/lib/nav-server";
@@ -7,6 +7,7 @@ import { TenantMark } from "@/components/portal/tenant-mark";
 import { PoweredByAstraion } from "@/components/portal/powered-by";
 import { Card } from "@/components/ui/card";
 import { planDe } from "@/lib/suscripcion";
+import { OpcionesDePago } from "@/components/portal/opciones-de-pago";
 import { CerrarSesion } from "@/components/portal/cerrar-sesion";
 
 /**
@@ -76,12 +77,13 @@ export default async function SuscripcionPage({
 
           {plan && (
             <p className="mt-4 rounded-lg bg-secondary/50 px-3 py-2 text-sm">
-              Plan <span className="font-medium text-foreground">{plan.nombre}</span> ·{" "}
-              {new Intl.NumberFormat("es-MX", {
+              Plan <span className="font-medium text-foreground">{plan.nombre}</span>{" "}
+              · {plan.escalon} ·{" "}
+              {new Intl.NumberFormat("en-US", {
                 style: "currency",
-                currency: "MXN",
+                currency: "USD",
                 maximumFractionDigits: 0,
-              }).format(plan.precioMxn)}{" "}
+              }).format(plan.precioUsd)}{" "}
               al mes <span className="text-muted-foreground">+ IVA</span>
             </p>
           )}
@@ -105,66 +107,5 @@ export default async function SuscripcionPage({
         </div>
       </div>
     </main>
-  );
-}
-
-/**
- * Los dos caminos para pagar.
- *
- * ── EL DE LA TARJETA SOLO APARECE SI EXISTE ───────────────────────────────
- *
- * `SUSCRIPCION_PAGO_URL` es un enlace de pago del proveedor. Sin esa variable no
- * se pinta el botón: un botón de pagar que no lleva a ningún sitio es el peor
- * control posible en la pantalla que le pide dinero a alguien.
- *
- * ── Y SE DICE QUE NO LLEVA FACTURA ────────────────────────────────────────
- *
- * Porque una empresa mexicana la necesita para deducir el gasto, y descubrirlo
- * DESPUÉS de pagar convierte una venta en un reclamo. Quien necesite CFDI tiene
- * el otro camino, que es el que lo emite.
- */
-export function OpcionesDePago() {
-  const pagoUrl = process.env.SUSCRIPCION_PAGO_URL;
-
-  return (
-    <>
-      <a
-        href="mailto:hola@astraion.com?subject=Activar%20mi%20suscripci%C3%B3n"
-        className="flex items-start gap-3 rounded-xl border border-border bg-card p-3.5 transition-colors hover:border-primary/40 hover:bg-secondary/40"
-      >
-        <Headset className="mt-0.5 size-4 shrink-0 text-primary" />
-        <span className="min-w-0">
-          <span className="block text-sm font-medium">
-            Comunícate con tu agente
-          </span>
-          <span className="mt-0.5 block text-xs text-muted-foreground">
-            Te ayudamos a activarla y recibes tu factura fiscal.
-          </span>
-        </span>
-      </a>
-
-      {pagoUrl && (
-        <a
-          href={pagoUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-start gap-3 rounded-xl border border-border bg-card p-3.5 transition-colors hover:border-primary/40 hover:bg-secondary/40"
-        >
-          <CreditCard className="mt-0.5 size-4 shrink-0 text-primary" />
-          <span className="min-w-0">
-            <span className="block text-sm font-medium">
-              Paga con tarjeta de crédito
-            </span>
-            <span className="mt-0.5 block text-xs text-muted-foreground">
-              Se activa al instante.{" "}
-              <span className="font-medium text-warning">
-                Esta vía no emite factura
-              </span>
-              : si la necesitas, usa la opción de arriba.
-            </span>
-          </span>
-        </a>
-      )}
-    </>
   );
 }
