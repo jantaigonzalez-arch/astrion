@@ -35,6 +35,7 @@ import type { MembershipRole } from "@/lib/db/platform";
 import { isAdminRole, ROLE_LABELS } from "@/lib/roles";
 import { navFor, type NavGroup, type NavItem, type TableroItem } from "@/lib/portal/menu";
 import type { Ajustes } from "@/lib/permisos";
+import { Astronauta } from "@/components/portal/astronauta";
 import { EtiquetaBeta } from "@/components/portal/capa-inteligencia";
 import { esCapaDeInteligencia } from "@/lib/capa";
 import { cn } from "@/lib/utils";
@@ -300,17 +301,22 @@ export function Sidebar({
                   <div aria-hidden="true" className="mx-2 mb-2 border-t border-border" />
                 ) : (
                   <p className="mb-2 flex items-center gap-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    {g.section}
                     {/*
-                      La marca va en el TÍTULO de la sección, no en cada renglón:
-                      lo que está en beta es el conjunto, y repetirlo seis veces
-                      en una lista de seis lo convierte en ruido.
+                      EL ASTRONAUTA APARECE ANTES DE ENTRAR.
 
-                      Y se deduce de a qué módulo pertenecen sus enlaces, no de
-                      una lista de nombres de sección: «Análisis» y «Tableros» se
-                      llaman distinto y son el mismo módulo, así que preguntarlo
-                      por el nombre habría marcado una y dejado la otra.
+                      Es la marca de la capa y su sitio natural es aquí: quien
+                      recorre el menú tiene que poder distinguir el grupo que
+                      estima del que suma sin leer los rótulos. Dentro, la
+                      cabecera lo repite en grande.
+
+                      La etiqueta de beta va en el TÍTULO y no en cada renglón:
+                      lo que está en beta es la capa entera, y repetirlo en cada
+                      tablero convierte una advertencia en ruido.
                     */}
+                    {enBeta(g) && (
+                      <Astronauta className="size-4 shrink-0 text-primary" />
+                    )}
+                    {g.section}
                     {enBeta(g) && <EtiquetaBeta />}
                   </p>
                 ))}

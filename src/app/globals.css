@@ -606,164 +606,81 @@ body.redimensionando * {
 
    Inteligencia y los tableros no enseñan lo que alguien capturó: una ESTIMA lo
    que todavía no ha pasado y la otra CRUZA los seis módulos para sacar una
-   lectura. Es otra clase de cosa, y tiene que SENTIRSE como otra clase de cosa
-   desde el primer vistazo —antes de leer un número—.
+   lectura. Hay que notar que se cruzó una frontera —antes de leer un número—,
+   pero notarlo NO ES LO MISMO QUE ATERRIZAR EN OTRA APLICACIÓN.
 
-   Por eso no es un acento distinto sobre el mismo tema: es un tema entero.
-   Cambia el papel, la tinta, el tipo de letra de los rótulos y hasta el radio de
-   las esquinas. Quien pasa de Clientes a Inteligencia nota que cruzó una
-   frontera, que es exactamente lo que hay que notar antes de decidir con un
-   pronóstico.
+   ── HUBO UNA VERSIÓN CON TEMA PROPIO Y ERA DEMASIADO ─────────────────────
 
-   ── DE DÓNDE SALE EL ASPECTO ─────────────────────────────────────────────
+   Cambiaba la paleta entera —papel y tinta cálidos, verde de fósforo, rótulos
+   monoespaciados, esquinas casi rectas— y de noche se invertía a fósforo sobre
+   negro. Se veía bien y estaba mal: quien pasaba de Clientes a Inteligencia no
+   sentía que cruzaba una frontera, sentía que se había ido del ERP. Y cada
+   componente que se agregara después habría tenido que probarse contra dos
+   paletas en vez de una.
 
-   De la informática de laboratorio: papel cálido y tinta, rótulos monoespaciados
-   en versalitas, reglas de un pixel en vez de tarjetas con sombra, esquinas casi
-   rectas. En oscuro se invierte a fósforo sobre negro, que es la misma máquina
-   de noche. Es deliberadamente MENOS pulido que el resto del ERP: aquí se está
-   trabajando con estimaciones, y un acabado de producto terminado sobre un
-   número que puede fallar es una promesa que no se puede cumplir.
-
-   ── SE HACE REDEFINIENDO LAS VARIABLES, NO PISANDO COMPONENTES ───────────
-
-   Todo lo de dentro —tarjetas, botones, insignias, gráficas— ya lee de
-   `--background`, `--card`, `--border`… Redefinirlas en el contenedor hace que
-   la capa entera cambie de piel sin tocar un solo componente, y que uno nuevo
-   nazca ya con el aspecto correcto. Pintar reglas por componente habría dejado
-   la mitad de la pantalla con el tema de fuera en cuanto alguien agregara algo.
+   Lo que queda es lo mínimo que se nota y no distrae: un baño de color de un
+   2,5 % sobre el mismo fondo de siempre, y una cabecera con marca propia. Ni
+   una tipografía distinta, ni un radio distinto, ni un solo color de componente
+   tocado. La señal fuerte la da el astronauta, que es lo que se mira primero.
    ========================================================================== */
 
+/*
+  ── NADA DE `color-mix` AQUÍ, Y NO ES UNA MANÍA ──────────────────────────
+
+  La primera versión mezclaba el matiz sobre las variables vigentes, que es lo
+  elegante: un solo valor válido en claro y en oscuro. Pero el compilador no
+  puede calcular una mezcla de dos variables, así que envuelve la buena en un
+  `@supports` y deja fuera un respaldo — y el respaldo que elige es el PRIMER
+  color de la mezcla. En el CSS servido quedaba `background: var(--primary)`:
+  la capa entera de azul de marca sólido, con el texto encima, para cualquier
+  navegador que no entienda `color-mix`. Poner antes un respaldo propio tampoco
+  sirvió: el suyo se emite después y gana.
+
+  Así que van dos valores literales, uno por tema. Cuesta mantener los dos en
+  línea si el fondo base cambia —está anotado en `:root` y en `.dark`— y a
+  cambio no hay ningún navegador en el que esto se vea mal.
+
+  El velo es de verdad mínimo: sobre `oklch(0.99 0.004 240)` esto baja dos
+  puntos de luz y sube seis milésimas de croma. Se nota al cambiar de pantalla y
+  no se nota mirándola fija, que es exactamente lo que se pidió.
+*/
 .capa-inteligencia {
-  --radius: 0.25rem;
-
-  /* Papel cálido y tinta. */
-  --background: oklch(0.958 0.016 85);
-  --foreground: oklch(0.24 0.022 62);
-  --card: oklch(0.985 0.011 85);
-  --card-foreground: oklch(0.24 0.022 62);
-  --popover: oklch(0.985 0.011 85);
-  --popover-foreground: oklch(0.24 0.022 62);
-
-  /* Fósforo: el acento de la capa. Verde y no el azul de la marca, para que la
-     frontera se note también en los botones y no solo en el fondo. */
-  --primary: oklch(0.46 0.105 152);
-  --primary-foreground: oklch(0.975 0.015 85);
-  --accent: oklch(0.62 0.12 150);
-  --accent-foreground: oklch(0.2 0.02 62);
-
-  --secondary: oklch(0.925 0.022 85);
-  --secondary-foreground: oklch(0.28 0.025 62);
-  --muted: oklch(0.925 0.022 85);
-  --muted-foreground: oklch(0.47 0.022 65);
-
-  --border: oklch(0.845 0.03 78);
-  --input: oklch(0.845 0.03 78);
-  --ring: oklch(0.46 0.105 152);
-
-  --brand-500: oklch(0.46 0.105 152);
-  --brand-400: oklch(0.56 0.115 150);
-  --brand-300: oklch(0.66 0.11 148);
-  --signal: oklch(0.62 0.12 150);
-  --signal-bright: oklch(0.72 0.13 148);
-
-  background: var(--background);
-  color: var(--foreground);
+  background: oklch(0.975 0.01 250);
 }
 
-/*
-  De noche, la misma máquina: fósforo sobre negro.
-
-  Se declara con los dos selectores que usa el resto del archivo —la clase
-  `.dark` que pone el script del tema y el atributo, por si se fija a mano— para
-  que la capa no se quede en papel blanco dentro de un portal en oscuro, que es
-  el fallo que más salta.
-*/
 .dark .capa-inteligencia,
 :root[data-theme="dark"] .capa-inteligencia {
-  --background: oklch(0.148 0.016 150);
-  --foreground: oklch(0.895 0.052 152);
-  --card: oklch(0.188 0.022 150);
-  --card-foreground: oklch(0.895 0.052 152);
-  --popover: oklch(0.188 0.022 150);
-  --popover-foreground: oklch(0.895 0.052 152);
-
-  --primary: oklch(0.78 0.155 152);
-  --primary-foreground: oklch(0.14 0.02 150);
-  --accent: oklch(0.82 0.14 150);
-  --accent-foreground: oklch(0.14 0.02 150);
-
-  --secondary: oklch(0.225 0.026 150);
-  --secondary-foreground: oklch(0.88 0.05 152);
-  --muted: oklch(0.225 0.026 150);
-  --muted-foreground: oklch(0.66 0.045 152);
-
-  --border: oklch(0.33 0.042 152);
-  --input: oklch(0.33 0.042 152);
-  --ring: oklch(0.78 0.155 152);
-
-  --brand-500: oklch(0.78 0.155 152);
-  --brand-400: oklch(0.7 0.14 150);
-  --brand-300: oklch(0.62 0.12 148);
-  --signal: oklch(0.82 0.14 150);
-  --signal-bright: oklch(0.9 0.15 148);
-}
-
-/*
-  Los rótulos, monoespaciados y en versalitas.
-
-  Solo los ENCABEZADOS y las etiquetas: el cuerpo del texto sigue en la tipografía
-  de siempre. Una pantalla entera en monoespaciado se lee peor, y lo que se busca
-  no es disfrazar la aplicación de terminal sino marcar que aquí se está mirando
-  instrumental, no un documento.
-*/
-.capa-inteligencia h1,
-.capa-inteligencia h2,
-.capa-inteligencia h3,
-.capa-inteligencia th {
-  font-family: var(--font-mono);
-  letter-spacing: 0.02em;
-}
-
-.capa-inteligencia h1 {
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-/* La regla de un pixel en vez de la sombra: el acabado de una hoja de
-   laboratorio, no el de una tarjeta de producto. */
-.capa-inteligencia [class*="shadow"] {
-  box-shadow: none;
+  background: oklch(0.185 0.028 261);
 }
 
 /*
   La cabecera de la capa: la frontera, dibujada.
 
-  Es lo único que la capa pinta por su cuenta, y su trabajo es que se vea que se
-  cruzó algo. La regla superior con el título encajado imita la cabecera de un
-  instrumento; el punto late para decir que el motor está vivo, y se queda quieto
-  cuando no lo está —ver `CapaInteligencia`—.
+  Una regla abajo y un degradado mínimo dentro — la cabecera de un instrumento,
+  no una tarjeta. El color lleva la transparencia EN EL PROPIO COLOR y no en una
+  mezcla, por lo mismo de arriba: así vale para los dos temas en una sola
+  declaración y sin respaldo que pueda salir opaco.
 */
 .capa-inteligencia-marco {
-  border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   background: linear-gradient(
     to bottom,
-    color-mix(in oklab, var(--primary) 6%, transparent),
+    oklch(0.52 0.19 258 / 0.07),
     transparent
   );
 }
 
-.capa-latido {
-  animation: capa-latido 2.4s ease-in-out infinite;
+.capa-flota {
+  animation: capa-flota 8s ease-in-out infinite;
 }
 
-@keyframes capa-latido {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
+@keyframes capa-flota {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-3px) rotate(-2.5deg); }
 }
 
-/* Quien pide menos movimiento no necesita un punto parpadeando en la esquina
-   para saber que el motor responde: el color ya lo dice. */
+/* Quien pide menos movimiento no necesita que el astronauta flote para saber
+   dónde está: la marca ya lo dice. */
 @media (prefers-reduced-motion: reduce) {
-  .capa-latido { animation: none; }
+  .capa-flota { animation: none; }
 }

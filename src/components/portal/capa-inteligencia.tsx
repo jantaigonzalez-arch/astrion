@@ -2,14 +2,21 @@
 
 import { usePathname } from "@/lib/nav";
 import { esCapaDeInteligencia } from "@/lib/capa";
+import { Astronauta } from "@/components/portal/astronauta";
 
 /**
  * LA FRONTERA, DIBUJADA.
  *
- * Envuelve el contenido de Inteligencia y de los Tableros y les cambia el tema
- * entero —papel, tinta, tipo de letra de los rótulos, esquinas—. El aspecto vive
- * en `.capa-inteligencia` (`globals.css`); esto solo decide cuándo se aplica y
- * pinta la cabecera que dice dónde está uno.
+ * Envuelve el contenido de Inteligencia y de los Tableros. Lo que cambia es
+ * MÍNIMO —un baño de color del 2,5 % sobre el mismo fondo— y una cabecera con
+ * el astronauta. Ni tipografía distinta, ni paleta distinta, ni un componente
+ * tocado.
+ *
+ * Hubo una versión con tema completo: papel y tinta cálidos, verde de fósforo,
+ * rótulos monoespaciados, y de noche fósforo sobre negro. Se veía bien y decía
+ * lo que no era — quien entraba no sentía que cruzaba una frontera dentro de su
+ * ERP, sentía que se había ido a otra aplicación. La señal fuerte la lleva el
+ * astronauta; el resto se queda como está.
  *
  * ── POR QUÉ AQUÍ Y NO EN UN `layout.tsx` DE LA RUTA ──────────────────────
  *
@@ -46,30 +53,24 @@ export function CapaInteligencia({ children }: { children: React.ReactNode }) {
  */
 function CabeceraDeCapa() {
   return (
-    <header className="capa-inteligencia-marco px-6 py-4 lg:px-8">
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="flex items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
-          {/*
-            El punto late para decir que hay algo corriendo detrás. No consulta
-            el estado del motor a propósito: esta cabecera se pinta en cada
-            navegación de la capa y preguntarle al servicio en cada una lo
-            convertiría en una dependencia de la barra de título. Quién está vivo
-            y quién no lo dice la pantalla de Inteligencia, que ya lo hace y con
-            el motivo delante.
-          */}
-          <span className="capa-latido inline-block size-1.5 rounded-full bg-primary" />
-          Capa de inteligencia
-        </span>
-        <span className="rounded-sm border border-primary/40 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-primary">
-          Beta
-        </span>
+    <header className="capa-inteligencia-marco flex items-start gap-3 px-6 py-4 lg:px-8">
+      <Astronauta className="capa-flota mt-0.5 size-9 shrink-0 text-primary" />
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+          <span className="text-sm font-semibold tracking-tight">
+            Capa de inteligencia
+          </span>
+          <span className="rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning ring-1 ring-warning/25">
+            Beta
+          </span>
+        </div>
+        <p className="mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground">
+          Aquí los números no se capturan: se <strong>estiman</strong> con tu
+          propio historial y se <strong>cruzan</strong> entre módulos. Sirven para
+          orientarse y decidir antes; no para cerrar un mes ni para reportar a un
+          tercero. Contrasta contra el módulo de origen antes de firmar nada.
+        </p>
       </div>
-      <p className="mt-1.5 max-w-3xl text-xs leading-relaxed text-muted-foreground">
-        Aquí los números no se capturan: se <strong>estiman</strong> con tu propio
-        historial y se <strong>cruzan</strong> entre módulos. Sirven para
-        orientarse y decidir antes; no para cerrar un mes ni para reportar a un
-        tercero. Contrasta contra el módulo de origen antes de firmar nada.
-      </p>
     </header>
   );
 }
