@@ -2,7 +2,7 @@
 
 import { usePathname } from "@/lib/nav";
 import { esCapaDeInteligencia } from "@/lib/capa";
-import { Astronauta } from "@/components/portal/astronauta";
+import { AstronautaCompleto } from "@/components/portal/astronauta";
 
 /**
  * LA FRONTERA, DIBUJADA.
@@ -65,7 +65,9 @@ export function CapaInteligencia({ children }: { children: React.ReactNode }) {
 function CabeceraDeCapa() {
   return (
     <header className="capa-inteligencia-marco flex flex-wrap items-center gap-x-2.5 gap-y-1 px-6 py-2 lg:px-8">
-      <Astronauta className="capa-flota size-4 shrink-0 text-primary" />
+      {/* La figura entera, no el casco: en la franja hay 28 px de alto y desde
+          24 se lee. El casco se reserva para los 16 px de la barra lateral. */}
+      <AstronautaCompleto className="capa-flota -my-1 size-7 shrink-0" />
       <span className="text-xs font-semibold">Capa de inteligencia</span>
       <span className="rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning ring-1 ring-warning/25">
         Beta

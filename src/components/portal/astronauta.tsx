@@ -64,3 +64,76 @@ export function Astronauta({ className }: { className?: string }) {
     </svg>
   );
 }
+
+/**
+ * EL ASTRONAUTA ENTERO, para donde hay sitio.
+ *
+ * El casco de arriba es la marca chica —16 px en la barra lateral—; esto es la
+ * misma figura completa, y va donde el espacio la deja respirar: la franja de la
+ * capa y el estado vacío de Inteligencia.
+ *
+ * ── SOBREVIVE DESDE 24 px, Y ESO SE MIDIÓ ─────────────────────────────────
+ *
+ * La primera figura que dibujé era de línea y a 16 px era un garabato. Esta es
+ * de formas macizas con contraste fuerte —visor casi negro sobre traje casi
+ * blanco—, y eso es lo que la salva: rasterizada a 20, 24, 32, 48 y 72 px se
+ * sigue leyendo como un astronauta a partir de 24. Por debajo va el casco.
+ *
+ * ── LOS COLORES SON FIJOS, Y ES CORRECTO QUE LO SEAN ──────────────────────
+ *
+ * No usa las variables del tema. Un traje espacial es blanco, el visor es
+ * oscuro y las suelas son rojas: teñirlo de azul de marca lo convertiría en una
+ * mancha azul con forma de muñeco. Funciona igual en claro y en oscuro porque el
+ * blanco del traje contrasta con los dos fondos —comprobado en los dos—, y el
+ * contorno gris claro es lo que lo despega del papel cuando el fondo es casi
+ * blanco.
+ *
+ * Los tres puntos del pecho sí son los de la casa —azul, ámbar y rojo de
+ * Astraion— y son el único guiño de marca que lleva.
+ */
+export function AstronautaCompleto({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 160 160" className={className} role="img" aria-label="Astronauta">
+      {/* La manguera sale de la cadera y se enrosca. Va primero para que el
+          guante le tape el nacimiento. */}
+      <path
+        d="M104 116c18 2 28 11 28 22 0 10-9 16-19 14"
+        fill="none"
+        stroke="#1d7fa8"
+        strokeWidth={7}
+        strokeLinecap="round"
+      />
+      {/* Hombros y mochila, detrás del torso. */}
+      <rect x="56" y="62" width="48" height="22" rx="11" fill="#c9d2e0" />
+      {/* Brazos y guantes. */}
+      <rect x="44" y="72" width="13" height="38" rx="6.5" fill="#eef2f8" stroke="#c9d2e0" strokeWidth={1.4} />
+      <rect x="103" y="72" width="13" height="38" rx="6.5" fill="#eef2f8" stroke="#c9d2e0" strokeWidth={1.4} />
+      <rect x="42" y="104" width="17" height="17" rx="7" fill="#b9c3d3" />
+      <rect x="101" y="104" width="17" height="17" rx="7" fill="#b9c3d3" />
+      {/* Piernas y botas, con la suela roja. */}
+      <rect x="65" y="106" width="13" height="34" rx="6" fill="#eef2f8" stroke="#c9d2e0" strokeWidth={1.4} />
+      <rect x="82" y="106" width="13" height="34" rx="6" fill="#eef2f8" stroke="#c9d2e0" strokeWidth={1.4} />
+      <rect x="62" y="132" width="18" height="14" rx="5" fill="#f7f9fc" stroke="#c9d2e0" strokeWidth={1.4} />
+      <rect x="80" y="132" width="18" height="14" rx="5" fill="#f7f9fc" stroke="#c9d2e0" strokeWidth={1.4} />
+      <rect x="62" y="141" width="18" height="5" rx="2.5" fill="#f2604a" />
+      <rect x="80" y="141" width="18" height="5" rx="2.5" fill="#f2604a" />
+      {/* Torso, encima de brazos y piernas para tapar sus arranques. */}
+      <rect x="57" y="70" width="46" height="44" rx="15" fill="#f7f9fc" stroke="#c9d2e0" strokeWidth={1.4} />
+      {/* El panel del pecho: el único guiño a la marca. */}
+      <rect x="68" y="79" width="24" height="14" rx="4" fill="#e3e9f3" />
+      <circle cx="74.5" cy="86" r="2.7" fill="#2f5fd0" />
+      <circle cx="80" cy="86" r="2.7" fill="#e8b023" />
+      <circle cx="85.5" cy="86" r="2.7" fill="#f2604a" />
+      <path d="M60 108h40" stroke="#c9d2e0" strokeWidth={3.4} strokeLinecap="round" />
+      {/* El casco, al final: encima de todo. */}
+      <circle cx="80" cy="44" r="26" fill="#f7f9fc" stroke="#c9d2e0" strokeWidth={1.4} />
+      <path
+        d="M80 26c11.6 0 21 8.4 21 18.8 0 5.6-2.8 9.8-7.8 9.8H66.8c-5 0-7.8-4.2-7.8-9.8C59 34.4 68.4 26 80 26z"
+        fill="#2b3446"
+      />
+      {/* El destello del visor, en el mismo sitio que en la marca chica: es lo
+          que hace que las dos se lean como el mismo personaje. */}
+      <circle cx="70.5" cy="36" r="4.3" fill="#5c6b86" />
+    </svg>
+  );
+}

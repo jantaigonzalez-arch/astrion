@@ -5,6 +5,7 @@ import { puedeEn } from "@/lib/tenancy/context";
 import { catalogo, perfilar, salud } from "@/lib/intelligence/client";
 import { forecastFor, listQuestions, modelsFor } from "@/lib/intelligence/questions";
 import { Card } from "@/components/ui/card";
+import { AstronautaCompleto } from "@/components/portal/astronauta";
 import { IntelligenceQuestionCard, type CandidateView, type ModelView, type QuestionView } from "@/components/portal/intelligence-question-card";
 import { IntelligenceNewQuestion, type ModuloOption } from "@/components/portal/intelligence-new-question";
 
@@ -176,12 +177,30 @@ export default async function InteligenciaPage({
 
       {cat.ok && <IntelligenceNewQuestion modulos={opciones} familias={cat.value.familias} />}
 
+      {/*
+        EL ESTADO VACÍO ES DONDE LA ILUSTRACIÓN HACE SU TRABAJO.
+
+        Una caja punteada con una frase dentro es lo que se pone cuando no hay
+        nada que enseñar; una figura grande convierte ese hueco en una portada.
+        Y es el único sitio de la aplicación con espacio de sobra: aquí no compite
+        con datos, porque por definición todavía no hay ninguno.
+
+        Es también la primera pantalla que ve alguien que entra a esta capa. Que
+        lo primero que encuentre sea un astronauta, y no un rectángulo vacío, dice
+        de una vez dónde está.
+      */}
       {vistas.length === 0 && (
-        <Card className="border-dashed p-8 text-center">
-          <p className="text-sm text-muted-foreground">
-            Todavía no hay ninguna pregunta configurada. Empieza por el módulo
-            donde trabajas.
-          </p>
+        <Card className="flex flex-col items-center gap-4 border-dashed px-6 py-12 text-center">
+          <AstronautaCompleto className="size-28" />
+          <div>
+            <p className="text-sm font-medium">
+              Todavía no hay ninguna pregunta configurada.
+            </p>
+            <p className="mt-1 max-w-md text-sm text-muted-foreground">
+              Empieza por el módulo donde trabajas: la primera pregunta suele ser
+              la que ya te haces a mano cada mes.
+            </p>
+          </div>
         </Card>
       )}
 
