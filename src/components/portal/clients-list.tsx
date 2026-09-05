@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { SLA_HOURS } from "@/lib/tickets";
 import { ThLocal, useOrdenLocal } from "@/components/portal/orden-local";
 import { AlertTriangle, Building2, Search, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
@@ -39,6 +40,8 @@ export type ClientListRow = {
   lastTicketAt: string | null;
   wonDeals: number;
   wonValue: number;
+  /** Plazo propio de primera respuesta, en horas. Nulo = el general. */
+  slaHours: number | null;
 };
 
 type Filter = "all" | "conAbiertos" | "sinPortal";
@@ -62,6 +65,10 @@ const VALORES = {
     c.hasPortal ? c.openTickets * 10_000 + c.totalTickets : null,
   ultimo: (c: ClientListRow) => (c.hasPortal ? c.lastTicketAt : null),
   comprado: (c: ClientListRow) => (c.wonDeals > 0 ? c.wonValue : null),
+  // Nulo para quien no pactó nada, así que ordenar por SLA agrupa arriba a los
+  // que sí tienen un plazo propio —que es la pregunta— y manda al final a los
+  // que van con el general. Ver `useOrdenLocal`.
+  sla: (c: ClientListRow) => c.slaHours,
   responsable: (c: ClientListRow) => c.ownerName,
 } as const;
 
@@ -209,6 +216,21 @@ export function ClientsList({
                   >
                     Comprado
                   </ThLocal>
+                  {/*
+                    EL PLAZO PACTADO, EN LA PANTALLA DONDE VIVE EL CLIENTE.
+
+                    Se configura en la ficha de la organización, que está en
+                    Ventas: a tres clics de aquí y en otra sección del menú. Se
+                    puso ahí porque ahí vive el formulario, y el resultado fue
+                    que quien administra clientes no lo encontraba.
+
+                    Aquí no se edita, se VE —y se ve de un vistazo quién tiene
+                    algo pactado y quién no, que es la pregunta que se hace al
+                    mirar una cartera—. El enlace lleva a cambiarlo.
+                  */}
+                  <ThLocal campo="sla" orden={orden} onPulsar={pulsar} inicial="desc">
+                    SLA
+                  </ThLocal>
                   <ThLocal campo="responsable" orden={orden} onPulsar={pulsar}>
                     Responsable
                   </ThLocal>
@@ -279,6 +301,31 @@ export function ClientsList({
                         // Cliente heredado del sistema anterior: su compra no pasó
                         // por el embudo, así que no hay negocio ganado que sumar.
                         <span className="text-muted-foreground">histórico</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {/*
+                        Nulo se dice «General», no se deja en blanco ni se pinta
+                        un guion: el campo vacío se leería como «este cliente no
+                        tiene compromiso», y lo tiene — el de siempre. Es el
+                        mismo cuidado que en el formulario que lo captura.
+                      */}
+                      {c.slaHours ? (
+                        <Link
+                          href={`/admin/crm/organizaciones/${c.id}/editar`}
+                          className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary ring-1 ring-primary/20 hover:bg-primary/15"
+                          title="Plazo pactado con este cliente. Pulsa para cambiarlo."
+                        >
+                          {c.slaHours} h
+                        </Link>
+                      ) : (
+                        <Link
+                          href={`/admin/crm/organizaciones/${c.id}/editar`}
+                          className="text-xs text-muted-foreground hover:text-primary"
+                          title={`Sin plazo propio: se le aplica el general de ${SLA_HOURS} h. Pulsa para pactar uno.`}
+                        >
+                          General
+                        </Link>
                       )}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">

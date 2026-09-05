@@ -123,6 +123,7 @@ async function Lista({ p, locale }: { p: Promise<ClientRow[]>; locale: string })
     taxId: c.taxId,
     industry: c.industry,
     ownerName: c.ownerName,
+    slaHours: c.slaHours,
     hasPortal: c.hasPortal,
     contracts: c.contracts,
     equipment: c.equipment,

@@ -800,6 +800,8 @@ export async function getClients() {
       phone: crmOrganizations.phone,
       ownerId: crmOrganizations.ownerId,
       clientId: crmOrganizations.clientId,
+      /** Plazo propio de primera respuesta. Nulo = el general. Ver `slaDueFrom`. */
+      slaHours: crmOrganizations.slaHours,
       // Se piden en crudo y el cero se pone abajo, en JavaScript. Envolverlos
       // aquí en un `coalesce` obligaba a escribirlos dentro de una plantilla
       // `sql`, y ahí Drizzle pierde el prefijo de la subconsulta: dos de ellas
