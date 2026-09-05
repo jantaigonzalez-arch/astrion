@@ -275,11 +275,15 @@ La persona puede negarse a promoverlo, nunca forzarlo: es la única defensa
 contra el sesgo de haber invertido esfuerzo en construirlo.
 
 - **Líneas base a batir:** `naive`, `seasonal_naive`, `drift`.
-- **Familias candidatas:** Ridge, Huber, árbol, Random Forest, XGBoost — con
-  variante destendenciada.
-- **Umbrales:** el error tiene que bajar ≥ 5 % *y* ganar ≥ 5 puntos de aciertos
-  dentro de la tolerancia. Con la línea base ya ≥ 95 % la exigencia se relaja,
-  porque no quedan puntos que ganar.
+- **Familias candidatas:** Ridge, Huber, *gradient boosting*, Random Forest y
+  XGBoost — más la variante destendenciada. En el desempate **gana la más
+  simple**, por regla del código y no por criterio de quien mira la tabla.
+- **Umbrales:** el error tiene que bajar ≥ 5 % **y** haber evidencia de que
+  cambia decisiones — o ≥ 5 puntos de aciertos dentro de la tolerancia, o una
+  bajada de error tan grande (≥ 20 %) que el umbral se quede corto para medirla.
+  Con la línea base ya ≥ 95 % la exigencia se relaja, porque no quedan puntos que
+  ganar. El porqué de las dos vías, con el caso medido, está en el
+  [README del motor](services/intelligence/README.md#el-examen).
 - **La partición es temporal** y el tramo de prueba se toca **una sola vez**, con
   el ganador ya decidido: elegirlo mirando la prueba convertiría la medición en
   la búsqueda.
