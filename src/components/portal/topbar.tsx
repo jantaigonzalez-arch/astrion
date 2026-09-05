@@ -4,6 +4,8 @@ import { signOut } from "next-auth/react";
 import { LogOut } from "lucide-react";
 import { AnalysisAssistant } from "@/components/portal/analysis-assistant";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
+import { DensidadToggle } from "@/components/portal/densidad-toggle";
+import type { Densidad } from "@/lib/densidad";
 import { TenantMark, type TenantBrand } from "@/components/portal/tenant-mark";
 
 export function Topbar({
@@ -11,6 +13,7 @@ export function Topbar({
   email,
   brand,
   campana,
+  densidad,
 }: {
   name?: string | null;
   email?: string | null;
@@ -24,6 +27,8 @@ export function Topbar({
    * barra tenga que saber nada de notificaciones.
    */
   campana?: React.ReactNode;
+  /** Densidad guardada, para que el menú nazca marcando la vigente. */
+  densidad: Densidad;
 }) {
   const initials = (name ?? email ?? "?")
     .split(" ")
@@ -62,6 +67,8 @@ export function Topbar({
         {/* Sitio fijo en toda la aplicación: es lo que lo vuelve costumbre. */}
         <AnalysisAssistant />
         {campana}
+        {/* Junto al tema: los dos son cómo se VE el sistema, no qué hace. */}
+        <DensidadToggle inicial={densidad} />
         <ThemeToggle />
         <div className="flex items-center gap-2.5">
           <div className="flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-signal text-xs font-semibold text-white">

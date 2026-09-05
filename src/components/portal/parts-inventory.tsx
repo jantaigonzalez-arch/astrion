@@ -299,7 +299,7 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <ThLocal campo="parte" orden={orden} onPulsar={pulsar}>

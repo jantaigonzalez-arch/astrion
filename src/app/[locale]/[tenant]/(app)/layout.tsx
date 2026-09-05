@@ -11,6 +11,7 @@ import { SoloLectura } from "@/components/portal/solo-lectura";
 import { Topbar } from "@/components/portal/topbar";
 import { TenantBar } from "@/components/portal/tenant-bar";
 import { Campana } from "@/components/portal/campana";
+import { DENSIDAD_COOKIE, densidadGuardada } from "@/lib/densidad";
 import { contarSinLeer, misAvisos } from "@/lib/notificaciones";
 import { tablerosDelMenu } from "@/lib/ml/dashboards";
 
@@ -130,7 +131,8 @@ export default async function TenantAppLayout({
   // El ancho de la barra se decide en el servidor. Si se leyera en el navegador
   // después de montar, cada carga completa pintaría la barra ancha y la
   // encogería un instante después — el salto se ve.
-  const sidebarCollapsed = (await cookies()).get(SIDEBAR_COOKIE)?.value === "1";
+  const galletas = await cookies();
+  const sidebarCollapsed = galletas.get(SIDEBAR_COOKIE)?.value === "1";
 
   return (
     <SessionProvider session={session}>
@@ -158,6 +160,7 @@ export default async function TenantAppLayout({
             name={session!.user.name}
             email={session!.user.email}
             brand={brand}
+            densidad={densidadGuardada(galletas.get(DENSIDAD_COOKIE)?.value)}
             /*
               La campana se monta aquí, en el layout, para que esté en TODA la
               aplicación: enterarse de algo no puede depender de en qué pantalla

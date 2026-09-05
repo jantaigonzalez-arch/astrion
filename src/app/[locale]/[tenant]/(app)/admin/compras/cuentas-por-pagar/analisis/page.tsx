@@ -145,45 +145,48 @@ export default async function AnalisisCuentasPorPagarPage({
               Cuota sobre el saldo de su propia moneda.
             </p>
           </div>
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-4 py-2 font-medium">Proveedor</th>
-                <th className="px-4 py-2 text-right font-medium">Saldo</th>
-                <th className="px-4 py-2 font-medium">Cuota</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {conSaldo.map((s) => (
-                <tr key={s.supplierId} className="hover:bg-secondary/30">
-                  <td className="px-4 py-2">
-                    <Link
-                      href={`/admin/compras/proveedores/${s.supplierId}`}
-                      className="text-primary hover:underline"
-                    >
-                      {s.supplierName}
-                    </Link>
-                    {s.suspended && (
-                      <Badge className="ml-2 bg-destructive/15 text-destructive ring-destructive/25">
-                        <Ban className="mr-1 size-3" /> Suspendido
-                      </Badge>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right font-medium tabular-nums">
-                    {money(s.balance, s.currency)}
-                  </td>
-                  <td className="px-4 py-2">
-                    <span className="flex items-center gap-2">
-                      <ShareBar pct={s.share} />
-                      <span className="tabular-nums text-muted-foreground">
-                        {s.share.toFixed(0)} %
-                      </span>
-                    </span>
-                  </td>
+          {/* Se desplaza DENTRO de su caja: una tabla ancha nunca empuja la página. */}
+          <div className="tabla-caja">
+            <table className="tabla-erp w-full text-sm">
+              <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Proveedor</th>
+                  <th data-num className="px-4 py-2 text-right font-medium">Saldo</th>
+                  <th className="px-4 py-2 font-medium">Cuota</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {conSaldo.map((s) => (
+                  <tr key={s.supplierId} className="hover:bg-secondary/30">
+                    <td className="px-4 py-2">
+                      <Link
+                        href={`/admin/compras/proveedores/${s.supplierId}`}
+                        className="text-primary hover:underline"
+                      >
+                        {s.supplierName}
+                      </Link>
+                      {s.suspended && (
+                        <Badge className="ml-2 bg-destructive/15 text-destructive ring-destructive/25">
+                          <Ban className="mr-1 size-3" /> Suspendido
+                        </Badge>
+                      )}
+                    </td>
+                    <td data-num className="px-4 py-2 text-right font-medium tabular-nums">
+                      {money(s.balance, s.currency)}
+                    </td>
+                    <td className="px-4 py-2">
+                      <span className="flex items-center gap-2">
+                        <ShareBar pct={s.share} />
+                        <span className="tabular-nums text-muted-foreground">
+                          {s.share.toFixed(0)} %
+                        </span>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
 
@@ -196,62 +199,65 @@ export default async function AnalisisCuentasPorPagarPage({
               solo sobre facturas ya saldadas.
             </p>
           </div>
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-4 py-2 font-medium">Proveedor</th>
-                <th className="px-4 py-2 text-right font-medium">Pactado</th>
-                <th className="px-4 py-2 text-right font-medium">Real</th>
-                <th className="px-4 py-2 text-right font-medium">Desvío</th>
-                <th className="px-4 py-2 text-right font-medium">Puntualidad</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {conHistorial.map((s) => {
-                const desvio =
-                  s.avgDaysToPay === null ? null : s.avgDaysToPay - s.paymentTermsDays;
-                return (
-                  <tr key={s.supplierId} className="hover:bg-secondary/30">
-                    <td className="px-4 py-2">
-                      <Link
-                        href={`/admin/compras/proveedores/${s.supplierId}`}
-                        className="text-primary hover:underline"
+          {/* Se desplaza DENTRO de su caja: una tabla ancha nunca empuja la página. */}
+          <div className="tabla-caja">
+            <table className="tabla-erp w-full text-sm">
+              <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Proveedor</th>
+                  <th data-num className="px-4 py-2 text-right font-medium">Pactado</th>
+                  <th data-num className="px-4 py-2 text-right font-medium">Real</th>
+                  <th data-num className="px-4 py-2 text-right font-medium">Desvío</th>
+                  <th data-num className="px-4 py-2 text-right font-medium">Puntualidad</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {conHistorial.map((s) => {
+                  const desvio =
+                    s.avgDaysToPay === null ? null : s.avgDaysToPay - s.paymentTermsDays;
+                  return (
+                    <tr key={s.supplierId} className="hover:bg-secondary/30">
+                      <td className="px-4 py-2">
+                        <Link
+                          href={`/admin/compras/proveedores/${s.supplierId}`}
+                          className="text-primary hover:underline"
+                        >
+                          {s.supplierName}
+                        </Link>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {s.settledCount}{" "}
+                          {s.settledCount === 1 ? "saldada" : "saldadas"}
+                        </span>
+                      </td>
+                      <td data-num className="px-4 py-2 text-right tabular-nums text-muted-foreground">
+                        {s.paymentTermsDays === 0 ? "contado" : `${s.paymentTermsDays} d`}
+                      </td>
+                      <td data-num className="px-4 py-2 text-right tabular-nums">
+                        {s.avgDaysToPay === null ? "—" : `${s.avgDaysToPay} d`}
+                      </td>
+                      <td
+                        className={cn(
+                          "px-4 py-2 text-right tabular-nums",
+                          desvio === null
+                            ? "text-muted-foreground"
+                            : desvio > 5
+                              ? "text-destructive"
+                              : desvio > 0
+                                ? "text-warning"
+                                : "text-success",
+                        )}
                       >
-                        {s.supplierName}
-                      </Link>
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        {s.settledCount}{" "}
-                        {s.settledCount === 1 ? "saldada" : "saldadas"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
-                      {s.paymentTermsDays === 0 ? "contado" : `${s.paymentTermsDays} d`}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums">
-                      {s.avgDaysToPay === null ? "—" : `${s.avgDaysToPay} d`}
-                    </td>
-                    <td
-                      className={cn(
-                        "px-4 py-2 text-right tabular-nums",
-                        desvio === null
-                          ? "text-muted-foreground"
-                          : desvio > 5
-                            ? "text-destructive"
-                            : desvio > 0
-                              ? "text-warning"
-                              : "text-success",
-                      )}
-                    >
-                      {desvio === null ? "—" : `${desvio > 0 ? "+" : ""}${desvio} d`}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums">
-                      {s.onTimePct === null ? "—" : `${s.onTimePct} %`}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                        {desvio === null ? "—" : `${desvio > 0 ? "+" : ""}${desvio} d`}
+                      </td>
+                      <td data-num className="px-4 py-2 text-right tabular-nums">
+                        {s.onTimePct === null ? "—" : `${s.onTimePct} %`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
     </div>

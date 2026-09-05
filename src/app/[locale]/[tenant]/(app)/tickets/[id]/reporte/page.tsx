@@ -248,34 +248,38 @@ export default async function TicketReportPage({
                   </p>
                   {/* Refacciones utilizadas en esta actividad */}
                   {c.parts.length > 0 && (
-                    <table className="mt-2 w-full text-[12px]">
-                      <thead>
-                        <tr className="border-b border-zinc-200 text-left text-zinc-500">
-                          <th className="py-1 font-medium"># Parte</th>
-                          <th className="py-1 font-medium">Descripción</th>
-                          <th className="py-1 text-center font-medium">Cant.</th>
-                          <th className="py-1 text-right font-medium">Costo unit.</th>
-                          <th className="py-1 text-right font-medium">Importe</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {c.parts.map((p) => (
-                          <tr key={p.id} className="border-b border-zinc-100">
-                            <td className="py-1 font-mono">{p.partNumber}</td>
-                            <td className="py-1">{p.description}</td>
-                            <td className="py-1 text-center">{p.quantity}</td>
-                            <td className="py-1 text-right">
-                              {p.unitCostMxn ? mxn(Number(p.unitCostMxn)) : "—"}
-                            </td>
-                            <td className="py-1 text-right font-medium">
-                              {p.unitCostMxn
-                                ? mxn(Number(p.unitCostMxn) * p.quantity)
-                                : "—"}
-                            </td>
+                    // La hoja de servicio se IMPRIME: no lleva contenedor con
+                    // desplazamiento, que en papel no significa nada.
+                    <div>
+                      <table className="tabla-erp mt-2 w-full text-[12px]">
+                        <thead>
+                          <tr className="border-b border-zinc-200 text-left text-zinc-500">
+                            <th className="py-1 font-medium"># Parte</th>
+                            <th className="py-1 font-medium">Descripción</th>
+                            <th className="py-1 text-center font-medium">Cant.</th>
+                            <th data-num className="py-1 text-right font-medium">Costo unit.</th>
+                            <th data-num className="py-1 text-right font-medium">Importe</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {c.parts.map((p) => (
+                            <tr key={p.id} className="border-b border-zinc-100">
+                              <td className="py-1 font-mono">{p.partNumber}</td>
+                              <td className="py-1">{p.description}</td>
+                              <td className="py-1 text-center">{p.quantity}</td>
+                              <td data-num className="py-1 text-right">
+                                {p.unitCostMxn ? mxn(Number(p.unitCostMxn)) : "—"}
+                              </td>
+                              <td data-num className="py-1 text-right font-medium">
+                                {p.unitCostMxn
+                                  ? mxn(Number(p.unitCostMxn) * p.quantity)
+                                  : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                 </li>
               ))}
@@ -325,34 +329,37 @@ export default async function TicketReportPage({
             <h2 className="mb-3 text-xs font-bold uppercase tracking-wider text-zinc-400">
               Resumen de refacciones utilizadas
             </h2>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-300 text-left text-zinc-500">
-                  <th className="py-1.5 font-medium"># Parte</th>
-                  <th className="py-1.5 font-medium">Descripción</th>
-                  <th className="py-1.5 text-center font-medium">Cant.</th>
-                  <th className="py-1.5 text-right font-medium">Importe</th>
-                </tr>
-              </thead>
-              <tbody>
-                {allParts.map((p) => (
-                  <tr key={p.id} className="border-b border-zinc-100">
-                    <td className="py-1.5 font-mono text-[13px]">{p.partNumber}</td>
-                    <td className="py-1.5">{p.description}</td>
-                    <td className="py-1.5 text-center">{p.quantity}</td>
-                    <td className="py-1.5 text-right">
-                      {p.unitCostMxn ? mxn(Number(p.unitCostMxn) * p.quantity) : "—"}
-                    </td>
+            {/* Se desplaza DENTRO de su caja: una tabla ancha nunca empuja la página. */}
+            <div className="tabla-caja">
+              <table className="tabla-erp w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-300 text-left text-zinc-500">
+                    <th className="py-1.5 font-medium"># Parte</th>
+                    <th className="py-1.5 font-medium">Descripción</th>
+                    <th className="py-1.5 text-center font-medium">Cant.</th>
+                    <th data-num className="py-1.5 text-right font-medium">Importe</th>
                   </tr>
-                ))}
-                <tr>
-                  <td colSpan={3} className="py-2 text-right font-semibold">
-                    Total refacciones
-                  </td>
-                  <td className="py-2 text-right font-bold">{mxn(partsTotal)}</td>
-                </tr>
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {allParts.map((p) => (
+                    <tr key={p.id} className="border-b border-zinc-100">
+                      <td className="py-1.5 font-mono text-[13px]">{p.partNumber}</td>
+                      <td className="py-1.5">{p.description}</td>
+                      <td className="py-1.5 text-center">{p.quantity}</td>
+                      <td data-num className="py-1.5 text-right">
+                        {p.unitCostMxn ? mxn(Number(p.unitCostMxn) * p.quantity) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td colSpan={3} className="py-2 text-right font-semibold">
+                      Total refacciones
+                    </td>
+                    <td data-num className="py-2 text-right font-bold">{mxn(partsTotal)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </section>
         )}
 

@@ -158,16 +158,16 @@ export default async function CuentasPorPagarPage({
           </div>
 
           <div className="overflow-x-auto border-t border-border">
-            <table className="w-full text-sm">
+            <table className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-2 font-medium">Proveedor</th>
-                  <th className="px-4 py-2 text-right font-medium">Al corriente</th>
-                  <th className="px-4 py-2 text-right font-medium">1–30</th>
-                  <th className="px-4 py-2 text-right font-medium">31–60</th>
-                  <th className="px-4 py-2 text-right font-medium">61–90</th>
-                  <th className="px-4 py-2 text-right font-medium">+90</th>
-                  <th className="px-4 py-2 text-right font-medium">Total</th>
+                  <th data-num className="px-4 py-2 text-right font-medium">Al corriente</th>
+                  <th data-num className="px-4 py-2 text-right font-medium">1–30</th>
+                  <th data-num className="px-4 py-2 text-right font-medium">31–60</th>
+                  <th data-num className="px-4 py-2 text-right font-medium">61–90</th>
+                  <th data-num className="px-4 py-2 text-right font-medium">+90</th>
+                  <th data-num className="px-4 py-2 text-right font-medium">Total</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -199,7 +199,7 @@ export default async function CuentasPorPagarPage({
                         {s.buckets[k] > 0 ? money(s.buckets[k], ag.currency) : "—"}
                       </td>
                     ))}
-                    <td className="px-4 py-2 text-right font-medium tabular-nums">
+                    <td data-num className="px-4 py-2 text-right font-medium tabular-nums">
                       {money(s.total, ag.currency)}
                     </td>
                   </tr>
@@ -289,15 +289,15 @@ function Tabla({
         <h2 className="font-semibold">{titulo}</h2>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="tabla-erp w-full text-sm">
           <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-4 py-3 font-medium">Folio</th>
               <th className="px-4 py-3 font-medium">Proveedor</th>
               <th className="px-4 py-3 font-medium">Su folio</th>
               <th className="px-4 py-3 font-medium">Vence</th>
-              <th className="px-4 py-3 text-right font-medium">Total</th>
-              <th className="px-4 py-3 text-right font-medium">Saldo</th>
+              <th data-num className="px-4 py-3 text-right font-medium">Total</th>
+              <th data-num className="px-4 py-3 text-right font-medium">Saldo</th>
               <th className="px-4 py-3 font-medium">Estado</th>
             </tr>
           </thead>
@@ -329,10 +329,10 @@ function Tabla({
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+                  <td data-num className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                     {money(r.total, r.currency)}
                   </td>
-                  <td className="px-4 py-3 text-right font-medium tabular-nums">
+                  <td data-num className="px-4 py-3 text-right font-medium tabular-nums">
                     {r.balance > 0 ? money(r.balance, r.currency) : "—"}
                   </td>
                   <td className="px-4 py-3">

@@ -185,34 +185,37 @@ export default async function ProveedorPage({
               Dinero ya entregado. Se imputa desde la factura correspondiente.
             </p>
           </div>
-          <table className="w-full text-sm">
-            <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-4 py-3 font-medium">Folio</th>
-                <th className="px-4 py-3 font-medium">Pagado el</th>
-                <th className="px-4 py-3 font-medium">Referencia</th>
-                <th className="px-4 py-3 text-right font-medium">Importe</th>
-                <th className="px-4 py-3 text-right font-medium">Sin imputar</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {anticiposAbiertos.map((a) => (
-                <tr key={a.id} className="hover:bg-secondary/30">
-                  <td className="px-4 py-3 font-mono text-xs">{a.reference}</td>
-                  <td className="whitespace-nowrap px-4 py-3">{a.paidAt}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                    {a.paymentReference ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
-                    {money(a.amount, a.currency)}
-                  </td>
-                  <td className="px-4 py-3 text-right font-medium tabular-nums text-primary">
-                    {money(a.remaining, a.currency)}
-                  </td>
+          {/* Se desplaza DENTRO de su caja: una tabla ancha nunca empuja la página. */}
+          <div className="tabla-caja">
+            <table className="tabla-erp w-full text-sm">
+              <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Folio</th>
+                  <th className="px-4 py-3 font-medium">Pagado el</th>
+                  <th className="px-4 py-3 font-medium">Referencia</th>
+                  <th data-num className="px-4 py-3 text-right font-medium">Importe</th>
+                  <th data-num className="px-4 py-3 text-right font-medium">Sin imputar</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {anticiposAbiertos.map((a) => (
+                  <tr key={a.id} className="hover:bg-secondary/30">
+                    <td className="px-4 py-3 font-mono text-xs">{a.reference}</td>
+                    <td className="whitespace-nowrap px-4 py-3">{a.paidAt}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                      {a.paymentReference ?? "—"}
+                    </td>
+                    <td data-num className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+                      {money(a.amount, a.currency)}
+                    </td>
+                    <td data-num className="px-4 py-3 text-right font-medium tabular-nums text-primary">
+                      {money(a.remaining, a.currency)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       )}
 
@@ -228,14 +231,14 @@ export default async function ProveedorPage({
             <h2 className="font-semibold">Notas de crédito</h2>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">Folio</th>
                   <th className="px-4 py-3 font-medium">Su folio</th>
                   <th className="px-4 py-3 font-medium">Emitida</th>
-                  <th className="px-4 py-3 text-right font-medium">Total</th>
-                  <th className="px-4 py-3 text-right font-medium">Sin aplicar</th>
+                  <th data-num className="px-4 py-3 text-right font-medium">Total</th>
+                  <th data-num className="px-4 py-3 text-right font-medium">Sin aplicar</th>
                   <th className="px-4 py-3 font-medium">Estado</th>
                 </tr>
               </thead>
@@ -247,7 +250,7 @@ export default async function ProveedorPage({
                       {n.supplierFolio ?? "—"}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">{n.issuedAt}</td>
-                    <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+                    <td data-num className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                       {money(n.total, n.currency)}
                     </td>
                     <td
@@ -293,15 +296,15 @@ function Tabla({
         <h2 className="font-semibold">{titulo}</h2>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="tabla-erp w-full text-sm">
           <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-4 py-3 font-medium">Folio</th>
               <th className="px-4 py-3 font-medium">Vence</th>
-              <th className="px-4 py-3 text-right font-medium">Total</th>
-              <th className="px-4 py-3 text-right font-medium">Pagado</th>
-              <th className="px-4 py-3 text-right font-medium">Nota de crédito</th>
-              <th className="px-4 py-3 text-right font-medium">Saldo</th>
+              <th data-num className="px-4 py-3 text-right font-medium">Total</th>
+              <th data-num className="px-4 py-3 text-right font-medium">Pagado</th>
+              <th data-num className="px-4 py-3 text-right font-medium">Nota de crédito</th>
+              <th data-num className="px-4 py-3 text-right font-medium">Saldo</th>
               <th className="px-4 py-3 font-medium">Estado</th>
             </tr>
           </thead>
@@ -328,16 +331,16 @@ function Tabla({
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+                  <td data-num className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                     {money(r.total, r.currency)}
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+                  <td data-num className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                     {r.paid > 0 ? money(r.paid, r.currency) : "—"}
                   </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+                  <td data-num className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                     {r.credited > 0 ? money(r.credited, r.currency) : "—"}
                   </td>
-                  <td className="px-4 py-3 text-right font-medium tabular-nums">
+                  <td data-num className="px-4 py-3 text-right font-medium tabular-nums">
                     {r.balance > 0 ? money(r.balance, r.currency) : "—"}
                   </td>
                   <td className="px-4 py-3">

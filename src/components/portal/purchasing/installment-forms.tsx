@@ -186,51 +186,54 @@ export function InstallmentPlan({
           Lo que se paga se imputa de la parcialidad más antigua a la más nueva.
         </p>
       </div>
-      <table className="w-full text-sm">
-        <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-          <tr>
-            <th className="px-4 py-2 font-medium">#</th>
-            <th className="px-4 py-2 font-medium">Vence</th>
-            <th className="px-4 py-2 text-right font-medium">Importe</th>
-            <th className="px-4 py-2 text-right font-medium">Cubierto</th>
-            <th className="px-4 py-2 text-right font-medium">Saldo</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {installments.map((p) => {
-            const vencida = p.status !== "paid" && p.daysLate > 0;
-            return (
-              <tr key={p.id} className={cn(p.status === "paid" && "opacity-60")}>
-                <td className="px-4 py-2 tabular-nums text-muted-foreground">
-                  {p.seq}
-                </td>
-                <td className="whitespace-nowrap px-4 py-2">
-                  <span className={vencida ? "font-medium text-destructive" : ""}>
-                    {p.dueAt}
-                  </span>
-                  {vencida && (
-                    <span className="ml-2 text-xs text-destructive">
-                      {p.daysLate} {p.daysLate === 1 ? "día" : "días"}
+      {/* Se desplaza DENTRO de su caja: una tabla ancha nunca empuja la página. */}
+      <div className="tabla-caja">
+        <table className="tabla-erp w-full text-sm">
+          <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <tr>
+              <th className="px-4 py-2 font-medium">#</th>
+              <th className="px-4 py-2 font-medium">Vence</th>
+              <th data-num className="px-4 py-2 text-right font-medium">Importe</th>
+              <th data-num className="px-4 py-2 text-right font-medium">Cubierto</th>
+              <th data-num className="px-4 py-2 text-right font-medium">Saldo</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {installments.map((p) => {
+              const vencida = p.status !== "paid" && p.daysLate > 0;
+              return (
+                <tr key={p.id} className={cn(p.status === "paid" && "opacity-60")}>
+                  <td className="px-4 py-2 tabular-nums text-muted-foreground">
+                    {p.seq}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2">
+                    <span className={vencida ? "font-medium text-destructive" : ""}>
+                      {p.dueAt}
                     </span>
-                  )}
-                  {p.status === "paid" && (
-                    <span className="ml-2 text-xs text-success">saldada</span>
-                  )}
-                </td>
-                <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
-                  {money(p.amount, currency)}
-                </td>
-                <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
-                  {p.paid > 0 ? money(p.paid, currency) : "—"}
-                </td>
-                <td className="px-4 py-2 text-right font-medium tabular-nums">
-                  {p.balance > 0 ? money(p.balance, currency) : "—"}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                    {vencida && (
+                      <span className="ml-2 text-xs text-destructive">
+                        {p.daysLate} {p.daysLate === 1 ? "día" : "días"}
+                      </span>
+                    )}
+                    {p.status === "paid" && (
+                      <span className="ml-2 text-xs text-success">saldada</span>
+                    )}
+                  </td>
+                  <td data-num className="px-4 py-2 text-right tabular-nums text-muted-foreground">
+                    {money(p.amount, currency)}
+                  </td>
+                  <td data-num className="px-4 py-2 text-right tabular-nums text-muted-foreground">
+                    {p.paid > 0 ? money(p.paid, currency) : "—"}
+                  </td>
+                  <td data-num className="px-4 py-2 text-right font-medium tabular-nums">
+                    {p.balance > 0 ? money(p.balance, currency) : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </Card>
   );
 }

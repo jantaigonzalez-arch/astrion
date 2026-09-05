@@ -44,15 +44,15 @@ export default async function RequisicionesPage({
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">Folio</th>
                   <th className="px-4 py-3 font-medium">Concepto</th>
                   <th className="px-4 py-3 font-medium">Pedido</th>
                   <th className="px-4 py-3 font-medium">Estado</th>
-                  <th className="px-4 py-3 text-right font-medium">Renglones</th>
-                  <th className="px-4 py-3 text-right font-medium">Por comprar</th>
+                  <th data-num className="px-4 py-3 text-right font-medium">Renglones</th>
+                  <th data-num className="px-4 py-3 text-right font-medium">Por comprar</th>
                   <th className="px-4 py-3 font-medium">Se necesita</th>
                   <th className="px-4 py-3 font-medium">Pidió</th>
                 </tr>
@@ -102,10 +102,10 @@ export default async function RequisicionesPage({
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums">
+                    <td data-num className="px-4 py-3 text-right tabular-nums">
                       {r.lines}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums">
+                    <td data-num className="px-4 py-3 text-right tabular-nums">
                       {r.pending > 0 ? (
                         r.pending
                       ) : (

@@ -68,14 +68,14 @@ export function DealItemsPanel({
     <div className="space-y-4">
       {items.length > 0 && (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="tabla-erp w-full text-sm">
             <thead className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="py-2 font-medium">Concepto</th>
-                <th className="py-2 text-right font-medium">Cant.</th>
-                <th className="py-2 text-right font-medium">P. unitario</th>
-                <th className="py-2 text-right font-medium">Desc.</th>
-                <th className="py-2 text-right font-medium">Importe</th>
+                <th data-num className="py-2 text-right font-medium">Cant.</th>
+                <th data-num className="py-2 text-right font-medium">P. unitario</th>
+                <th data-num className="py-2 text-right font-medium">Desc.</th>
+                <th data-num className="py-2 text-right font-medium">Importe</th>
                 <th className="py-2" />
               </tr>
             </thead>
@@ -83,19 +83,19 @@ export function DealItemsPanel({
               {items.map((i) => (
                 <tr key={i.id}>
                   <td className="py-2 pr-2">{i.name}</td>
-                  <td className="py-2 text-right tabular-nums">
+                  <td data-num className="py-2 text-right tabular-nums">
                     {Number(i.quantity)}
                   </td>
-                  <td className="py-2 text-right tabular-nums">
+                  <td data-num className="py-2 text-right tabular-nums">
                     {money(i.unitPriceMxn, "MXN", locale)}
                   </td>
-                  <td className="py-2 text-right tabular-nums">
+                  <td data-num className="py-2 text-right tabular-nums">
                     {Number(i.discountPct) > 0 ? `${Number(i.discountPct)}%` : "—"}
                   </td>
-                  <td className="py-2 text-right font-medium tabular-nums">
+                  <td data-num className="py-2 text-right font-medium tabular-nums">
                     {money(String(lineTotal(i)), "MXN", locale)}
                   </td>
-                  <td className="py-2 pl-2 text-right">
+                  <td data-num className="py-2 pl-2 text-right">
                     <form
                       action={(fd) => startTransition(() => void deleteDealItem(fd))}
                     >
@@ -118,7 +118,7 @@ export function DealItemsPanel({
                 <td colSpan={4} className="py-2 text-right font-medium">
                   Total
                 </td>
-                <td className="py-2 text-right font-mono font-semibold">
+                <td data-num className="py-2 text-right font-mono font-semibold">
                   {money(String(total), "MXN", locale)}
                 </td>
                 <td />

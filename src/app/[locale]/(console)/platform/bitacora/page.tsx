@@ -54,7 +54,7 @@ export default async function BitacoraPage({
 
       <Card className="p-5">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
+          <table className="tabla-erp w-full min-w-[640px] text-sm">
             <thead>
               <tr className="border-b border-border text-left text-[11px] uppercase tracking-wider text-muted-foreground">
                 <th className="py-2 pr-4 font-medium">Cuándo</th>

@@ -62,15 +62,15 @@ export async function DealSupplyPanel({
       </h2>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="tabla-erp w-full text-sm">
           <thead className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="py-2 pr-3 font-medium">Concepto</th>
-              <th className="px-3 py-2 text-right font-medium">Pide</th>
-              <th className="px-3 py-2 text-right font-medium">Hay</th>
-              <th className="px-3 py-2 text-right font-medium">Viene</th>
-              <th className="px-3 py-2 text-right font-medium">En trámite</th>
-              <th className="py-2 pl-3 text-right font-medium">Falta</th>
+              <th data-num className="px-3 py-2 text-right font-medium">Pide</th>
+              <th data-num className="px-3 py-2 text-right font-medium">Hay</th>
+              <th data-num className="px-3 py-2 text-right font-medium">Viene</th>
+              <th data-num className="px-3 py-2 text-right font-medium">En trámite</th>
+              <th data-num className="py-2 pl-3 text-right font-medium">Falta</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -84,17 +84,17 @@ export async function DealSupplyPanel({
                     </p>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums">{n.pedido}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                <td data-num className="px-3 py-2 text-right tabular-nums">{n.pedido}</td>
+                <td data-num className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                   {n.existencia || "—"}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                <td data-num className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                   {n.enCamino || "—"}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                <td data-num className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                   {n.enTramite || "—"}
                 </td>
-                <td className="py-2 pl-3 text-right font-medium tabular-nums">
+                <td data-num className="py-2 pl-3 text-right font-medium tabular-nums">
                   {n.falta > 0 ? (
                     n.falta
                   ) : (

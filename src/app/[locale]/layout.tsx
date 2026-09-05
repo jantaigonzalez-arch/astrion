@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
+import { DENSIDAD_COOKIE, densidadGuardada } from "@/lib/densidad";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { notFound } from "next/navigation";
 import { NextIntlClientProvider, hasLocale } from "next-intl";
@@ -52,10 +54,24 @@ export default async function LocaleLayout({
   // Habilita renderizado estático con next-intl.
   setRequestLocale(locale);
 
+  /*
+    La densidad de las tablas se resuelve AQUÍ, en el servidor.
+
+    Va en la raíz del documento y no en cada pantalla porque vale para las
+    treinta y tres tablas a la vez, y se lee de la cookie y no del navegador
+    porque las tablas se dibujan en el servidor: leerla después de montar
+    pintaría la densidad por omisión y la corregiría un instante más tarde —el
+    salto se ve—. Mismo criterio que el ancho de la barra lateral.
+  */
+  const densidad = densidadGuardada(
+    (await cookies()).get(DENSIDAD_COOKIE)?.value,
+  );
+
   return (
     <html
       lang={locale}
       className={`${inter.variable} ${mono.variable} h-full antialiased`}
+      data-densidad={densidad}
       suppressHydrationWarning
     >
       <head>

@@ -135,7 +135,7 @@ function TicketsTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="tabla-erp w-full text-sm">
         <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
             <ThCola campo="folio" orden={orden} query={query}>Folio</ThCola>

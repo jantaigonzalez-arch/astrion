@@ -386,3 +386,106 @@
     overflow: auto;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   TABLAS DEL ERP — un solo criterio para las treinta y tres
+
+   ── POR QUÉ ESTO VIVE EN CSS Y NO EN CLASES DE UTILIDAD ──────────────────
+
+   Porque el problema era justamente que cada tabla traía las suyas. Había
+   cinco rellenos distintos escritos a mano —`px-4 py-3`, `px-4 py-2`, `py-2`,
+   `py-1`, `px-3 py-2`— y ninguno era una decisión: eran cinco pantallas
+   escritas en cinco momentos.
+
+   Un selector de elemento dentro de `.tabla-erp` tiene especificidad (0,1,1),
+   que GANA a una utilidad como `.px-4` (0,1,0). Eso es lo que permite
+   homogeneizarlas todas envolviendo la tabla, sin recorrer las mil celdas que
+   hay repartidas por los módulos. Las clases viejas siguen ahí y dejan de
+   pesar; se pueden ir quitando sin prisa y sin que nada cambie de aspecto.
+
+   ── LA DENSIDAD ES UNA VARIABLE, NO TRES HOJAS DE ESTILO ─────────────────
+
+   `--fila-y` y `--fila-x` las fija `[data-densidad]` en la raíz, así que
+   cambiar la preferencia mueve las treinta y tres tablas a la vez y no hay
+   forma de que una se quede atrás.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root,
+:root[data-densidad="normal"] {
+  --fila-y: 0.75rem;
+  --fila-x: 1rem;
+}
+:root[data-densidad="compacta"] {
+  --fila-y: 0.375rem;
+  --fila-x: 0.625rem;
+}
+:root[data-densidad="amplia"] {
+  --fila-y: 1.125rem;
+  --fila-x: 1.25rem;
+}
+
+.tabla-erp {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tabla-erp th,
+.tabla-erp td {
+  padding: var(--fila-y) var(--fila-x);
+  /* El alto lo marca el relleno y no una altura fija: una celda con dos
+     renglones —un asunto largo, dos etiquetas— tiene que poder crecer sin
+     romper la fila. */
+  vertical-align: middle;
+}
+
+/* El encabezado ACOMPAÑA al desplazamiento.
+   Sin esto, a la fila cuarenta ya nadie sabe qué columna está mirando y hay
+   que subir para averiguarlo. Es lo que más se nota en un listado largo, y no
+   lo tenía ninguna de las tablas de datos. */
+.tabla-erp thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  /* Opaco a propósito: con fondo translúcido las filas se leen POR DEBAJO del
+     encabezado al desplazarse, y eso es peor que no fijarlo. */
+  background: var(--color-secondary);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+/* La línea de abajo va en el `th` y no en el `thead`: un borde sobre un
+   elemento pegajoso no se pinta en algunos navegadores, y el encabezado
+   quedaría flotando sin separación sobre los datos. */
+.tabla-erp thead th {
+  box-shadow: inset 0 -1px 0 var(--color-border);
+}
+
+.tabla-erp tbody tr {
+  border-bottom: 1px solid color-mix(in oklab, var(--color-border) 60%, transparent);
+}
+.tabla-erp tbody tr:last-child {
+  border-bottom: 0;
+}
+
+/* La fila bajo el cursor se marca. En una tabla ancha es lo que impide leer el
+   importe de un renglón y el folio de otro. */
+.tabla-erp tbody tr:hover {
+  background: color-mix(in oklab, var(--color-secondary) 55%, transparent);
+}
+
+/* Números a la derecha y con cifras de ancho fijo: es lo que deja comparar dos
+   importes de un vistazo sin leerlos. Se pide con `data-num` en el `th` y en
+   el `td`, para no adivinarlo por el contenido. */
+.tabla-erp [data-num] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* El contenedor: la tabla ancha se desplaza DENTRO de su caja y nunca empuja
+   la página. Una página que se mueve en horizontal desalinea el menú y la
+   barra superior, y eso se nota en cada pantalla, no solo en la tabla. */
+.tabla-caja {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}

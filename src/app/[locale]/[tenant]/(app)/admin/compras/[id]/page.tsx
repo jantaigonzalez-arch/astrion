@@ -83,15 +83,15 @@ export default async function OrdenPage({
           <h2 className="font-semibold">Renglones</h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="tabla-erp w-full text-sm">
             <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium"># Parte</th>
                 <th className="px-4 py-3 font-medium">Descripción</th>
-                <th className="px-4 py-3 text-right font-medium">Pedido</th>
-                <th className="px-4 py-3 text-right font-medium">Recibido</th>
-                <th className="px-4 py-3 text-right font-medium">Costo unit.</th>
-                <th className="px-4 py-3 text-right font-medium">Importe</th>
+                <th data-num className="px-4 py-3 text-right font-medium">Pedido</th>
+                <th data-num className="px-4 py-3 text-right font-medium">Recibido</th>
+                <th data-num className="px-4 py-3 text-right font-medium">Costo unit.</th>
+                <th data-num className="px-4 py-3 text-right font-medium">Importe</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -102,8 +102,8 @@ export default async function OrdenPage({
                   <tr key={l.id}>
                     <td className="px-4 py-3 font-mono text-xs">{l.partNumber}</td>
                     <td className="px-4 py-3">{l.description}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{l.quantity}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">
+                    <td data-num className="px-4 py-3 text-right tabular-nums">{l.quantity}</td>
+                    <td data-num className="px-4 py-3 text-right tabular-nums">
                       {l.receivedQuantity}
                       {falta > 0 && (
                         <span className="ml-1 text-xs text-warning">
@@ -111,10 +111,10 @@ export default async function OrdenPage({
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+                    <td data-num className="px-4 py-3 text-right tabular-nums text-muted-foreground">
                       {unit > 0 ? money(unit, currency) : "—"}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums">
+                    <td data-num className="px-4 py-3 text-right tabular-nums">
                       {unit > 0 ? money(unit * l.quantity, currency) : "—"}
                     </td>
                   </tr>

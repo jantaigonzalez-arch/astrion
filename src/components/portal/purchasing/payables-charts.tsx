@@ -226,7 +226,7 @@ export function CashOutChart({
           Ver como tabla
         </summary>
         <table
-          className="mt-2 w-full text-xs"
+          className="tabla-erp mt-2 w-full text-xs"
           aria-labelledby={id}
         >
           <caption id={id} className="sr-only">
@@ -235,22 +235,22 @@ export function CashOutChart({
           <thead className="text-left text-muted-foreground">
             <tr>
               <th className="py-1 font-medium">Mes</th>
-              <th className="py-1 text-right font-medium">Pagos</th>
-              <th className="py-1 text-right font-medium">Anticipos</th>
-              <th className="py-1 text-right font-medium">Total</th>
+              <th data-num className="py-1 text-right font-medium">Pagos</th>
+              <th data-num className="py-1 text-right font-medium">Anticipos</th>
+              <th data-num className="py-1 text-right font-medium">Total</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {data.map((d) => (
               <tr key={d.month}>
                 <td className="py-1">{d.month}</td>
-                <td className="py-1 text-right tabular-nums">
+                <td data-num className="py-1 text-right tabular-nums">
                   {moneyExact(d.payments, currency)}
                 </td>
-                <td className="py-1 text-right tabular-nums">
+                <td data-num className="py-1 text-right tabular-nums">
                   {moneyExact(d.advances, currency)}
                 </td>
-                <td className="py-1 text-right font-medium tabular-nums">
+                <td data-num className="py-1 text-right font-medium tabular-nums">
                   {moneyExact(d.total, currency)}
                 </td>
               </tr>

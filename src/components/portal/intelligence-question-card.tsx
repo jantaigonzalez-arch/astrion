@@ -234,11 +234,11 @@ export function IntelligenceQuestionCard({ q }: { q: QuestionView }) {
             La competencia · {mostrado.leaderboard.length} candidatos
           </summary>
           <div className="mt-2 overflow-x-auto">
-            <table className="w-full text-xs">
+            <table className="tabla-erp w-full text-xs">
               <thead className="text-muted-foreground">
                 <tr>
                   <th className="py-1 text-left font-normal">candidato</th>
-                  <th className="py-1 text-right font-normal">error al elegir</th>
+                  <th data-num className="py-1 text-right font-normal">error al elegir</th>
                 </tr>
               </thead>
               <tbody>
@@ -252,7 +252,7 @@ export function IntelligenceQuestionCard({ q }: { q: QuestionView }) {
                         </span>
                       )}
                     </td>
-                    <td className="py-1 text-right font-mono tabular-nums">
+                    <td data-num className="py-1 text-right font-mono tabular-nums">
                       {c.fitted && Number.isFinite(c.val_error)
                         ? c.val_error.toLocaleString("es-MX", { maximumFractionDigits: 1 })
                         : "—"}

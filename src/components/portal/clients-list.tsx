@@ -182,7 +182,7 @@ export function ClientsList({
       ) : (
         <Card className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <ThLocal campo="nombre" orden={orden} onPulsar={pulsar}>
@@ -267,7 +267,7 @@ export function ClientsList({
                     <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
                       {c.hasPortal ? fecha(c.lastTicketAt) : "—"}
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums">
+                    <td data-num className="px-4 py-3 text-right tabular-nums">
                       {c.wonDeals > 0 ? (
                         <>
                           {money(String(c.wonValue), "MXN", locale)}

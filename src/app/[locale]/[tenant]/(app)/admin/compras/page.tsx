@@ -68,14 +68,14 @@ export default async function ComprasPage({
       ) : (
         <Card className="overflow-hidden p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-3 font-medium">Folio</th>
                   <th className="px-4 py-3 font-medium">Proveedor</th>
                   <th className="px-4 py-3 font-medium">Estado</th>
-                  <th className="px-4 py-3 text-right font-medium">Piezas</th>
-                  <th className="px-4 py-3 text-right font-medium">Total</th>
+                  <th data-num className="px-4 py-3 text-right font-medium">Piezas</th>
+                  <th data-num className="px-4 py-3 text-right font-medium">Total</th>
                   <th className="px-4 py-3 font-medium">Se espera</th>
                 </tr>
               </thead>
@@ -96,7 +96,7 @@ export default async function ComprasPage({
                     </td>
                     {/* Recibido sobre pedido: es el dato que dice si la orden
                         sigue viva, y leerlo de un vistazo evita abrirla. */}
-                    <td className="px-4 py-3 text-right tabular-nums">
+                    <td data-num className="px-4 py-3 text-right tabular-nums">
                       <span
                         className={
                           o.received < o.units ? "text-foreground" : "text-muted-foreground"
@@ -106,7 +106,7 @@ export default async function ComprasPage({
                       </span>
                       <span className="text-muted-foreground"> / {o.units}</span>
                     </td>
-                    <td className="px-4 py-3 text-right tabular-nums">
+                    <td data-num className="px-4 py-3 text-right tabular-nums">
                       {money(o.total, o.currency)}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">

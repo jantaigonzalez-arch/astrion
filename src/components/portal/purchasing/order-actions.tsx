@@ -79,13 +79,13 @@ export function ReceiveForm({
       <input type="hidden" name="orderId" value={orderId} />
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="tabla-erp w-full text-sm">
           <thead className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="py-2 font-medium">Refacción</th>
-              <th className="py-2 text-right font-medium">Pedido</th>
-              <th className="py-2 text-right font-medium">Recibido</th>
-              <th className="py-2 text-right font-medium">Entra ahora</th>
+              <th data-num className="py-2 text-right font-medium">Pedido</th>
+              <th data-num className="py-2 text-right font-medium">Recibido</th>
+              <th data-num className="py-2 text-right font-medium">Entra ahora</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -98,11 +98,11 @@ export function ReceiveForm({
                     <span className="font-mono text-xs">{l.partNumber}</span>
                     <p className="text-xs text-muted-foreground">{l.description}</p>
                   </td>
-                  <td className="py-2 text-right tabular-nums">{l.quantity}</td>
-                  <td className="py-2 text-right tabular-nums text-muted-foreground">
+                  <td data-num className="py-2 text-right tabular-nums">{l.quantity}</td>
+                  <td data-num className="py-2 text-right tabular-nums text-muted-foreground">
                     {l.receivedQuantity}
                   </td>
-                  <td className="py-2 pl-4 text-right">
+                  <td data-num className="py-2 pl-4 text-right">
                     <Input
                       name="receive-qty"
                       type="number"

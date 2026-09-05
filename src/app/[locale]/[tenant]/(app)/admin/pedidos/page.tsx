@@ -96,16 +96,16 @@ export default async function PedidosPage({
 
           <Card className="overflow-hidden p-0">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="tabla-erp w-full text-sm">
                 <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 font-medium">Folio</th>
                     <th className="px-4 py-3 font-medium">Cliente</th>
                     <th className="px-4 py-3 font-medium">Concepto</th>
-                    <th className="px-4 py-3 text-right font-medium">Renglones</th>
+                    <th data-num className="px-4 py-3 text-right font-medium">Renglones</th>
                     <th className="px-4 py-3 font-medium">Surtido</th>
-                    <th className="px-4 py-3 text-right font-medium">Por comprar</th>
-                    <th className="px-4 py-3 text-right font-medium">Valor</th>
+                    <th data-num className="px-4 py-3 text-right font-medium">Por comprar</th>
+                    <th data-num className="px-4 py-3 text-right font-medium">Valor</th>
                     <th className="px-4 py-3 font-medium">Ganado</th>
                   </tr>
                 </thead>
@@ -122,7 +122,7 @@ export default async function PedidosPage({
                       </td>
                       <td className="px-4 py-3">{p.organization ?? "—"}</td>
                       <td className="max-w-xs truncate px-4 py-3">{p.title}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">
+                      <td data-num className="px-4 py-3 text-right tabular-nums">
                         {p.lineas || <span className="text-muted-foreground">—</span>}
                       </td>
                       <td className="px-4 py-3">
@@ -139,14 +139,14 @@ export default async function PedidosPage({
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
+                      <td data-num className="px-4 py-3 text-right tabular-nums">
                         {p.porComprar > 0 ? (
                           p.porComprar
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-right tabular-nums">
+                      <td data-num className="px-4 py-3 text-right tabular-nums">
                         {p.valueMxn ? money(Number(p.valueMxn)) : "—"}
                       </td>
                       <td className="px-4 py-3 text-muted-foreground">

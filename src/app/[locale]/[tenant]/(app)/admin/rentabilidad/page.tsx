@@ -382,7 +382,7 @@ async function Detail({
         <h2 className="font-semibold">Detalle por servicio</h2>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="tabla-erp w-full text-sm">
           <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
               <th className="px-4 py-3 font-medium">Folio</th>

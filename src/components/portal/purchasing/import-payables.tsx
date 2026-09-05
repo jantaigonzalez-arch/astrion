@@ -223,41 +223,44 @@ export function ImportPayables({ plantillas }: { plantillas: Record<string, stri
           )}
 
           <div className="max-h-[26rem] overflow-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 border-b border-border bg-secondary/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-2 font-medium">Línea</th>
-                  <th className="px-4 py-2 font-medium">Fila</th>
-                  <th className="px-4 py-2 font-medium">Resultado</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {estado.outcome.results.map((r) => (
-                  <tr
-                    key={`${r.line}-${r.label}`}
-                    className={r.ok ? "" : "bg-destructive/5"}
-                  >
-                    <td className="px-4 py-2 font-mono text-xs text-muted-foreground">
-                      {r.line}
-                    </td>
-                    <td className="px-4 py-2">{r.label}</td>
-                    <td className="px-4 py-2">
-                      {r.ok ? (
-                        <span className="inline-flex items-center gap-1.5 text-success">
-                          <CheckCircle2 className="size-3.5" />
-                          <span className="font-mono text-xs">{r.reference}</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-start gap-1.5 text-destructive">
-                          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                          <span className="text-xs">{r.reason}</span>
-                        </span>
-                      )}
-                    </td>
+            {/* Se desplaza DENTRO de su caja: una tabla ancha nunca empuja la página. */}
+            <div className="tabla-caja">
+              <table className="tabla-erp w-full text-sm">
+                <thead className="sticky top-0 border-b border-border bg-secondary/60 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-2 font-medium">Línea</th>
+                    <th className="px-4 py-2 font-medium">Fila</th>
+                    <th className="px-4 py-2 font-medium">Resultado</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {estado.outcome.results.map((r) => (
+                    <tr
+                      key={`${r.line}-${r.label}`}
+                      className={r.ok ? "" : "bg-destructive/5"}
+                    >
+                      <td className="px-4 py-2 font-mono text-xs text-muted-foreground">
+                        {r.line}
+                      </td>
+                      <td className="px-4 py-2">{r.label}</td>
+                      <td className="px-4 py-2">
+                        {r.ok ? (
+                          <span className="inline-flex items-center gap-1.5 text-success">
+                            <CheckCircle2 className="size-3.5" />
+                            <span className="font-mono text-xs">{r.reference}</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-start gap-1.5 text-destructive">
+                            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                            <span className="text-xs">{r.reason}</span>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </Card>
       )}

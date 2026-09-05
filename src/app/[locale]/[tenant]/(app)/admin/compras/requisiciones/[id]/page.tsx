@@ -157,31 +157,34 @@ export default async function RequisicionPage({
             Órdenes generadas
           </h2>
           <Card className="overflow-hidden p-0">
-            <table className="w-full text-sm">
-              <tbody className="divide-y divide-border">
-                {req.orders.map((o) => (
-                  <tr key={o.id} className="hover:bg-secondary/30">
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/admin/compras/${o.id}`}
-                        className="font-mono text-xs text-primary hover:underline"
-                      >
-                        {o.reference}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">{o.supplier}</td>
-                    <td className="px-4 py-3">
-                      <PurchaseStatusBadge
-                        status={o.status as PurchaseOrderStatus}
-                      />
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {o.expectedAt ? `Se espera ${o.expectedAt}` : "Sin fecha"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {/* Se desplaza DENTRO de su caja: una tabla ancha nunca empuja la página. */}
+            <div className="tabla-caja">
+              <table className="tabla-erp w-full text-sm">
+                <tbody className="divide-y divide-border">
+                  {req.orders.map((o) => (
+                    <tr key={o.id} className="hover:bg-secondary/30">
+                      <td className="px-4 py-3">
+                        <Link
+                          href={`/admin/compras/${o.id}`}
+                          className="font-mono text-xs text-primary hover:underline"
+                        >
+                          {o.reference}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3">{o.supplier}</td>
+                      <td className="px-4 py-3">
+                        <PurchaseStatusBadge
+                          status={o.status as PurchaseOrderStatus}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {o.expectedAt ? `Se espera ${o.expectedAt}` : "Sin fecha"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </Card>
         </div>
       )}

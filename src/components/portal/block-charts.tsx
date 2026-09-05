@@ -1032,12 +1032,12 @@ function Tabla({ bars, currency, legend }: ChartProps) {
     // que se desplaza a lo ancho entero por una celda larga es peor que una
     // tabla con su propia barra.
     <div className="overflow-x-auto">
-      <table className="w-full text-xs">
+      <table className="tabla-erp w-full text-xs">
         <thead>
           <tr className="border-b border-border text-muted-foreground">
             <th className="py-1.5 text-left font-medium">Concepto</th>
-            <th className="py-1.5 text-right font-medium">{legend?.[0] ?? "Valor"}</th>
-            {dos && <th className="py-1.5 text-right font-medium">{legend?.[1] ?? "Segunda"}</th>}
+            <th data-num className="py-1.5 text-right font-medium">{legend?.[0] ?? "Valor"}</th>
+            {dos && <th data-num className="py-1.5 text-right font-medium">{legend?.[1] ?? "Segunda"}</th>}
           </tr>
         </thead>
         <tbody>
@@ -1057,11 +1057,11 @@ function Tabla({ bars, currency, legend }: ChartProps) {
                   </span>
                 )}
               </td>
-              <td className="py-1.5 text-right tabular-nums">
+              <td data-num className="py-1.5 text-right tabular-nums">
                 {money(b.value, currency, true)}
               </td>
               {dos && (
-                <td className="py-1.5 text-right tabular-nums">
+                <td data-num className="py-1.5 text-right tabular-nums">
                   {money(b.stacked ?? 0, currency, true)}
                 </td>
               )}

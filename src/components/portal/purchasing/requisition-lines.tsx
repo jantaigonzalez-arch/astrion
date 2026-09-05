@@ -52,14 +52,14 @@ export function RequisitionLines({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="tabla-erp w-full text-sm">
         <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
             <th className="px-4 py-3 font-medium">Qué</th>
             <th className="px-4 py-3 font-medium">Refacción</th>
             <th className="px-4 py-3 font-medium">Proveedor</th>
-            <th className="px-4 py-3 text-right font-medium">Pide</th>
-            <th className="px-4 py-3 text-right font-medium">Pedido a prov.</th>
+            <th data-num className="px-4 py-3 text-right font-medium">Pide</th>
+            <th data-num className="px-4 py-3 text-right font-medium">Pedido a prov.</th>
             {editable && <th className="w-px px-4 py-3" />}
           </tr>
         </thead>
@@ -217,9 +217,9 @@ function Fila({
         )}
       </td>
 
-      <td className="px-4 py-3 text-right tabular-nums">{linea.quantity}</td>
+      <td data-num className="px-4 py-3 text-right tabular-nums">{linea.quantity}</td>
 
-      <td className="px-4 py-3 text-right tabular-nums">
+      <td data-num className="px-4 py-3 text-right tabular-nums">
         {linea.orderedQuantity > 0 ? (
           <span
             className={
