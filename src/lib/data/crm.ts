@@ -17,14 +17,27 @@ import {
 import { listTenantMembers } from "@/lib/data/people";
 import { VALOR_MXN } from "@/lib/data/crm-insights";
 import { DEFAULT_PIPELINE_NAME, DEFAULT_STAGES, type OrgKind } from "@/lib/crm";
+import { cache } from "react";
 import type { DbOrTx } from "@/lib/db";
 
 /**
  * Garantiza que exista un embudo con etapas. Es idempotente: la primera vez
  * que alguien entra al tablero crea "Ventas Evoelution" con las etapas base,
  * después no hace nada. Evita depender de un seed manual.
+ *
+ * ── MEMOIZADA POR PETICIÓN ────────────────────────────────────────────────
+ *
+ * Porque «después no hace nada» costaba una consulta cada vez. Medido en el
+ * tablero: `crm_pipelines` se leía CINCO veces para pintar una sola pantalla
+ * —esta comprobación, `getPipelines()`, y las tres lecturas del tablero, las
+ * estadísticas y los cerrados—. Con `cache()` la primera paga y las otras cuatro
+ * reusan, dentro de la misma petición y solo dentro de ella.
+ *
+ * Que escriba la primera vez no lo impide: es idempotente, y dentro de una
+ * petición se quiere exactamente una ejecución. Es el mismo recurso que ya usa
+ * `dashboardStates` para la barra lateral, y por el mismo motivo.
  */
-export async function ensureDefaultPipeline() {
+export const ensureDefaultPipeline = cache(async () => {
   const db = await tenantDb();
   const [existing] = await db
     .select({ id: crmPipelines.id })
@@ -47,16 +60,24 @@ export async function ensureDefaultPipeline() {
     })),
   );
   return pipeline.id;
-}
+});
 
-export async function getPipelines(conexion?: DbOrTx) {
+/**
+ * Los embudos con sus etapas. Memoizada por petición, como la de arriba: cuatro
+ * pantallas la llaman y varias de ellas más de una vez.
+ *
+ * `cache()` distingue por argumentos, así que pasar una conexión explícita
+ * —desde un script o una transacción— NO reusa la lectura de la petición: son
+ * llaves distintas, que es justo lo correcto cuando la conexión es otra.
+ */
+export const getPipelines = cache(async (conexion?: DbOrTx) => {
   const db = conexion ?? (await tenantDb());
   return db.query.crmPipelines.findMany({
     where: eq(crmPipelines.active, true),
     orderBy: [asc(crmPipelines.order)],
     with: { stages: { orderBy: [asc(crmStages.order)] } },
   });
-}
+});
 
 export async function getStages(pipelineId: string) {
   const db = await tenantDb();

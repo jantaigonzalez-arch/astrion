@@ -119,12 +119,41 @@ export async function getEquipmentTree(ownerId: string) {
  * ORDENAR por el nombre del laboratorio, que vive en otra tabla: el cargador de
  * relaciones trae los datos pero no deja ordenar por ellos.
  */
+/*
+  LOS DOS CONTEOS, COMO SUBCONSULTA Y NO COMO JOIN CON AGREGADO.
+
+  Estaban escritos como `left join` a módulos y a tickets más un
+  `count(distinct …)`. Da el número correcto y multiplica filas antes de
+  agrupar: cada equipo se repite una vez por cada módulo POR cada ticket suyo.
+  Medido sobre los datos de hoy —97 equipos, 171 módulos, 635 tickets— Postgres
+  materializaba y ORDENABA 2 700 filas para devolver 97.
+
+  Y crece multiplicando, no sumando. Con veinte veces estos datos, medido en un
+  esquema de ensayo: 28 000 filas intermedias y 30,7 ms contra 7,1 ms de esta
+  forma. Cuatro veces, y la distancia se abre a cada equipo nuevo.
+
+  Es el mismo arreglo que ya lleva `getOrganizations` —donde leía 7 690 filas
+  para pintar 164 tarjetas— y el mismo que su propio `enContrato` de aquí abajo
+  ya usaba con un `exists`. Faltaba aplicárselo a los conteos.
+
+  El join a `users` se queda: es de uno a muchos al revés —un equipo tiene un
+  dueño— así que no multiplica nada, y hace falta para ordenar por laboratorio.
+*/
+const N_MODULOS = sql<number>`(
+  select count(*)::int from ${equipmentModules}
+   where ${equipmentModules}.equipment_id = ${equipment}.id
+)`;
+const N_SERVICIOS = sql<number>`(
+  select count(*)::int from ${tickets}
+   where ${tickets}.equipment_id = ${equipment}.id
+)`;
+
 const ORDEN_EQUIPOS = {
   nombre: equipment.name,
   marca: equipment.brand,
   laboratorio: users.name,
-  modulos: sql`count(distinct ${equipmentModules.id})`,
-  servicios: sql`count(distinct ${tickets.id})`,
+  modulos: N_MODULOS,
+  servicios: N_SERVICIOS,
   alta: equipment.createdAt,
 } as const;
 
@@ -179,8 +208,8 @@ export async function getEquipmentList({
       createdAt: equipment.createdAt,
       ownerId: equipment.ownerId,
       ownerName: users.name,
-      modulos: sql<number>`count(distinct ${equipmentModules.id})::int`,
-      servicios: sql<number>`count(distinct ${tickets.id})::int`,
+      modulos: N_MODULOS,
+      servicios: N_SERVICIOS,
       // Amparado por contrato: se resuelve en la misma pasada con un `exists`
       // en vez de un join más, que multiplicaría filas antes de agrupar.
       enContrato: sql<boolean>`exists (
@@ -188,10 +217,7 @@ export async function getEquipmentList({
     })
     .from(equipment)
     .leftJoin(users, eq(users.id, equipment.ownerId))
-    .leftJoin(equipmentModules, eq(equipmentModules.equipmentId, equipment.id))
-    .leftJoin(tickets, eq(tickets.equipmentId, equipment.id))
     .where(whereEquipos(filtros))
-    .groupBy(equipment.id, users.name)
     // `id` de desempate: sin él, dos equipos con el mismo número de servicios
     // pueden intercambiarse entre páginas. Ver la nota de la cola de servicio.
     .orderBy(sql`${col} ${orden.dir === "asc" ? sql`asc` : sql`desc`} nulls last`, desc(equipment.id))
