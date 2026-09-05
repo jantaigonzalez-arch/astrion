@@ -420,7 +420,7 @@ function PickerDialog({
             a propósito — el negocio a medio capturar sigue vivo en ésta.
           */}
           <Link
-            href="/admin/crm/organizaciones"
+            href="/admin/organizaciones"
             target="_blank"
             className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
           >

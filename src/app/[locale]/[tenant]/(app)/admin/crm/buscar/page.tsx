@@ -110,7 +110,7 @@ export default async function CrmSearchPage({
             {results.organizations.map((o) => (
               <li key={o.id} className="rounded-xl border border-border p-3">
                 <Link
-                  href={`/admin/crm/organizaciones/${o.id}`}
+                  href={`/admin/organizaciones/${o.id}`}
                   className="text-sm font-medium hover:text-primary"
                 >
                   {o.name}
@@ -138,7 +138,7 @@ export default async function CrmSearchPage({
                 )}
                 {c.organizationId && (
                   <Link
-                    href={`/admin/crm/organizaciones/${c.organizationId}`}
+                    href={`/admin/organizaciones/${c.organizationId}`}
                     className="text-xs text-primary hover:underline"
                   >
                     Ver organización

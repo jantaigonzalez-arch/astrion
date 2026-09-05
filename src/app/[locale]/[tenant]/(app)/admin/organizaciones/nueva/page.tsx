@@ -4,6 +4,8 @@ import { getClientAccounts, getCrmOwners } from "@/lib/data/crm";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
+import { redirectInTenant } from "@/lib/nav-server";
+import { puedeEnAlguno } from "@/lib/tenancy/context";
 import { OrganizationForm } from "@/components/portal/crm/crm-forms";
 
 export default async function NewOrganizationPage({
@@ -14,13 +16,20 @@ export default async function NewOrganizationPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
+  // Ver la ficha y CAMBIARLA no son lo mismo. El layout ya filtró a quien no
+  // tiene nada que hacer aquí; esto exige además poder escribir, en cualquiera
+  // de las dos puertas.
+  if (!(await puedeEnAlguno(["ventas", "clientes"], "editar"))) {
+    await redirectInTenant("/admin/organizaciones", locale);
+  }
+
   const [owners, clients] = await Promise.all([getCrmOwners(), getClientAccounts()]);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex items-center gap-3">
         <Button asChild variant="ghost" size="sm">
-          <Link href="/admin/crm/organizaciones">
+          <Link href="/admin/organizaciones">
             <ArrowLeft className="size-4" /> Organizaciones
           </Link>
         </Button>

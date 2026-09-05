@@ -1,7 +1,7 @@
 // Convención `proxy` de Next 16. Reemplaza a `middleware`, que quedó
 // deprecada: mismo contrato (export default + config.matcher), solo cambia
 // el nombre del archivo.
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import createMiddleware from "next-intl/middleware";
 import { routing } from "./i18n/routing";
 import {
@@ -58,7 +58,49 @@ function tenantFromPath(pathname: string): string | null {
  * `evoelution.astraion.com/acme/tickets`, lo que manda es de quién es el
  * subdominio, no lo que diga el path.
  */
+/**
+ * DIRECCIONES QUE SE MUDARON, Y POR QUÉ SE REDIRIGEN DESDE AQUÍ.
+ *
+ * `/admin/crm/organizaciones` guardaba la ficha de la empresa dentro del CRM,
+ * y con ella todo lo que se configura de un cliente —el SLA, el RFC, la cuenta
+ * de portal—. Como la empresa es la misma para Ventas y para Servicio, la ficha
+ * salió a `/admin/organizaciones`. Y `/admin/crm/leads` chocaba de nombre con
+ * `/admin/leads`, que son los mensajes del formulario del sitio: dos entidades
+ * distintas bajo un mismo rótulo, a dos renglones en el mismo menú.
+ *
+ * ── POR QUÉ AQUÍ Y NO EN UNA PÁGINA QUE LLAME A `redirect()` ──────────────
+ *
+ * Porque se probó y no funciona bien. Una página que redirige se renderiza
+ * DESPUÉS de que la respuesta empezó a transmitirse, así que Next ya no puede
+ * mandar un 307 y cae al recurso de emergencia: sirve un 200 con
+ * `<meta http-equiv="refresh" content="1;url=…">`. Medido: 200, un segundo de
+ * espera y el destino pintado encima del anterior. Aquí, en cambio, no se ha
+ * renderizado nada todavía y sale una redirección de verdad.
+ *
+ * ── 307 Y NO 308 ──────────────────────────────────────────────────────────
+ *
+ * El permanente se queda cacheado en el navegador hasta que alguien borra los
+ * datos del sitio. Es lo correcto cuando la mudanza es definitiva y lo caro de
+ * revertir cuando no lo es; la diferencia práctica —una petición extra por
+ * navegación en un ERP interno— no vale ese riesgo.
+ */
+const MUDADAS: Array<[RegExp, string]> = [
+  [/\/admin\/crm\/organizaciones(?=\/|$)/, "/admin/organizaciones"],
+  [/\/admin\/crm\/leads(?=\/|$)/, "/admin/crm/prospectos"],
+];
+
 export default function proxy(req: NextRequest) {
+  // Antes que nada: si la dirección se mudó, no hay nada que resolver.
+  // La cola se conserva —`/…/{id}/editar` sigue llevando a su formulario—, y
+  // también el idioma y el inquilino, que van en el path o en el host.
+  for (const [vieja, nueva] of MUDADAS) {
+    if (vieja.test(req.nextUrl.pathname)) {
+      const url = req.nextUrl.clone();
+      url.pathname = url.pathname.replace(vieja, nueva);
+      return NextResponse.redirect(url, 307);
+    }
+  }
+
   const hostTenant = tenantFromHost(req.headers.get("host"));
 
   // En modo subdominio, Next tiene que ver el path CON el inquilino para que el

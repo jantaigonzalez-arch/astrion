@@ -473,6 +473,25 @@ export async function puedeEn(modulo: Modulo, nivel: Nivel): Promise<boolean> {
 }
 
 /**
+ * Igual, pero basta con alcanzarlo en UNO de varios módulos.
+ *
+ * Existe por la ficha de la organización, que es un solo registro con dos
+ * lecturas: prospecto para Ventas, cliente para Servicio. Con `puedeEn` a secas
+ * había que elegir una de las dos y dejar fuera a la otra mitad de la casa.
+ *
+ * Es la misma disyunción que declaran las reglas de ruta de `permisos.ts`, y
+ * conviene que siga siéndolo: si la barra lateral y la página respondieran
+ * distinto, el menú enseñaría enlaces que rebotan.
+ */
+export async function puedeEnAlguno(
+  modulos: readonly Modulo[],
+  nivel: Nivel,
+): Promise<boolean> {
+  for (const m of modulos) if (await puedeEn(m, nivel)) return true;
+  return false;
+}
+
+/**
  * Cliente de base de datos del inquilino activo.
  *
  * Reemplaza a `getDb()` en TODA lectura y escritura de negocio.

@@ -93,7 +93,7 @@ export default async function ContactsPage({
                     <td className="px-4 py-3">
                       {c.organization ? (
                         <Link
-                          href={`/admin/crm/organizaciones/${c.organization.id}`}
+                          href={`/admin/organizaciones/${c.organization.id}`}
                           className="text-primary hover:underline"
                         >
                           {c.organization.name}

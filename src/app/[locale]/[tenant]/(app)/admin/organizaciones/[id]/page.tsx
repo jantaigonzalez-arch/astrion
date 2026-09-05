@@ -7,7 +7,7 @@ import {
   CalendarClock,
   FileSignature,
   Globe,
-  Link2,
+  Timer,
   Mail,
   MapPin,
   Pencil,
@@ -20,15 +20,19 @@ import {
 import {
   getOrganizationById,
   getOrganizationPortalData,
+  kindDeOrganizacion,
 } from "@/lib/data/crm";
 import {
   ACTIVITY_LABELS,
   ACTIVITY_STYLES,
   DEAL_STATUS_LABELS,
   DEAL_STATUS_STYLES,
+  ORG_KIND_LABELS,
+  ORG_KIND_STYLES,
   label,
   money,
 } from "@/lib/crm";
+import { SLA_HOURS } from "@/lib/tickets";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,6 +61,18 @@ export default async function OrganizationDetailPage({
   const fmtDateTime = (d: Date | string | null) =>
     d ? new Date(d).toLocaleString(intl, { dateStyle: "medium", timeStyle: "short" }) : "—";
 
+  /*
+    ES CLIENTE O ES PROSPECTO, Y LA FICHA LO DICE.
+
+    Es la misma empresa y el mismo registro: lo que cambia es en qué punto del
+    embudo está. Mientras no compra la trabaja Ventas; cuando compra, pasa a
+    atenderla Servicio. Enseñarlo arriba es lo que evita que un vendedor
+    prospecte a alguien que ya nos compra —y lo que explica por qué debajo
+    aparecen unas cosas u otras—.
+  */
+  const kind = await kindDeOrganizacion(org.id);
+  const esCliente = kind === "client";
+
   const openDeals = org.deals.filter((d) => d.status === "open");
   const openValue = openDeals.reduce((a, d) => a + Number(d.valueMxn ?? 0), 0);
 
@@ -64,8 +80,9 @@ export default async function OrganizationDetailPage({
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Button asChild variant="ghost" size="sm">
-          <Link href="/admin/crm/organizaciones">
-            <ArrowLeft className="size-4" /> Organizaciones
+          <Link href={esCliente ? "/admin/clientes" : "/admin/crm/prospectos"}>
+            <ArrowLeft className="size-4" />{" "}
+            {esCliente ? "Clientes" : "Prospectos"}
           </Link>
         </Button>
       </div>
@@ -74,9 +91,19 @@ export default async function OrganizationDetailPage({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-semibold tracking-tight">{org.name}</h1>
+            <Badge className={ORG_KIND_STYLES[kind]}>
+              {label(ORG_KIND_LABELS, kind, locale)}
+            </Badge>
+            {/*
+              Ser cliente y TENER CUENTA DE PORTAL no son lo mismo, y la ficha
+              los decía con una sola insignia. Se es cliente por haber comprado;
+              la cuenta es el acceso que se le abre después, y hay clientes de
+              años que no la tienen. Confundirlos hacía que un cliente sin
+              cuenta se leyera como prospecto.
+            */}
             {org.client && (
-              <Badge className="bg-success/15 text-success ring-success/25">
-                Cliente del portal
+              <Badge className="bg-secondary text-muted-foreground ring-border">
+                Con acceso al portal
               </Badge>
             )}
           </div>
@@ -86,7 +113,7 @@ export default async function OrganizationDetailPage({
         </div>
         <div className="flex items-center gap-2">
           <Button asChild variant="outline" size="sm">
-            <Link href={`/admin/crm/organizaciones/${org.id}/editar`}>
+            <Link href={`/admin/organizaciones/${org.id}/editar`}>
               <Pencil className="size-3.5" /> Editar
             </Link>
           </Button>
@@ -147,11 +174,68 @@ export default async function OrganizationDetailPage({
           </Card>
 
           {/* Contratos, equipos y tickets: lo que ya vive en el portal */}
-          {org.clientId ? (
+          {/*
+            EL BLOQUE DE CLIENTE SOLO SALE CUANDO YA LO ES.
+
+            Antes dependía de tener cuenta de portal, que es otra cosa: un
+            cliente de contrato sin acceso al portal veía el cartel de «todavía
+            no está vinculada» —o sea, se le hablaba como a un prospecto—, y a
+            un prospecto de verdad se le ofrecía vincular una cuenta que no
+            tiene por qué existir. Ahora manda el embudo: compró o no compró.
+          */}
+          {esCliente ? (
             <Card className="p-5">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Relación como cliente
               </h2>
+
+              {/*
+                EL SLA, ARRIBA Y EN LA FICHA DEL CLIENTE.
+
+                Vivía únicamente dentro del formulario de edición, así que para
+                saber qué se le prometió a una empresa había que entrar a
+                cambiarlo. Se reportó tal cual: «no veo la opción de SLA en cada
+                uno de los clientes». Aquí se lee sin tocar nada.
+
+                Nulo se dice «el general», nunca en blanco: el hueco se leería
+                como «no hay compromiso», y lo hay.
+              */}
+              <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-secondary/30 p-3">
+                <Timer className="size-4 shrink-0 text-muted-foreground" />
+                <span className="text-xs font-medium text-muted-foreground">
+                  Primera respuesta comprometida
+                </span>
+                {org.slaHours ? (
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary ring-1 ring-primary/20">
+                    {org.slaHours} h · pactado con este cliente
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    {SLA_HOURS} h · el general, no pactó uno propio
+                  </span>
+                )}
+                <Link
+                  href={`/admin/organizaciones/${org.id}/editar`}
+                  className="ml-auto text-xs text-primary hover:underline"
+                >
+                  Cambiar
+                </Link>
+              </div>
+
+              {!org.clientId && (
+                <p className="mt-4 rounded-xl border border-dashed border-border p-3 text-xs text-muted-foreground">
+                  Ya es cliente, pero todavía no tiene{" "}
+                  <strong>cuenta de portal</strong>: no puede levantar tickets
+                  por su cuenta ni ver sus equipos.{" "}
+                  <Link
+                    href={`/admin/organizaciones/${org.id}/editar`}
+                    className="text-primary hover:underline"
+                  >
+                    Vincular una
+                  </Link>
+                  .
+                </p>
+              )}
 
               <div className="mt-4 grid gap-5 sm:grid-cols-3">
                 {/* Contratos */}
@@ -234,14 +318,15 @@ export default async function OrganizationDetailPage({
           ) : (
             <Card className="border-dashed p-5">
               <p className="text-sm text-muted-foreground">
-                Esta organización aún no está vinculada a una cuenta del portal.
-                Al vincularla verás aquí sus <strong>contratos</strong>,{" "}
-                <strong>equipos</strong> y <strong>tickets</strong>, y podrás
-                generar contratos desde los negocios ganados.
+                Todavía es un <strong>prospecto</strong>: no tiene ninguna compra
+                registrada. En cuanto se gane un negocio pasa a cliente sola, y
+                aquí aparecerán sus <strong>contratos</strong>,{" "}
+                <strong>equipos</strong> y <strong>tickets</strong>, y el plazo
+                de respuesta que se le prometa.
               </p>
               <Button asChild variant="accent" size="sm" className="mt-4">
-                <Link href={`/admin/crm/organizaciones/${org.id}/editar`}>
-                  <Link2 className="size-4" /> Vincular cuenta de portal
+                <Link href={`/admin/crm/negocios/nuevo?org=${org.id}`}>
+                  <Plus className="size-4" /> Registrar un negocio
                 </Link>
               </Button>
             </Card>

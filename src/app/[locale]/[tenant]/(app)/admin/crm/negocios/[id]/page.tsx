@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { isAdminRole, isSupport } from "@/lib/roles";
-import { getContractForDeal, getDealById } from "@/lib/data/crm";
+import { getContractForDeal, getDealById, kindDeOrganizacion } from "@/lib/data/crm";
 import {
   getCatalogOptions,
   getEmailTemplates,
@@ -29,6 +29,8 @@ import {
   ACTIVITY_STYLES,
   DEAL_STATUS_LABELS,
   DEAL_STATUS_STYLES,
+  ORG_KIND_LABELS,
+  ORG_KIND_STYLES,
   SOURCE_LABELS,
   label,
   money,
@@ -62,6 +64,12 @@ export default async function DealDetailPage({
 
   const deal = await getDealById(id);
   if (!deal) notFound();
+
+  // Si la empresa del negocio ya nos compra. Vender a un cliente no es lo mismo
+  // que abrir una cuenta nueva, y desde el embudo no había forma de saberlo.
+  const orgKind = deal.organization
+    ? await kindDeOrganizacion(deal.organization.id)
+    : null;
 
   const session = await auth();
   const role = await currentRole();
@@ -336,7 +344,7 @@ export default async function DealDetailPage({
                   </p>
                   <Button asChild variant="outline" size="sm" className="w-full">
                     <Link
-                      href={`/admin/crm/organizaciones/${deal.organization.id}/editar`}
+                      href={`/admin/organizaciones/${deal.organization.id}/editar`}
                     >
                       Vincular cuenta de portal
                     </Link>
@@ -392,14 +400,25 @@ export default async function DealDetailPage({
             </h2>
 
             {deal.organization && (
-              <p className="flex items-start gap-2">
+              <p className="flex flex-wrap items-start gap-2">
                 <Building2 className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                 <Link
-                  href={`/admin/crm/organizaciones/${deal.organization.id}`}
+                  href={`/admin/organizaciones/${deal.organization.id}`}
                   className="font-medium hover:text-primary"
                 >
                   {deal.organization.name}
                 </Link>
+                {/*
+                  Si ya es cliente, aquí. Vender a quien ya nos compra no es lo
+                  mismo que abrir una cuenta nueva —hay historial, contrato y un
+                  plazo de respuesta pactado detrás—, y desde el embudo no había
+                  forma de saberlo sin salirse a buscar la ficha.
+                */}
+                {orgKind && (
+                  <Badge className={ORG_KIND_STYLES[orgKind]}>
+                    {label(ORG_KIND_LABELS, orgKind, locale)}
+                  </Badge>
+                )}
               </p>
             )}
 

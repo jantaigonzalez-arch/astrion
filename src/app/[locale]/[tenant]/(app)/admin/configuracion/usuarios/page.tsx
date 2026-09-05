@@ -190,7 +190,7 @@ export default async function AdminUsersPage({
                       <span className="text-muted-foreground">—</span>
                     ) : orgsByClient.get(u.id) ? (
                       <Link
-                        href={`/admin/crm/organizaciones/${orgsByClient.get(u.id)!.id}`}
+                        href={`/admin/organizaciones/${orgsByClient.get(u.id)!.id}`}
                         className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
                       >
                         <Link2 className="size-3.5" />

@@ -121,7 +121,7 @@ export default async function ActivitiesPage({
                     )}
                     {a.organization && (
                       <Link
-                        href={`/admin/crm/organizaciones/${a.organization.id}`}
+                        href={`/admin/organizaciones/${a.organization.id}`}
                         className="hover:text-primary"
                       >
                         {a.organization.name}

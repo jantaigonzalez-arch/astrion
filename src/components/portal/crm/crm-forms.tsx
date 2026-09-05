@@ -71,10 +71,10 @@ export function OrganizationForm({
         </p>
         <div className="flex gap-2">
           <Button asChild variant="accent">
-            <Link href={`/admin/crm/organizaciones/${state.id}`}>Ver ficha</Link>
+            <Link href={`/admin/organizaciones/${state.id}`}>Ver ficha</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/admin/crm/organizaciones">Ver todas</Link>
+            <Link href="/admin/organizaciones">Ver todas</Link>
           </Button>
         </div>
       </div>

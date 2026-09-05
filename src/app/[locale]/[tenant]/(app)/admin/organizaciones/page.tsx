@@ -5,7 +5,7 @@ import { getOrganizations } from "@/lib/data/crm";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
-import { puedeEn } from "@/lib/tenancy/context";
+import { puedeEnAlguno } from "@/lib/tenancy/context";
 import { OrganizationsList, type OrganizationRow } from "@/components/portal/organizations-list";
 
 /**
@@ -29,7 +29,11 @@ export default async function OrganizationsPage({
   setRequestLocale(locale);
 
   const session = await auth();
-  const admin = await puedeEn("ventas", "administrar");
+  // Quien administra ve la cartera entera; el resto, la suya. Vale por
+  // cualquiera de las dos puertas: esta lista es el catálogo completo —clientes
+  // y prospectos—, así que quien administra Clientes tiene tanto derecho a
+  // verla enterita como quien administra Ventas.
+  const admin = await puedeEnAlguno(["ventas", "clientes"], "administrar");
   const orgs = await getOrganizations(admin ? undefined : session!.user.id);
 
   // Se aplana a lo que la lista necesita: el componente es de cliente, así que
@@ -68,14 +72,14 @@ export default async function OrganizationsPage({
               Clientes
             </Link>{" "}
             y{" "}
-            <Link href="/admin/crm/leads" className="text-primary hover:underline">
+            <Link href="/admin/crm/prospectos" className="text-primary hover:underline">
               Leads
             </Link>
             .
           </p>
         </div>
         <Button asChild variant="accent">
-          <Link href="/admin/crm/organizaciones/nueva">
+          <Link href="/admin/organizaciones/nueva">
             <Plus className="size-4" /> Nueva organización
           </Link>
         </Button>

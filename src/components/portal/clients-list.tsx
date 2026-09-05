@@ -241,7 +241,7 @@ export function ClientsList({
                   <tr key={c.id} className="transition-colors hover:bg-secondary/40">
                     <td className="px-4 py-3">
                       <Link
-                        href={`/admin/crm/organizaciones/${c.id}`}
+                        href={`/admin/organizaciones/${c.id}`}
                         className="font-medium hover:text-primary"
                       >
                         {c.name}
@@ -312,7 +312,7 @@ export function ClientsList({
                       */}
                       {c.slaHours ? (
                         <Link
-                          href={`/admin/crm/organizaciones/${c.id}/editar`}
+                          href={`/admin/organizaciones/${c.id}/editar`}
                           className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary ring-1 ring-primary/20 hover:bg-primary/15"
                           title="Plazo pactado con este cliente. Pulsa para cambiarlo."
                         >
@@ -320,7 +320,7 @@ export function ClientsList({
                         </Link>
                       ) : (
                         <Link
-                          href={`/admin/crm/organizaciones/${c.id}/editar`}
+                          href={`/admin/organizaciones/${c.id}/editar`}
                           className="text-xs text-muted-foreground hover:text-primary"
                           title={`Sin plazo propio: se le aplica el general de ${SLA_HOURS} h. Pulsa para pactar uno.`}
                         >

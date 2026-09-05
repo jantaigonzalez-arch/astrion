@@ -256,8 +256,8 @@ function menuDelRol(
     // contacto: personas que escribieron, no empresas. Compartir nombre con las
     // organizaciones sin compra dejaba dos cosas distintas llamadas igual en el
     // mismo menú, y quien entraba buscando una encontraba la otra.
-    { href: "/admin/leads", label: "Bandeja web" },
-    { href: "/admin/crm/leads", label: "Leads" },
+    { href: "/admin/leads", label: "Solicitudes del sitio" },
+    { href: "/admin/crm/prospectos", label: "Prospectos" },
     { href: "/admin/crm/contactos", label: "Contactos" },
     { href: "/admin/crm/actividades", label: "Actividades" },
   ];

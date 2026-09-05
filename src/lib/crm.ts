@@ -75,7 +75,7 @@ export const SOURCE_LABELS: Record<string, { es: string; en: string }> = {
   otro: { es: "Otro", en: "Other" },
 };
 
-/* ------------------------- Cliente o lead ------------------------- */
+/* ------------------------- Cliente o prospecto ------------------------- */
 /**
  * En qué punto del ciclo está una organización: ya compró, o todavía no.
  *
@@ -89,7 +89,7 @@ export type OrgKind = "client" | "lead";
 
 export const ORG_KIND_LABELS: Record<OrgKind, { es: string; en: string }> = {
   client: { es: "Cliente", en: "Client" },
-  lead: { es: "Lead", en: "Lead" },
+  lead: { es: "Prospecto", en: "Prospect" },
 };
 
 export const ORG_KIND_STYLES: Record<OrgKind, string> = {

@@ -787,7 +787,7 @@ export async function deleteOrganization(formData: FormData) {
     });
   });
   revalidateTenant();
-  await redirectAfterAction("/admin/crm/organizaciones");
+  await redirectAfterAction("/admin/organizaciones");
 }
 
 /* ========================= Contactos ========================= */

@@ -17,7 +17,7 @@ type Tab = { href: string; label: string; Icon: LucideIcon; exact?: boolean };
 
 const TABS: Tab[] = [
   { href: "/admin/crm", label: "Embudo", Icon: KanbanSquare, exact: true },
-  { href: "/admin/crm/leads", label: "Leads", Icon: Building2 },
+  { href: "/admin/crm/prospectos", label: "Prospectos", Icon: Building2 },
   { href: "/admin/crm/contactos", label: "Contactos", Icon: Users2 },
   { href: "/admin/crm/actividades", label: "Actividades", Icon: CalendarCheck },
   { href: "/admin/crm/informes", label: "Informes", Icon: BarChart3 },

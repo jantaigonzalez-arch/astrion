@@ -9,7 +9,7 @@ import { puedeEn } from "@/lib/tenancy/context";
 import { OrganizationsList, type OrganizationRow } from "@/components/portal/organizations-list";
 
 /**
- * Leads: organizaciones sin ninguna compra registrada.
+ * Prospectos: organizaciones sin ninguna compra registrada.
  *
  * Es la mitad de la antigua pantalla de Organizaciones que le toca a Ventas.
  * La otra mitad —los que ya compraron— vive en su propio módulo, porque lo que
@@ -17,10 +17,13 @@ import { OrganizationsList, type OrganizationRow } from "@/components/portal/org
  * el filtro invertido, y por eso ninguna organización puede quedarse fuera de
  * las dos listas ni salir en ambas: es la misma regla, negada (ver `ES_CLIENTE`).
  *
- * Ojo con el nombre. En este sistema «Leads» significaba —y en la Bandeja web
- * sigue significando— los mensajes del formulario de contacto, que son personas
- * que escribieron, no empresas. Aquí un lead es una ORGANIZACIÓN a la que
- * todavía no se le ha vendido nada.
+ * ── POR QUÉ YA NO SE LLAMA «LEADS» ────────────────────────────────────────
+ *
+ * Porque la palabra nombraba dos cosas distintas en el mismo menú: aquí, las
+ * EMPRESAS a las que no se les ha vendido nada; y en la otra entrada, los
+ * mensajes del formulario del sitio, que son PERSONAS que escribieron. Dos
+ * entidades sin relación bajo un mismo rótulo, a dos renglones de distancia.
+ * Ahora esto es Prospectos y aquello, Solicitudes del sitio.
  */
 export default async function LeadOrganizationsPage({
   params,
@@ -57,7 +60,7 @@ export default async function LeadOrganizationsPage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Leads</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Prospectos</h1>
           <p className="text-sm text-muted-foreground">
             {rows.length} organización(es) sin compra registrada
             {sinAsignar > 0 && (
@@ -71,7 +74,7 @@ export default async function LeadOrganizationsPage({
           </p>
         </div>
         <Button asChild variant="accent">
-          <Link href="/admin/crm/organizaciones/nueva">
+          <Link href="/admin/organizaciones/nueva">
             <Plus className="size-4" /> Nueva organización
           </Link>
         </Button>

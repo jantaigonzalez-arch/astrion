@@ -64,7 +64,7 @@ const ICONO: Record<string, LucideIcon> = {
   "/admin/crm": KanbanSquare,
   "/admin/pedidos": Receipt,
   "/admin/leads": Mail,
-  "/admin/crm/leads": Building2,
+  "/admin/crm/prospectos": Building2,
   "/admin/crm/contactos": Users2,
   "/admin/crm/actividades": CalendarCheck,
   "/admin/clientes": Building2,

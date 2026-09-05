@@ -317,6 +317,34 @@ export const ES_CLIENTE = sql<boolean>`(
   )
 )`;
 
+/**
+ * Cliente o prospecto, para UNA organización.
+ *
+ * ── POR QUÉ NO VA COMO `extras` DE LA CONSULTA RELACIONAL ─────────────────
+ *
+ * Porque `ES_CLIENTE` está escrito contra el nombre real de la tabla, y la API
+ * relacional de Drizzle la alias a `"crmOrganizations"`: Postgres responde
+ * «invalid reference to FROM-clause entry for table "crm_organizations"» y la
+ * ficha entera se cae. Es el mismo tropiezo que ya está anotado en
+ * `getClients`, ahí con los conteos de las subconsultas.
+ *
+ * Se resuelve con un `select` aparte, que sí usa el nombre real. Es una
+ * consulta más por ficha, sobre la clave primaria; a cambio, la regla sigue
+ * viviendo en UN solo sitio. Recalcularla a mano en JavaScript —«tiene cuenta o
+ * algún negocio ganado»— sería más rápido y volvería a abrir la puerta a que la
+ * ficha diga «prospecto» de alguien que la lista de Clientes cuenta como
+ * cliente.
+ */
+export async function kindDeOrganizacion(id: string): Promise<OrgKind> {
+  const db = await tenantDb();
+  const [fila] = await db
+    .select({ kind: ORG_KIND })
+    .from(crmOrganizations)
+    .where(eq(crmOrganizations.id, id))
+    .limit(1);
+  return fila?.kind ?? "lead";
+}
+
 /** `ES_CLIENTE` como el valor que viaja a la interfaz. Ver `OrgKind` en `lib/crm.ts`. */
 export const ORG_KIND = sql<OrgKind>`(case when ${ES_CLIENTE} then 'client' else 'lead' end)`;
 

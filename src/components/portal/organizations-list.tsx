@@ -152,7 +152,7 @@ export function OrganizationsList({
             Los filtros de tipo solo aparecen cuando hay de los dos.
 
             Esta lista sirve al catálogo completo y también a la pantalla de
-            Leads, donde todas las filas son leads: ahí un botón «Clientes (0)»
+            Prospectos, donde todas las filas lo son: ahí un botón «Clientes (0)»
             no filtra nada y solo invita a pulsarlo para no obtener resultados.
           */}
           {clientCount > 0 && leadCount > 0 && (
@@ -167,7 +167,7 @@ export function OrganizationsList({
                 onClick={() => setFilter("leads")}
                 className={chip(filter === "leads")}
               >
-                Leads ({leadCount})
+                Prospectos ({leadCount})
               </button>
             </>
           )}
@@ -224,7 +224,7 @@ export function OrganizationsList({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <Link
-                    href={`/admin/crm/organizaciones/${o.id}`}
+                    href={`/admin/organizaciones/${o.id}`}
                     className="font-medium hover:text-primary"
                   >
                     {o.name}

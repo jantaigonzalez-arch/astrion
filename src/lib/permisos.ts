@@ -293,7 +293,19 @@ export function ajustesGuardados(v: unknown): Ajustes {
  * dar de alta o capturar: la pantalla que CREA algo exige `editar`, mientras
  * que la que solo lista se conforma con `ver`.
  */
-type Regla = { prefijo: string; modulo: Modulo; nivel: Nivel };
+/**
+ * ── UNA REGLA PUEDE NOMBRAR MÁS DE UN MÓDULO ──────────────────────────────
+ *
+ * Casi ninguna lo necesita, pero la ficha de la organización sí: la misma
+ * empresa es un prospecto para Ventas y un cliente para Servicio, y es UN solo
+ * registro. Atarla a `ventas` dejaría fuera a quien lleva la cartera de
+ * clientes; atarla a `clientes`, al vendedor que la está prospectando.
+ *
+ * Cuando hay varios, basta con alcanzar el nivel en UNO. Es una disyunción a
+ * propósito: son dos maneras de tener asunto con la misma empresa, no dos
+ * requisitos que haya que cumplir a la vez.
+ */
+type Regla = { prefijo: string; modulo: Modulo | Modulo[]; nivel: Nivel };
 
 const RUTAS: Regla[] = [
   // ── Servicio ──
@@ -309,6 +321,9 @@ const RUTAS: Regla[] = [
 
   // ── Clientes ──
   { prefijo: "/admin/clientes", modulo: "clientes", nivel: "ver" },
+  // La ficha de la empresa no es de Ventas ni de Servicio: las dos la leen.
+  { prefijo: "/admin/organizaciones", modulo: ["ventas", "clientes"], nivel: "ver" },
+  { prefijo: "/admin/organizaciones/nueva", modulo: ["ventas", "clientes"], nivel: "editar" },
   { prefijo: "/admin/contratos", modulo: "clientes", nivel: "ver" },
   { prefijo: "/admin/contratos/nuevo", modulo: "clientes", nivel: "editar" },
 
@@ -349,14 +364,18 @@ const RUTAS_ORDENADAS = [...RUTAS].sort((a, b) => b.prefijo.length - a.prefijo.l
  * portal del cliente, la búsqueda— y quien pregunta debe dejarlo pasar. No es
  * lo mismo que «sin acceso», y confundirlos cerraría media aplicación.
  */
-export function exigenciaDe(pathname: string): { modulo: Modulo; nivel: Nivel } | null {
+export function exigenciaDe(
+  pathname: string,
+): { modulos: Modulo[]; nivel: Nivel } | null {
   // Sin el prefijo de idioma ni el de empresa: lo que se compara es la ruta
   // dentro del portal, que es como están escritas las reglas. Ver `nav.tsx`.
   const limpio = pathname.replace(/^\/(es|en)(?=\/|$)/, "");
   const regla = RUTAS_ORDENADAS.find(
     (r) => limpio === r.prefijo || limpio.startsWith(`${r.prefijo}/`),
   );
-  return regla ? { modulo: regla.modulo, nivel: regla.nivel } : null;
+  if (!regla) return null;
+  const modulos = Array.isArray(regla.modulo) ? regla.modulo : [regla.modulo];
+  return { modulos, nivel: regla.nivel };
 }
 
 /** ¿Esta persona puede abrir esta dirección? */
@@ -367,5 +386,5 @@ export function puedeEntrar(
 ): boolean {
   const exige = exigenciaDe(pathname);
   if (!exige) return true;
-  return alcanza(nivelEfectivo(role, ajustes, exige.modulo), exige.nivel);
+  return exige.modulos.some((m) => alcanza(nivelEfectivo(role, ajustes, m), exige.nivel));
 }
