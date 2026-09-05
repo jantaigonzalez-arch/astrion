@@ -550,37 +550,47 @@
   background-attachment: local, local, scroll, scroll;
 }
 
-/* 3 · EL TIRADOR DEL ANCHO.
-      Lo inyecta `AnchosDeColumna` en cada encabezado. Ancho de 9 px y no de 1:
-      una línea de un píxel es imposible de agarrar con el ratón, y el área
-      sensible tiene que ser más grande que la marca que se ve. */
-.tabla-tirador {
-  position: absolute;
-  top: 0;
-  right: -4px;
-  z-index: 3;
-  width: 9px;
-  height: 100%;
-  cursor: col-resize;
-  /* No se pinta hasta que se lo busca: una tabla con nueve rayitas verticales
-     parece rota. Al pasar por el encabezado aparece, que es cuando la persona
-     ya está mirando la frontera entre dos columnas. */
-  opacity: 0;
-  transition: opacity 0.12s;
-  touch-action: none;
+/* 3 · EL TIRADOR DEL ANCHO, SIN AÑADIR UN SOLO NODO.
+
+      La primera versión inyectaba un `<span>` dentro de cada `<th>` desde un
+      efecto, y eso rompía la hidratación: esos encabezados los gobierna React,
+      así que al reconciliar encontraba nodos que su árbol no tenía y descartaba
+      la rama entera. El error no era el `<span>` en sí — era mutar DOM ajeno.
+
+      Un pseudo-elemento no vive en el DOM, así que React no puede chocar con
+      él. Recibe eventos de puntero y muestra su cursor igual que un elemento
+      de verdad, que es todo lo que hacía falta.
+
+      9 px y no 1: una línea de un píxel es imposible de agarrar, y el área
+      sensible tiene que ser más grande que la marca que se ve. Cabe dentro del
+      relleno de la celda, así que nunca se solapa con el texto ni con el
+      enlace que ordena. */
+.tabla-erp[data-tabla] thead th {
+  position: relative;
 }
-.tabla-erp thead th:hover .tabla-tirador,
-.tabla-tirador:hover {
-  opacity: 1;
-}
-.tabla-tirador::after {
+.tabla-erp[data-tabla] thead th::after {
   content: "";
   position: absolute;
   top: 20%;
-  left: 4px;
-  width: 1px;
+  right: 0;
+  width: 9px;
   height: 60%;
-  background: var(--color-primary);
+  cursor: col-resize;
+  /* La marca visible es más fina que el área sensible: la raya al centro. */
+  border-right: 1px solid var(--color-primary);
+  /* No se pinta hasta que se lo busca: una tabla con nueve rayitas verticales
+     parece rota. Aparece al pasar por el encabezado, que es cuando la persona
+     ya está mirando la frontera entre dos columnas. */
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.tabla-erp[data-tabla] thead th:hover::after {
+  opacity: 1;
+}
+/* La última no ofrece tirador: no hay nada a su derecha que ceder sitio, y
+   arrastrarla solo ensancharía la tabla hasta desbordarla. */
+.tabla-erp[data-tabla] thead th:last-child::after {
+  content: none;
 }
 
 /* Mientras se arrastra: el cursor no cambia al pasar sobre el texto y nada se
