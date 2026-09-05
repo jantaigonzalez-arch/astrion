@@ -55,6 +55,21 @@ export const membershipRole = pgEnum("membership_role", [
   "admin",
   "agent",
   "sales",
+  /**
+   * General: quien administra el gasto — compras, cuentas por pagar y viáticos.
+   *
+   * Nace por los viáticos y no se agota en ellos. El ingeniero pide y esta
+   * persona autoriza, y esas dos casillas tienen que ser de gente distinta o la
+   * autorización no autoriza nada — es la misma regla que ya sostiene a las
+   * requisiciones. Antes solo `admin` podía firmar la segunda, y eso obligaba a
+   * dar administración entera de la empresa a quien solo tenía que revisar
+   * gastos.
+   *
+   * Va DESPUÉS de `sales` y antes de `client` a propósito: el orden del enum es
+   * el que Postgres usa al ordenar, y este rol es interno. Añadir un valor a un
+   * enum no reescribe filas, así que ninguna cuenta cambia al desplegarlo.
+   */
+  "general",
   "client",
 ]);
 

@@ -8,7 +8,8 @@ import { cn } from "@/lib/utils";
 
 export type AvisoItem = {
   id: string;
-  ticketId: string;
+  /** A dónde lleva. Lo resuelve el servidor; ver `lib/notificaciones.ts`. */
+  href: string;
   reference: string | null;
   title: string;
   body: string | null;
@@ -127,7 +128,7 @@ export function Campana({
                       className="block w-full px-4 py-3 text-left transition-colors hover:bg-secondary/60"
                     >
                       <Link
-                        href={`/tickets/${a.ticketId}`}
+                        href={a.href}
                         className="block"
                         onClick={(e) => e.stopPropagation()}
                       >

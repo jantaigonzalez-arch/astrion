@@ -69,3 +69,48 @@ export async function saveImage(
 
   return `${UPLOADS_URL_PREFIX}/${safeSub}/${filename}`;
 }
+
+/**
+ * Guarda un COMPROBANTE de gasto: la foto del ticket o su PDF.
+ *
+ * Función aparte de `saveImage` y no un parámetro suyo, porque lo que cambia no
+ * es un ajuste: es qué se considera válido. Una foto de equipo tiene que ser
+ * una imagen —se pinta en una ficha—; un comprobante de viáticos llega tal como
+ * lo dio el hotel, y hoy eso es un PDF la mitad de las veces. Obligar a
+ * convertirlo a JPG para poder subirlo es exactamente el trámite que hace que
+ * la gente deje de subir comprobantes.
+ *
+ * El PDF NO se muestra embebido en la pantalla: se enlaza. Un visor de PDF
+ * dentro de una lista de gastos es peso que se paga en cada carga para algo que
+ * se abre una vez.
+ */
+const COMPROBANTES = new Map<string, string>([
+  ["image/jpeg", "jpg"],
+  ["image/png", "png"],
+  ["image/webp", "webp"],
+  ["image/heic", "heic"],
+  ["application/pdf", "pdf"],
+]);
+
+export async function saveReceipt(
+  file: FormDataEntryValue | null,
+  subdir: string,
+): Promise<string | null> {
+  if (!file || typeof file === "string") return null;
+  const f = file as File;
+  if (!f.size) return null;
+  if (f.size > MAX_BYTES) throw new Error("El comprobante supera el límite de 6 MB.");
+
+  const ext = COMPROBANTES.get(f.type);
+  if (!ext) {
+    throw new Error("Formato no permitido en un comprobante (usa JPG, PNG, HEIC o PDF).");
+  }
+
+  const safeSub = subdir.replace(/[^a-z0-9/_-]/gi, "");
+  const dir = path.join(uploadsDir(), safeSub);
+  await mkdir(dir, { recursive: true });
+
+  const filename = `${randomUUID()}.${ext}`;
+  await writeFile(path.join(dir, filename), Buffer.from(await f.arrayBuffer()));
+  return `${UPLOADS_URL_PREFIX}/${safeSub}/${filename}`;
+}

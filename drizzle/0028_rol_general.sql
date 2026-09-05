@@ -1,0 +1,26 @@
+-- EL ROL QUE AUTORIZA EL GASTO.
+--
+-- Hasta hoy, la segunda firma de cualquier documento de gasto —autorizar una
+-- requisición, aprobar un pago— solo podía darla `admin`. Eso obligaba a
+-- entregar la administración ENTERA de la empresa a quien nada más tenía que
+-- revisar cuentas: quien controla los viáticos podía además dar de alta
+-- usuarios, cambiar la configuración y ver el margen de cada contrato.
+--
+-- `general` es esa persona sin lo demás: compras, cuentas por pagar y viáticos.
+-- Lo que puede en cada módulo lo decide `src/lib/permisos.ts`; aquí solo nace
+-- el valor.
+--
+-- ── POR QUÉ `BEFORE 'client'` Y NO AL FINAL ───────────────────────────────
+--
+-- El orden de un enum es el que Postgres usa al ordenar (`order by role`), y
+-- `client` es el único que no es del equipo. Dejarlo al final mantiene la lista
+-- leyéndose de más a menos acceso, que es como la pintan las pantallas de
+-- usuarios. Añadir un valor NO reescribe una sola fila: ninguna cuenta cambia
+-- de rol al aplicar esto.
+--
+-- ── Y POR QUÉ ESTO NO SE PUEDE REVERTIR SIN MÁS ───────────────────────────
+--
+-- Postgres no sabe quitar un valor de un enum. Si hubiera que deshacerlo habría
+-- que recrear el tipo entero y reescribir `memberships`. Es una migración de un
+-- solo sentido y conviene saberlo antes de aplicarla, no después.
+ALTER TYPE "membership_role" ADD VALUE IF NOT EXISTS 'general' BEFORE 'client';

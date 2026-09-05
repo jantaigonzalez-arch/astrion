@@ -345,6 +345,24 @@ function menuDelRol(
    
   };
 
+  /*
+    VIÁTICOS TIENE SECCIÓN PROPIA, Y NO ES UNA CUESTIÓN DE GUSTO.
+
+    Estuvo dentro de Compras —es gasto, lo firma la misma persona— y un probe lo
+    tumbó: quitarle Compras a un agente dejaba de vaciar la sección, porque
+    dentro quedaba Viáticos, que lo gobierna OTRO módulo. El menú se quedaba con
+    un encabezado «Compras» sobre un solo renglón que no es de compras.
+
+    De ahí sale la regla, que ya estaba implícita en todas las demás: una sección
+    es la casa de UN módulo. Mientras se cumple, filtrar por permiso vacía
+    secciones enteras y el encabezado nunca miente sobre lo que hay debajo.
+
+    Va después de Compras porque el circuito del dinero que sale termina aquí, y
+    de una sola entrada no hay que disculparse: Inventario lleva una desde que
+    existe.
+  */
+  const viaticos: NavItem[] = [{ href: "/admin/viaticos", label: "Viáticos" }];
+
   // El orden de las secciones sigue el CIRCUITO, no el organigrama.
   //
   // Ventas iba debajo de Compras, y desde que existen las requisiciones eso se
@@ -384,6 +402,7 @@ function menuDelRol(
     { section: "Clientes", items: clientes },
     { section: "Inventario", items: inventario },
     { section: "Compras", items: [...compras, porPagar] },
+    { section: "Viáticos", items: viaticos },
     {
       section: "Análisis",
       items: [{ href: "/admin/rentabilidad", label: "Rentabilidad" }, ...analisis],

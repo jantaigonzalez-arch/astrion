@@ -2,7 +2,7 @@ import "server-only";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { tenantDb } from "@/lib/tenancy/context";
-import { notifications, tickets } from "@/lib/db/schema";
+import { notifications, tickets, viaticos } from "@/lib/db/schema";
 import type { DbOrTx } from "@/lib/db";
 
 /**
@@ -29,19 +29,43 @@ import type { DbOrTx } from "@/lib/db";
  * que se pierde es el renglón de la campana.
  */
 
-/** Los cinco sucesos que hoy alimentan la bandeja. Cerrado a propósito. */
+/**
+ * Los sucesos que alimentan la bandeja. Cerrado a propósito.
+ *
+ * Los de viático son cinco y no cuatro porque el flujo tiene dos rondas de ida
+ * y vuelta: se pide y se autoriza (o se rechaza), se comprueba y se cierra (o
+ * se devuelve). Cada uno de esos momentos deja a alguien esperando, y quien
+ * espera es precisamente quien tiene que enterarse.
+ */
 export const TIPOS_DE_AVISO = [
   "ticket.creado",
   "ticket.comentado",
   "ticket.asignado",
   "ticket.resuelto",
+  "viatico.enviado",
+  "viatico.autorizado",
+  "viatico.rechazado",
+  "viatico.comprobado",
+  "viatico.devuelto",
+  "viatico.cerrado",
 ] as const;
 export type TipoDeAviso = (typeof TIPOS_DE_AVISO)[number];
 
-export type AvisoNuevo = {
+/**
+ * De qué habla el aviso.
+ *
+ * Exactamente una de las dos llaves, y lo hace cumplir un CHECK en la base
+ * —ver la migración 0026—. El tipo lo dice con una unión discriminada para que
+ * el compilador no deje construir un aviso con las dos ni con ninguna: un aviso
+ * sin asunto es un renglón en la campana que no lleva a ningún lado.
+ */
+export type AsuntoDelAviso =
+  | { ticketId: string; viaticoId?: never }
+  | { viaticoId: string; ticketId?: never };
+
+export type AvisoNuevo = AsuntoDelAviso & {
   /** A quiénes. Una fila por cada uno: `read_at` es de cada persona. */
   paraUsuarios: string[];
-  ticketId: string;
   tipo: TipoDeAviso;
   /** Ya redactado y con el folio dentro. Ver la nota de la tabla. */
   titulo: string;
@@ -72,7 +96,8 @@ export async function crearAvisos(
     await db.insert(notifications).values(
       gente.map((userId) => ({
         userId,
-        ticketId: aviso.ticketId,
+        ticketId: aviso.ticketId ?? null,
+        viaticoId: aviso.viaticoId ?? null,
         kind: aviso.tipo,
         title: aviso.titulo,
         body: aviso.cuerpo ?? null,
@@ -85,7 +110,16 @@ export async function crearAvisos(
 
 export type AvisoEnPantalla = {
   id: string;
-  ticketId: string;
+  /**
+   * A dónde lleva el renglón, ya resuelto.
+   *
+   * Antes la campana armaba la dirección a mano —`/tickets/${ticketId}`— y eso
+   * dejó de valer en cuanto hubo avisos que no son de tickets: el componente
+   * habría mandado a `/tickets/undefined`. Es la misma lección de `menu.ts`:
+   * a dónde lleva algo es una decisión del modelo, no del que dibuja.
+   */
+  href: string;
+  /** El folio del asunto: `EVO-000123` o `EVO-V-000045`. */
   reference: string | null;
   kind: string;
   title: string;
@@ -129,16 +163,34 @@ export async function misAvisos(limite = 20): Promise<AvisoEnPantalla[]> {
   }
 }
 
+/**
+ * Los avisos de una persona, con su destino resuelto.
+ *
+ * ── LOS DOS JOIN SON `left` Y ESO ES LO IMPORTANTE ────────────────────────
+ *
+ * Este `select` tenía un `innerJoin` contra `tickets`, que era correcto cuando
+ * todos los avisos eran de tickets. Con la bandeja ampliada a viáticos, ese
+ * mismo `innerJoin` habría hecho DESAPARECER en silencio cada aviso de viático:
+ * la campana seguiría funcionando, el contador de no leídos los seguiría
+ * contando, y el renglón no estaría. Un punto rojo sobre una lista que no lo
+ * explica es peor que no avisar.
+ *
+ * Con `left`, un aviso cuyo asunto se borró sale igual —sin folio— en vez de
+ * evaporarse. La cascada debería impedirlo, pero la campana no es el sitio
+ * donde conviene averiguar si la cascada funciona.
+ */
 async function leerAvisos(
   userId: string,
   limite: number,
 ): Promise<AvisoEnPantalla[]> {
   const db = await tenantDb();
-  return db
+  const filas = await db
     .select({
       id: notifications.id,
       ticketId: notifications.ticketId,
-      reference: tickets.reference,
+      viaticoId: notifications.viaticoId,
+      ticketRef: tickets.reference,
+      viaticoRef: viaticos.reference,
       kind: notifications.kind,
       title: notifications.title,
       body: notifications.body,
@@ -146,10 +198,24 @@ async function leerAvisos(
       createdAt: notifications.createdAt,
     })
     .from(notifications)
-    .innerJoin(tickets, eq(tickets.id, notifications.ticketId))
+    .leftJoin(tickets, eq(tickets.id, notifications.ticketId))
+    .leftJoin(viaticos, eq(viaticos.id, notifications.viaticoId))
     .where(eq(notifications.userId, userId))
     .orderBy(desc(notifications.createdAt))
     .limit(limite);
+
+  return filas.map((f) => ({
+    id: f.id,
+    href: f.viaticoId
+      ? `/admin/viaticos/${f.viaticoId}`
+      : `/tickets/${f.ticketId}`,
+    reference: f.viaticoRef ?? f.ticketRef ?? null,
+    kind: f.kind,
+    title: f.title,
+    body: f.body,
+    readAt: f.readAt,
+    createdAt: f.createdAt,
+  }));
 }
 
 /** Cuántos sin leer. Es el número del punto rojo, y nada más. */

@@ -1,5 +1,7 @@
 "use client";
 
+import { ASSIGNABLE_ROLES, ROLE_LABELS } from "@/lib/roles";
+
 import { useActionState, useState } from "react";
 import { Boxes, CheckCircle2, Copy, Loader2, RefreshCw, UserPlus } from "lucide-react";
 import { createUser, type CreateUserState } from "@/lib/actions/users";
@@ -116,10 +118,20 @@ export function CreateUserForm() {
         <div>
           <Label htmlFor="role">Rol</Label>
           <select id="role" name="role" defaultValue="client" className={selectCls}>
-            <option value="client">Cliente (laboratorio)</option>
-            <option value="agent">Agente (soporte)</option>
-            <option value="sales">Vendedor</option>
-            <option value="admin">Administrador</option>
+            {/*
+            LOS ROLES SALEN DE `ASSIGNABLE_ROLES`, NO ESCRITOS A MANO.
+
+            Estaban los cuatro literales aquí dentro, y el día que nació el
+            rol General el formulario no se enteró: se podía filtrar por él en
+            el padrón y no se podía asignar a nadie. Una lista blanca copiada
+            es una lista blanca que se queda vieja sin avisar, porque nada
+            falla — simplemente falta una opción.
+            */}
+            {ASSIGNABLE_ROLES.map((r) => (
+            <option key={r} value={r}>
+            {ROLE_LABELS[r]}
+            </option>
+            ))}
           </select>
         </div>
         <div>

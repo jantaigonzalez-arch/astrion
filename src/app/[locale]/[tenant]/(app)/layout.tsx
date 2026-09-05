@@ -116,7 +116,7 @@ export default async function TenantAppLayout({
   });
   const avisos = avisosCrudos.map((a) => ({
     id: a.id,
-    ticketId: a.ticketId,
+    href: a.href,
     reference: a.reference,
     title: a.title,
     body: a.body,

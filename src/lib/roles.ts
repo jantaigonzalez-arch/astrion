@@ -11,6 +11,9 @@ import type { MembershipRole } from "@/lib/db/platform";
  *
  * - support (agente/admin/dueño): atiende tickets, gestiona equipos.
  * - sales (vendedor/admin/dueño): gestiona contratos.
+ * - general: administra el gasto —compras, cuentas por pagar y viáticos— y
+ *   nada más. No es un administrador con menos cosas: es la segunda firma de
+ *   los documentos de gasto, que antes solo podía dar `admin`.
  * - admin: además administra cuentas y configuración.
  * - owner: todo lo de admin, más lo que no debe poder cualquier administrador
  *   (ver `isOwner`).
@@ -50,7 +53,13 @@ export function isOwner(role: EffectiveRole) {
 
 /** Cualquier perfil interno (accede al área /admin del portal). */
 export function isInternal(role: EffectiveRole) {
-  return role === "agent" || role === "admin" || role === "sales" || role === "owner";
+  return (
+    role === "agent" ||
+    role === "admin" ||
+    role === "sales" ||
+    role === "general" ||
+    role === "owner"
+  );
 }
 
 export const ROLE_LABELS: Record<MembershipRole, string> = {
@@ -59,6 +68,7 @@ export const ROLE_LABELS: Record<MembershipRole, string> = {
   agent: "Agente (soporte)",
   client: "Cliente (laboratorio)",
   sales: "Vendedor",
+  general: "General (compras y gastos)",
 };
 
 /**
@@ -67,5 +77,11 @@ export const ROLE_LABELS: Record<MembershipRole, string> = {
  * `owner` queda fuera a propósito: se otorga al aprovisionar el inquilino y
  * cambiarlo es transferir la titularidad de la cuenta, no editar un usuario.
  */
-export const ASSIGNABLE_ROLES = ["admin", "agent", "sales", "client"] as const;
+export const ASSIGNABLE_ROLES = [
+  "admin",
+  "general",
+  "agent",
+  "sales",
+  "client",
+] as const;
 export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];

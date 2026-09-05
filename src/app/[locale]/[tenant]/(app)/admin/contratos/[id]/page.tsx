@@ -24,6 +24,8 @@ import {
 } from "@/lib/data/contracts";
 import { getSettings } from "@/lib/data/settings";
 import { computeProfit, sumProfits, mxn } from "@/lib/profit";
+import { viaticosDelContrato, viaticosPorTicket } from "@/lib/data/viaticos";
+import { CATEGORIA_LABELS } from "@/lib/viaticos";
 import { contractInsights } from "@/lib/ml/insights";
 import { InsightStrip } from "@/components/portal/insight-strip";
 import { Card } from "@/components/ui/card";
@@ -94,7 +96,24 @@ export default async function ContractDetailPage({
   // Rentabilidad consolidada: utilidad de cada servicio + consumo del contrato.
   // Esta sí encadena de verdad: hay que saber QUÉ servicios antes de pedir sus
   // horas y refacciones.
-  const inputs = await getProfitInputsForTickets(serviceTickets.map((t) => t.id));
+  const ticketIds = serviceTickets.map((t) => t.id);
+  /*
+    LOS VIÁTICOS SON EL TERCER COSTO DE ATENDER UN CONTRATO.
+
+    Hasta aquí el costo eran refacciones y mano de obra, así que un contrato en
+    otra ciudad se veía tan rentable como uno de la misma cuadra: el vuelo, el
+    hotel y las comidas del ingeniero no aparecían por ningún lado. Ahora entran
+    —solo los CERRADOS, ver `data/viaticos.ts`— y bajan el margen donde de
+    verdad hay que ir a atender.
+
+    Van en paralelo con las horas y refacciones: son dos preguntas sobre el
+    mismo conjunto de tickets, ya conocido.
+  */
+  const [inputs, viaticoPorTicket, viajes] = await Promise.all([
+    getProfitInputsForTickets(ticketIds),
+    viaticosPorTicket(ticketIds),
+    viaticosDelContrato(contract.id),
+  ]);
   const perTicket = new Map(
     inputs.map((i) => [
       i.ticketId,
@@ -103,6 +122,7 @@ export default async function ContractDetailPage({
         parts: i.parts,
         laborCostPerHour: appSettings.laborCostPerHour,
         laborRatePerHour: appSettings.laborRatePerHour,
+        viaticosCost: viaticoPorTicket.get(i.ticketId) ?? 0,
       }),
     ]),
   );
@@ -390,7 +410,44 @@ export default async function ContractDetailPage({
             <span className="text-muted-foreground">Costo de mano de obra</span>
             <span className="tabular-nums">{mxn(consolidated.laborCost)}</span>
           </div>
+          {/*
+            El renglón de viáticos sale SIEMPRE, también en cero.
+
+            Esconderlo cuando no hay viajes haría que un contrato local y uno
+            foráneo sin comprobar todavía se leyeran igual —los dos sin la
+            partida—, y son cosas distintas: en uno no hay nada que contar y en
+            el otro falta contarlo. Un cero explícito dice cuál es cuál.
+          */}
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">
+              Costo de viáticos
+              {viajes.viajes > 0 ? ` · ${viajes.viajes} viaje(s)` : ""}
+            </span>
+            <span className="tabular-nums">{mxn(consolidated.viaticosCost)}</span>
+          </div>
         </div>
+
+        {/*
+          En qué se fue el dinero del viaje.
+
+          Solo cuando hay algo que desglosar: una lista de categorías en cero es
+          ruido en la pantalla que más números tiene de toda la aplicación.
+        */}
+        {viajes.porCategoria.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
+            {viajes.porCategoria.map((c) => (
+              <span
+                key={c.k}
+                className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground"
+              >
+                {CATEGORIA_LABELS[c.k]}{" "}
+                <span className="tabular-nums font-medium text-foreground">
+                  {mxn(c.total)}
+                </span>
+              </span>
+            ))}
+          </div>
+        ) : null}
       </Card>
 
       {/* Equipos amparados, con desglose */}

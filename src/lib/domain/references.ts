@@ -25,7 +25,8 @@ type SequenceName =
   | "supplier_credit_note_reference_seq"
   | "supplier_advance_reference_seq"
   | "payable_import_reference_seq"
-  | "requisition_reference_seq";
+  | "requisition_reference_seq"
+  | "viatico_reference_seq";
 
 async function nextval(tx: DbOrTx, sequence: SequenceName): Promise<number> {
   // sql.raw es seguro aquí porque `sequence` es un union cerrado de literales
@@ -182,4 +183,24 @@ export async function nextPurchaseOrderReference(
     nextval(tx, "purchase_order_reference_seq"),
   ]);
   return `${p}-C-${String(n).padStart(6, "0")}`;
+}
+
+/**
+ * Folio de viático: EVO-V-000123.
+ *
+ * V, y ninguna de las otras siete la usa (D, P, NC, ANT, IMP, R, C). Importa
+ * más de lo que parece: un viático se cita en la misma conversación que el
+ * ticket de servicio al que carga sus gastos y que la orden de compra de la
+ * refacción que no pudo esperar. Tres documentos con la misma letra son tres
+ * documentos que alguien va a confundir por teléfono.
+ */
+export async function nextViaticoReference(
+  tx: DbOrTx,
+  prefix?: string,
+): Promise<string> {
+  const [p, n] = await Promise.all([
+    prefix ? Promise.resolve(prefix) : folioPrefix(),
+    nextval(tx, "viatico_reference_seq"),
+  ]);
+  return `${p}-V-${String(n).padStart(6, "0")}`;
 }

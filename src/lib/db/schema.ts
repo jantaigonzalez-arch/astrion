@@ -18,7 +18,7 @@ import {
   uniqueIndex,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { relations, sql } from "drizzle-orm";
+import { desc, relations, sql } from "drizzle-orm";
 
 /**
  * TABLAS DE NEGOCIO — viven en el esquema de CADA inquilino (`tenant_<slug>`),
@@ -326,12 +326,20 @@ export const leads = pgTable("leads", {
  * persona: con una fila compartida, que uno la marque leída se la marcaría a
  * los siete, que es justo lo que una bandeja no puede hacer.
  *
- * ── EL TICKET ES UNA LLAVE DE VERDAD ──────────────────────────────────────
+ * ── EL ASUNTO ES UNA LLAVE DE VERDAD ──────────────────────────────────────
  *
- * `ON DELETE CASCADE`: un aviso que apunta a un ticket borrado es un renglón
- * que lleva a una pantalla que no existe. Hoy los cinco avisos son de tickets;
- * el día que haya de otra cosa, ampliar esto es una migración, y que se note es
- * preferible a un `subject_id` suelto que admita filas colgando de nada.
+ * `ON DELETE CASCADE`: un aviso que apunta a algo borrado es un renglón que
+ * lleva a una pantalla que no existe.
+ *
+ * Este comentario decía «hoy los cinco avisos son de tickets; el día que haya
+ * de otra cosa, ampliar esto es una migración». Ese día llegó con los viáticos,
+ * y se amplió como estaba previsto: una columna MÁS, no un `subject_id` suelto.
+ *
+ * Las dos llaves son nulables y un CHECK exige que vaya EXACTAMENTE UNA. Es lo
+ * que conserva la propiedad que el diseño original defendía —ninguna fila
+ * colgando de nada— sin renunciar a que la base la haga cumplir. Con dos
+ * columnas nulables y sin CHECK, un aviso sin asunto se guardaría en silencio y
+ * aparecería en la campana como un renglón que no lleva a ningún lado.
  */
 export const notifications = pgTable(
   "notifications",
@@ -341,10 +349,15 @@ export const notifications = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    ticketId: uuid("ticket_id")
-      .notNull()
-      .references(() => tickets.id, { onDelete: "cascade" }),
-    /** Qué pasó: `ticket.created`, `ticket.commented`, `ticket.assigned`… */
+    /** El ticket del aviso. Nulo cuando el aviso es de otra cosa. */
+    ticketId: uuid("ticket_id").references(() => tickets.id, {
+      onDelete: "cascade",
+    }),
+    /** El viático del aviso. Excluyente con `ticketId`; lo exige un CHECK. */
+    viaticoId: uuid("viatico_id").references((): AnyPgColumn => viaticos.id, {
+      onDelete: "cascade",
+    }),
+    /** Qué pasó: `ticket.creado`, `viatico.enviado`, `viatico.autorizado`… */
     kind: varchar("kind", { length: 40 }).notNull(),
     /**
      * Lo que se lee en la campana, ya redactado y CON EL FOLIO DENTRO.
@@ -2797,3 +2810,319 @@ export const analysisPlacements = pgTable(
     index("analysis_placements_screen_idx").on(t.screen, t.position),
   ],
 );
+
+/* ═══════════════════════════════════════════════════════════════════
+   Viáticos
+   ═══════════════════════════════════════════════════════════════════ */
+
+/**
+ * Estado de un viático. Un solo documento, dos etapas y dos firmas.
+ *
+ * ── POR QUÉ UN DOCUMENTO Y NO DOS ──────────────────────────────────────────
+ *
+ * La tentación es separar «solicitud» de «comprobación», como se separó la
+ * requisición de la orden de compra. Ahí eran dos porque las firman personas
+ * distintas y responden preguntas distintas —qué hace falta, a quién
+ * comprárselo—. Aquí las dos etapas las vive la MISMA pareja: el ingeniero pide
+ * y comprueba, General autoriza y da el visto bueno. Partirlo obligaría a
+ * mantener un enlace uno-a-uno que nunca se usa en la otra dirección, y a
+ * responder «¿cuánto se autorizó?» con un join.
+ *
+ * ── EL RECORRIDO ───────────────────────────────────────────────────────────
+ *
+ *   borrador → enviado → autorizado → en_revision → cerrado
+ *                  ↓          ↑            ↓
+ *              rechazado      └────────────┘  (devuelto: falta comprobante)
+ *
+ * `autorizado` es también «comprobando»: el ingeniero está cargando gastos. No
+ * hay un estado aparte para eso porque no aporta nada que el conteo de gastos
+ * no diga ya, y un estado que nadie puede distinguir del anterior es un estado
+ * que se pone mal.
+ *
+ * Devolver una comprobación la regresa a `autorizado`, que es exactamente donde
+ * estaba: le faltan gastos o comprobantes. No hay estado «devuelto» porque el
+ * motivo vive en `resolutionReason` y el trabajo pendiente es el mismo.
+ */
+export const viaticoStatus = pgEnum("viatico_status", [
+  "borrador",
+  "enviado",
+  "autorizado",
+  "rechazado",
+  "en_revision",
+  "cerrado",
+  "cancelado",
+]);
+
+/**
+ * En qué se gastó.
+ *
+ * Cerrado a propósito, con `otros` como válvula. La alternativa —texto libre—
+ * produce «Hotel», «hotel», «Hospedaje» y «HOTEL SLP» en el mismo trimestre, y
+ * a partir de ahí no hay forma de sumar en qué se va el dinero de los viajes.
+ *
+ * `refacciones` está en la lista y merece una nota: es la pieza que el
+ * ingeniero COMPRA en ruta porque no podía esperar a una orden de compra. No
+ * entra al inventario —nunca estuvo en el almacén— pero sí es costo del
+ * servicio, y sin esta categoría acababa en `otros` y desaparecía del análisis
+ * de refacciones.
+ */
+export const viaticoCategoria = pgEnum("viatico_categoria", [
+  "hotel",
+  "transporte",
+  "comida",
+  "refacciones",
+  "otros",
+]);
+
+/** Folio de viático: EVO-V-000123. */
+export const viaticoSeq = pgSequence("viatico_reference_seq", {
+  startWith: 1,
+  increment: 1,
+});
+
+/**
+ * Un viaje de servicio: lo que se pidió, lo que se autorizó y lo que se gastó.
+ *
+ * ── EL CONTRATO ES OBLIGATORIO, Y ESA ES LA IDEA ───────────────────────────
+ *
+ * Sin contrato, un viático es un gasto que no se puede imputar a nada, y el
+ * módulo entero existe para que la utilidad del contrato deje de ignorar lo que
+ * cuesta llegar hasta el equipo. Un viaje que de verdad no pertenece a ningún
+ * contrato es un gasto de la empresa y su lugar es Cuentas por pagar, no aquí.
+ *
+ * ── DOS FIRMAS Y DOS MOMENTOS ──────────────────────────────────────────────
+ *
+ * `approvedById` autoriza el viaje y el monto; `closedById` da el visto bueno a
+ * la comprobación. Se guardan por separado aunque casi siempre sean la misma
+ * persona: son dos decisiones con semanas de por medio, y colapsarlas haría
+ * imposible responder quién dejó pasar una comprobación floja meses después.
+ *
+ * Ninguna de las dos puede ser `requestedById`. No lo impide el esquema —lo
+ * impide `lib/domain/viaticos.ts`—, y está dicho aquí porque es la propiedad
+ * que hace que este documento sea un control y no un trámite.
+ */
+export const viaticos = pgTable(
+  "viaticos",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Folio legible: EVO-V-000123. La V no la usa ningún otro documento. */
+    reference: varchar("reference", { length: 30 }).notNull().unique(),
+
+    /** A qué contrato se le carga. Ver la nota de arriba. */
+    contractId: uuid("contract_id")
+      .notNull()
+      .references(() => contracts.id, { onDelete: "restrict" }),
+
+    /**
+     * Quién viaja. `restrict` y no `set null`: un viático sin solicitante es un
+     * gasto sin dueño, y el expediente tiene que poder decir a quién se le
+     * entregó el anticipo aunque la persona ya no trabaje aquí.
+     */
+    requestedById: uuid("requested_by_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+
+    /** A dónde y para qué. Lo que General lee antes de autorizar. */
+    destination: varchar("destination", { length: 200 }).notNull(),
+    purpose: text("purpose").notNull(),
+    departsOn: date("departs_on").notNull(),
+    returnsOn: date("returns_on").notNull(),
+
+    /** Lo que el ingeniero calcula que va a necesitar. */
+    estimatedMxn: numeric("estimated_mxn", { precision: 12, scale: 2 }).notNull(),
+
+    status: viaticoStatus("status").notNull().default("borrador"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+
+    /* ── Primera firma: se autoriza el viaje ── */
+    approvedById: uuid("approved_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    /**
+     * Lo que de verdad se autoriza, que puede no ser lo que se pidió.
+     *
+     * Columna propia y no un `update` sobre `estimatedMxn`: el cuadre final
+     * compara contra lo autorizado, y saber que se pidieron 12 000 y se dieron
+     * 8 000 es justo lo que explica un reporte que se pasó del anticipo.
+     */
+    authorizedMxn: numeric("authorized_mxn", { precision: 12, scale: 2 }),
+    /** La respuesta al ingeniero. Es la conversación, no un campo de adorno. */
+    approvalNote: text("approval_note"),
+
+    /* ── Segunda firma: visto bueno a la comprobación ── */
+    reportedAt: timestamp("reported_at", { withTimezone: true }),
+    closedById: uuid("closed_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closingNote: text("closing_note"),
+
+    /** Por qué se rechazó, se devolvió o se canceló. Obligatorio en los tres. */
+    resolutionReason: text("resolution_reason"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /**
+     * La bandeja y el archivo, los dos.
+     *
+     * `status` acota —lo abierto es una fracción diminuta— y `created_at desc,
+     * id desc` sirve al ORDER BY del listado, así que la página se llena
+     * recorriendo el índice en vez de ordenando la tabla entera.
+     *
+     * Nació como `(status, departs_on)` y no lo usaba nadie: ninguna consulta
+     * ordena por fecha de salida. Medido a escala, el cambio vale 21×. Ver la
+     * migración 0027.
+     */
+    index("viaticos_status_creado_idx").on(
+      t.status,
+      desc(t.createdAt),
+      desc(t.id),
+    ),
+    /** «Mis viáticos», del ingeniero. */
+    index("viaticos_solicitante_idx").on(t.requestedById, t.createdAt),
+    /** El costo de viaje de un contrato: lo lee la utilidad. */
+    index("viaticos_contrato_idx").on(t.contractId),
+  ],
+);
+
+/**
+ * Qué módulos del contrato se van a atender.
+ *
+ * Opcional y de varios: un viaje de diagnóstico todavía no sabe qué módulo
+ * falla, y obligar a marcar uno solo produciría un dato inventado. Lo que
+ * aporta cuando está es el alcance —General ve si el viaje justifica el monto—
+ * y el rastro de qué se fue a tocar.
+ *
+ * Cuelga del MÓDULO y no del equipo porque es el grano en el que trabaja el
+ * ingeniero: se viaja a cambiar la bomba de un cromatógrafo, no «el
+ * cromatógrafo». El equipo se deduce por el módulo.
+ */
+export const viaticoModules = pgTable(
+  "viatico_modules",
+  {
+    viaticoId: uuid("viatico_id")
+      .notNull()
+      .references((): AnyPgColumn => viaticos.id, { onDelete: "cascade" }),
+    moduleId: uuid("module_id")
+      .notNull()
+      .references(() => equipmentModules.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.viaticoId, t.moduleId] })],
+);
+
+/**
+ * Un gasto comprobado del viaje.
+ *
+ * ── EL TICKET VA POR GASTO Y NO POR REPORTE ────────────────────────────────
+ *
+ * Un viaje que atiende tres equipos genera tres tickets, y el hotel de esa
+ * noche no es de uno de ellos: es de los tres. Con el ticket en la cabecera del
+ * reporte habría que elegir uno —cargándole de más— o inventar una regla de
+ * reparto que nadie podría defender después.
+ *
+ * Con el ticket en el renglón, el ingeniero reparte al capturar, que es el
+ * único momento en que alguien sabe de verdad a qué servicio pertenece cada
+ * comida. Y el costo entra en la utilidad POR TICKET, exactamente igual que una
+ * refacción consumida.
+ *
+ * `restrict` sobre el ticket: borrar un ticket al que se le cargaron viáticos
+ * dejaría un costo sin destino y una utilidad que cambia sola. Que falle es la
+ * respuesta correcta.
+ *
+ * ── EL COMPROBANTE PUEDE FALTAR, Y SE VE ───────────────────────────────────
+ *
+ * `receiptPath` es nulo cuando no hay papel —un taxi sin recibo, una propina—.
+ * No se rechaza el gasto por eso ni se finge que da igual: la pantalla de
+ * revisión marca los renglones sin comprobante para que General decida con eso
+ * a la vista. Degradar en silencio aquí sería exactamente lo que dejó 633
+ * tickets sin técnico.
+ */
+export const viaticoExpenses = pgTable(
+  "viatico_expenses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    viaticoId: uuid("viatico_id")
+      .notNull()
+      .references((): AnyPgColumn => viaticos.id, { onDelete: "cascade" }),
+
+    /** A qué servicio pertenece este gasto. Ver la nota de arriba. */
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id, { onDelete: "restrict" }),
+
+    category: viaticoCategoria("category").notNull(),
+    /**
+     * Qué es, cuando la categoría es `otros`.
+     *
+     * Lo exige un CHECK en la base y no solo el formulario: «otros» sin
+     * especificar es una fila que nadie puede interpretar seis meses después, y
+     * la validación que vive únicamente en la pantalla se salta desde cualquier
+     * otro camino que escriba en la tabla.
+     */
+    otherLabel: varchar("other_label", { length: 120 }),
+
+    description: varchar("description", { length: 300 }).notNull(),
+    amountMxn: numeric("amount_mxn", { precision: 12, scale: 2 }).notNull(),
+    spentOn: date("spent_on").notNull(),
+
+    /** El ticket de compra escaneado. Nulo = sin comprobante, y se marca. */
+    receiptPath: text("receipt_path"),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    /** Los gastos de un viático, como los pinta la pantalla. */
+    index("viatico_expenses_viatico_idx").on(t.viaticoId, t.spentOn),
+    /** Lo que este servicio costó en viaje. Lo lee la utilidad del ticket. */
+    index("viatico_expenses_ticket_idx").on(t.ticketId),
+  ],
+);
+
+export const viaticosRelations = relations(viaticos, ({ one, many }) => ({
+  contract: one(contracts, {
+    fields: [viaticos.contractId],
+    references: [contracts.id],
+  }),
+  requestedBy: one(users, {
+    fields: [viaticos.requestedById],
+    references: [users.id],
+    relationName: "viatico_solicitante",
+  }),
+  approvedBy: one(users, {
+    fields: [viaticos.approvedById],
+    references: [users.id],
+    relationName: "viatico_autoriza",
+  }),
+  closedBy: one(users, {
+    fields: [viaticos.closedById],
+    references: [users.id],
+    relationName: "viatico_cierra",
+  }),
+  modules: many(viaticoModules),
+  expenses: many(viaticoExpenses),
+}));
+
+export const viaticoModulesRelations = relations(viaticoModules, ({ one }) => ({
+  viatico: one(viaticos, {
+    fields: [viaticoModules.viaticoId],
+    references: [viaticos.id],
+  }),
+  module: one(equipmentModules, {
+    fields: [viaticoModules.moduleId],
+    references: [equipmentModules.id],
+  }),
+}));
+
+export const viaticoExpensesRelations = relations(viaticoExpenses, ({ one }) => ({
+  viatico: one(viaticos, {
+    fields: [viaticoExpenses.viaticoId],
+    references: [viaticos.id],
+  }),
+  ticket: one(tickets, {
+    fields: [viaticoExpenses.ticketId],
+    references: [tickets.id],
+  }),
+}));

@@ -183,6 +183,20 @@
       "when": 1786852307346,
       "tag": "0025_domicilio_sat",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788638742048,
+      "tag": "0026_viaticos",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1788651302875,
+      "tag": "0027_indice_viaticos",
+      "breakpoints": true
     }
   ]
 }

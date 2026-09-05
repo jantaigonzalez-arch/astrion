@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { AssignableRole } from "@/lib/roles";
+import { ASSIGNABLE_ROLES, ROLE_LABELS, type AssignableRole } from "@/lib/roles";
 import { PermisosMatriz } from "@/components/portal/permisos-matriz";
 import type { Ajustes } from "@/lib/permisos";
 
@@ -125,10 +125,20 @@ export function EditUserForm({
               onChange={(e) => setRole(e.target.value as EditableUser["role"])}
               className={selectCls}
             >
-              <option value="client">Cliente (laboratorio)</option>
-              <option value="agent">Agente (soporte)</option>
-              <option value="sales">Vendedor</option>
-              <option value="admin">Administrador</option>
+              {/*
+              LOS ROLES SALEN DE `ASSIGNABLE_ROLES`, NO ESCRITOS A MANO.
+
+              Estaban los cuatro literales aquí dentro, y el día que nació el
+              rol General el formulario no se enteró: se podía filtrar por él en
+              el padrón y no se podía asignar a nadie. Una lista blanca copiada
+              es una lista blanca que se queda vieja sin avisar, porque nada
+              falla — simplemente falta una opción.
+              */}
+              {ASSIGNABLE_ROLES.map((r) => (
+              <option key={r} value={r}>
+              {ROLE_LABELS[r]}
+              </option>
+              ))}
             </select>
           </div>
           <div>

@@ -89,6 +89,7 @@ export const MODULOS = [
   "inventario",
   "compras",
   "pagar",
+  "viaticos",
   "analisis",
   "configuracion",
 ] as const;
@@ -126,6 +127,10 @@ export const MODULO_INFO: Record<Modulo, { label: string; detalle: string }> = {
   pagar: {
     label: "Cuentas por pagar",
     detalle: "Facturas de proveedor, pagos, notas de crédito y anticipos.",
+  },
+  viaticos: {
+    label: "Viáticos",
+    detalle: "Solicitudes de viaje del ingeniero y su comprobación de gastos.",
   },
   analisis: {
     label: "Análisis",
@@ -171,6 +176,7 @@ const BASE: Record<MembershipRole, Record<Modulo, Nivel>> = {
     inventario: "ninguno",
     compras: "ninguno",
     pagar: "ninguno",
+    viaticos: "ninguno",
     analisis: "ninguno",
     configuracion: "ninguno",
   },
@@ -181,6 +187,14 @@ const BASE: Record<MembershipRole, Record<Modulo, Nivel>> = {
     inventario: "editar",
     compras: "editar",
     pagar: "ninguno",
+    /*
+      `editar` y no `administrar`: el ingeniero PIDE su viático y comprueba sus
+      gastos, y no puede autorizar ni el suyo ni el de nadie. Es la misma línea
+      que ya separa levantar una requisición de autorizarla, y es toda la razón
+      de que este documento exista: con la misma persona en las dos casillas, el
+      viático sería un trámite y no un control.
+    */
+    viaticos: "editar",
     analisis: "ninguno",
     configuracion: "ninguno",
   },
@@ -191,7 +205,32 @@ const BASE: Record<MembershipRole, Record<Modulo, Nivel>> = {
     inventario: "ninguno",
     compras: "ninguno",
     pagar: "ninguno",
+    /* Quien vende no viaja a dar servicio ni autoriza el gasto de quien viaja. */
+    viaticos: "ninguno",
     analisis: "ver",
+    configuracion: "ninguno",
+  },
+  /*
+    GENERAL: administra el GASTO, y nada más.
+
+    Compras, cuentas por pagar y viáticos en `administrar` —autoriza, cancela,
+    da el visto bueno—; el resto en `ninguno`. Ni Ventas, ni Clientes, ni
+    Configuración, ni Análisis: quien revisa comprobantes de hotel no tiene por
+    qué ver el margen de cada contrato ni dar de alta usuarios.
+
+    Servicio queda en `ver` y es deliberado: un viático llega con un ticket de
+    servicio en cada gasto, y sin poder abrirlo la revisión se hace a ciegas.
+    `ver` y no más — General no atiende tickets.
+  */
+  general: {
+    servicio: "ver",
+    ventas: "ninguno",
+    clientes: "ninguno",
+    inventario: "ninguno",
+    compras: "administrar",
+    pagar: "administrar",
+    viaticos: "administrar",
+    analisis: "ninguno",
     configuracion: "ninguno",
   },
   admin: {
@@ -201,6 +240,7 @@ const BASE: Record<MembershipRole, Record<Modulo, Nivel>> = {
     inventario: "administrar",
     compras: "administrar",
     pagar: "administrar",
+    viaticos: "administrar",
     analisis: "administrar",
     configuracion: "administrar",
   },
@@ -211,6 +251,7 @@ const BASE: Record<MembershipRole, Record<Modulo, Nivel>> = {
     inventario: "administrar",
     compras: "administrar",
     pagar: "administrar",
+    viaticos: "administrar",
     analisis: "administrar",
     configuracion: "administrar",
   },
@@ -341,6 +382,15 @@ const RUTAS: Regla[] = [
   { prefijo: "/admin/compras/cuentas-por-pagar/nueva", modulo: "pagar", nivel: "administrar" },
   { prefijo: "/admin/compras/cuentas-por-pagar/importar", modulo: "pagar", nivel: "administrar" },
   { prefijo: "/admin/compras/cuentas-por-pagar/analisis", modulo: "pagar", nivel: "ver" },
+
+  // ── Viáticos ──
+  //
+  // La lista y la ficha se abren con `ver` y la pantalla decide QUÉ enseña: el
+  // ingeniero, lo suyo; General, todo. Acotar por dirección no serviría —es la
+  // misma— y por eso el filtro por persona vive en `data/viaticos.ts`, que es
+  // el único sitio donde se puede aplicar sin que se olvide en una pantalla.
+  { prefijo: "/admin/viaticos", modulo: "viaticos", nivel: "ver" },
+  { prefijo: "/admin/viaticos/nuevo", modulo: "viaticos", nivel: "editar" },
 
   // ── Análisis ──
   { prefijo: "/admin/crm/informes", modulo: "analisis", nivel: "ver" },
