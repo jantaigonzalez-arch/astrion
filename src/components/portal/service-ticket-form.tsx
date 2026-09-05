@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Selector } from "@/components/ui/selector";
 import {
   TICKET_CATEGORIES,
   TICKET_PRIORITIES,
@@ -76,24 +77,24 @@ export function ServiceTicketForm({
     <form action={action} className="grid gap-5">
       <div>
         <Label htmlFor="clientId">Laboratorio</Label>
-        <select
+        {/* Con búsqueda en cuanto pasan de doce: el padrón de laboratorios
+            crece con el negocio y ya va por más de ciento cincuenta. */}
+        <Selector
           id="clientId"
           name="clientId"
           required
-          className={selectCls}
-          value={clientId}
-          onChange={(e) => {
-            setClientId(e.target.value);
+          placeholder="— Selecciona el laboratorio —"
+          opciones={clients.map((c) => ({
+            value: c.id,
+            label: c.company ?? c.name ?? c.email,
+            detalle: c.company ? (c.name ?? c.email) : null,
+            buscar: c.email,
+          }))}
+          onChange={(v) => {
+            setClientId(v);
             setEquipmentId("");
           }}
-        >
-          <option value="">— Selecciona el laboratorio —</option>
-          {clients.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.company ?? c.name ?? c.email}
-            </option>
-          ))}
-        </select>
+        />
       </div>
 
       <div>
@@ -104,48 +105,44 @@ export function ServiceTicketForm({
       <div className="grid gap-4 rounded-xl border border-border bg-secondary/30 p-4 sm:grid-cols-2">
         <div>
           <Label htmlFor="equipmentId">Equipo</Label>
-          <select
+          {/* `key` con el laboratorio: al cambiarlo, el componente se monta de
+              nuevo y no se queda con el equipo del cliente anterior. Es la
+              contrapartida de guardar la selección en estado propio. */}
+          <Selector
+            key={`eq-${clientId}`}
             id="equipmentId"
             name="equipmentId"
-            className={selectCls}
             disabled={!clientId}
-            value={equipmentId}
-            onChange={(e) => setEquipmentId(e.target.value)}
-          >
-            <option value="">
-              {!clientId ? "Elige un laboratorio primero" : "— Sin especificar —"}
-            </option>
-            {equipment.map((eq) => (
-              <option key={eq.id} value={eq.id}>
-                {eq.brand} {eq.name}
-                {eq.model ? ` · ${eq.model}` : ""}
-              </option>
-            ))}
-          </select>
+            placeholder={!clientId ? "Elige un laboratorio primero" : "— Sin especificar —"}
+            opciones={equipment.map((eq) => ({
+              value: eq.id,
+              label: `${eq.brand} ${eq.name}`,
+              detalle: eq.model,
+            }))}
+            onChange={setEquipmentId}
+          />
         </div>
         <div>
           <Label htmlFor="moduleId">Módulo (opcional)</Label>
-          <select
+          <Selector
+            key={`mod-${equipmentId}`}
             id="moduleId"
             name="moduleId"
-            className={selectCls}
             disabled={!equipmentId || modules.length === 0}
-            defaultValue=""
-          >
-            <option value="">
-              {!equipmentId
+            placeholder={
+              !equipmentId
                 ? "Elige un equipo primero"
                 : modules.length === 0
                   ? "Sin módulos registrados"
-                  : "— Todo el equipo —"}
-            </option>
-            {modules.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-                {m.serialNumber ? ` · S/N ${m.serialNumber}` : ""}
-              </option>
-            ))}
-          </select>
+                  : "— Todo el equipo —"
+            }
+            opciones={modules.map((m) => ({
+              value: m.id,
+              label: m.name,
+              detalle: m.serialNumber ? `S/N ${m.serialNumber}` : null,
+              buscar: m.serialNumber,
+            }))}
+          />
         </div>
       </div>
 

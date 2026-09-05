@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Selector } from "@/components/ui/selector";
 import { useRouter } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
@@ -115,22 +116,19 @@ export function InvoiceForm({
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="supplierId">Proveedor</Label>
-            <select
+            <Selector
               id="supplierId"
               name="supplierId"
               required
-              value={supplierId}
-              onChange={(e) => elegirProveedor(e.target.value)}
-              className={selectCls}
-            >
-              <option value="">Elegir…</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                  {s.paymentTermsDays > 0 ? ` · ${s.paymentTermsDays} días` : " · contado"}
-                </option>
-              ))}
-            </select>
+              placeholder="Elegir…"
+              opciones={suppliers.map((s) => ({
+                value: s.id,
+                label: s.name,
+                detalle:
+                  s.paymentTermsDays > 0 ? `${s.paymentTermsDays} días` : "contado",
+              }))}
+              onChange={elegirProveedor}
+            />
           </div>
           <div>
             <Label htmlFor="supplierFolio">Folio de la factura</Label>

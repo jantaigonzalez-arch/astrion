@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Selector } from "@/components/ui/selector";
 
 const initial: ContractState = { ok: false };
 const selectCls =
@@ -103,21 +104,19 @@ export function ContractForm({
         </div>
         <div>
           <Label htmlFor="clientId">Laboratorio (cliente)</Label>
-          <select
+          <Selector
             id="clientId"
             name="clientId"
             required
-            className={selectCls}
-            value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-          >
-            <option value="">— Selecciona —</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.company ?? c.name ?? c.email}
-              </option>
-            ))}
-          </select>
+            placeholder="— Selecciona —"
+            opciones={clients.map((c) => ({
+              value: c.id,
+              label: c.company ?? c.name ?? c.email,
+              detalle: c.company ? (c.name ?? c.email) : null,
+              buscar: c.email,
+            }))}
+            onChange={setClientId}
+          />
         </div>
       </div>
 

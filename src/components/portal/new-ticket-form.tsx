@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Selector } from "@/components/ui/selector";
 import {
   TICKET_CATEGORIES,
   TICKET_PRIORITIES,
@@ -89,45 +90,39 @@ export function NewTicketForm({
         <div className="grid gap-4 rounded-xl border border-border bg-secondary/30 p-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="equipmentId">Equipo relacionado</Label>
-            <select
+            <Selector
               id="equipmentId"
               name="equipmentId"
-              className={selectCls}
-              value={equipmentId}
-              onChange={(e) => setEquipmentId(e.target.value)}
-            >
-              <option value="">— Sin especificar —</option>
-              {equipment.map((eq) => (
-                <option key={eq.id} value={eq.id}>
-                  {eq.brand} {eq.name}
-                  {eq.model ? ` · ${eq.model}` : ""}
-                </option>
-              ))}
-            </select>
+              placeholder="— Sin especificar —"
+              opciones={equipment.map((eq) => ({
+                value: eq.id,
+                label: `${eq.brand} ${eq.name}`,
+                detalle: eq.model,
+              }))}
+              onChange={setEquipmentId}
+            />
           </div>
           <div>
             <Label htmlFor="moduleId">Módulo (opcional)</Label>
-            <select
+            <Selector
+              key={`mod-${equipmentId}`}
               id="moduleId"
               name="moduleId"
-              className={selectCls}
               disabled={!equipmentId || modules.length === 0}
-              defaultValue=""
-            >
-              <option value="">
-                {!equipmentId
+              placeholder={
+                !equipmentId
                   ? "Elige un equipo primero"
                   : modules.length === 0
                     ? "Sin módulos registrados"
-                    : "— Todo el equipo —"}
-              </option>
-              {modules.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                  {m.serialNumber ? ` · S/N ${m.serialNumber}` : ""}
-                </option>
-              ))}
-            </select>
+                    : "— Todo el equipo —"
+              }
+              opciones={modules.map((m) => ({
+                value: m.id,
+                label: m.name,
+                detalle: m.serialNumber ? `S/N ${m.serialNumber}` : null,
+                buscar: m.serialNumber,
+              }))}
+            />
           </div>
         </div>
       )}

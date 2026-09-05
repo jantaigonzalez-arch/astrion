@@ -9,6 +9,7 @@ import {
 } from "@/lib/actions/requisitions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Selector } from "@/components/ui/selector";
 
 const initial: RequisitionState = { ok: false };
 
@@ -107,33 +108,27 @@ function Fila({
               <label className="text-xs text-muted-foreground">
                 Refacción del catálogo
               </label>
-              <select
-                name="partId"
-                defaultValue={linea.partId ?? ""}
-                className="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-              >
-                <option value="">Sin identificar</option>
-                {parts.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
+              {/* El catálogo de refacciones es el que más crece de todos: se
+                  busca por número de parte o por descripción. */}
+              <div className="mt-1">
+                <Selector
+                  name="partId"
+                  defaultValue={linea.partId ?? ""}
+                  placeholder="Sin identificar"
+                  opciones={parts.map((p) => ({ value: p.id, label: p.label }))}
+                />
+              </div>
             </div>
             <div>
               <label className="text-xs text-muted-foreground">Proveedor</label>
-              <select
-                name="supplierId"
-                defaultValue={linea.supplierId ?? ""}
-                className="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-              >
-                <option value="">Sin asignar</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.label}
-                  </option>
-                ))}
-              </select>
+              <div className="mt-1">
+                <Selector
+                  name="supplierId"
+                  defaultValue={linea.supplierId ?? ""}
+                  placeholder="Sin asignar"
+                  opciones={suppliers.map((s) => ({ value: s.id, label: s.label }))}
+                />
+              </div>
             </div>
             <div>
               <label className="text-xs text-muted-foreground">Cantidad</label>

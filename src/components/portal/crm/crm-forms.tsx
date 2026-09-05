@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Selector } from "@/components/ui/selector";
 
 const initial: CrmState = { ok: false };
 const selectCls =
@@ -171,19 +172,15 @@ export function OrganizationForm({
           </div>
           <div>
             <Label htmlFor="state">Estado</Label>
-            <select
+            {/* Treinta y dos estados: por encima del umbral, así que se
+                teclea «yuc» en vez de rodar la lista entera. */}
+            <Selector
               id="state"
               name="state"
-              className={selectCls}
               defaultValue={defaults?.state ?? ""}
-            >
-              <option value="">— Sin especificar —</option>
-              {ESTADOS_MX.map((e) => (
-                <option key={e} value={e}>
-                  {e}
-                </option>
-              ))}
-            </select>
+              placeholder="— Sin especificar —"
+              opciones={ESTADOS_MX.map((e) => ({ value: e, label: e }))}
+            />
           </div>
           <div>
             <Label htmlFor="municipality">Municipio o alcaldía</Label>
@@ -294,19 +291,18 @@ export function OrganizationForm({
             tickets, porque cuelgan de esa cuenta y no de la organización.
           */}
           <Label htmlFor="clientId">Cuenta de portal</Label>
-          <select
+          <Selector
             id="clientId"
             name="clientId"
-            className={selectCls}
             defaultValue={defaults?.clientId ?? ""}
-          >
-            <option value="">— Sin cuenta de portal —</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.company ?? c.name ?? c.email}
-              </option>
-            ))}
-          </select>
+            placeholder="— Sin cuenta de portal —"
+            opciones={clients.map((c) => ({
+              value: c.id,
+              label: c.company ?? c.name ?? c.email,
+              detalle: c.company ? (c.name ?? c.email) : null,
+              buscar: c.email,
+            }))}
+          />
         </div>
       </div>
 
@@ -466,19 +462,13 @@ export function ContactForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <Label htmlFor="organizationId">Organización</Label>
-          <select
+          <Selector
             id="organizationId"
             name="organizationId"
-            className={selectCls}
             defaultValue={defaults?.organizationId ?? ""}
-          >
-            <option value="">— Sin organización —</option>
-            {organizations.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
+            placeholder="— Sin organización —"
+            opciones={organizations.map((o) => ({ value: o.id, label: o.name }))}
+          />
         </div>
         <div>
           <Label htmlFor="ownerId">Responsable comercial</Label>

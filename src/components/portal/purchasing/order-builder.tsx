@@ -6,6 +6,7 @@ import { createPurchaseOrder, type PurchaseState } from "@/lib/actions/purchasin
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Selector } from "@/components/ui/selector";
 import { Link, useRouter } from "@/lib/nav";
 
 /**
@@ -198,19 +199,18 @@ function LineRow({
     <div className="grid gap-3 p-4 sm:grid-cols-[1fr_6rem_8rem_auto] sm:items-end">
       <div className="min-w-0">
         <Label>Refacción</Label>
-        <select
-          name="line-part"
-          value={partId}
-          onChange={(e) => setPartId(e.target.value)}
-          className="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
-        >
-          <option value="">Elige…</option>
-          {parts.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.partNumber} — {p.description}
-            </option>
-          ))}
-        </select>
+        <div className="mt-1">
+          <Selector
+            name="line-part"
+            placeholder="Elige…"
+            opciones={parts.map((p) => ({
+              value: p.id,
+              label: p.partNumber,
+              detalle: p.description,
+            }))}
+            onChange={setPartId}
+          />
+        </div>
         {part && (
           <p className="mt-1 text-xs text-muted-foreground">
             Existencias:{" "}
