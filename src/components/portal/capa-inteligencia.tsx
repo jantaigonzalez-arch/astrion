@@ -16,7 +16,7 @@ import { Astronauta } from "@/components/portal/astronauta";
  * rótulos monoespaciados, y de noche fósforo sobre negro. Se veía bien y decía
  * lo que no era — quien entraba no sentía que cruzaba una frontera dentro de su
  * ERP, sentía que se había ido a otra aplicación. La señal fuerte la lleva el
- * astronauta; el resto se queda como está.
+ * casco; el resto se queda como está, y el fondo apenas acompaña.
  *
  * ── POR QUÉ AQUÍ Y NO EN UN `layout.tsx` DE LA RUTA ──────────────────────
  *
@@ -54,7 +54,7 @@ export function CapaInteligencia({ children }: { children: React.ReactNode }) {
 function CabeceraDeCapa() {
   return (
     <header className="capa-inteligencia-marco flex items-start gap-3 px-6 py-4 lg:px-8">
-      <Astronauta className="capa-flota mt-0.5 size-9 shrink-0 text-primary" />
+      <Astronauta className="capa-flota mt-0.5 size-8 shrink-0 text-primary" />
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
           <span className="text-sm font-semibold tracking-tight">

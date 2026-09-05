@@ -640,17 +640,21 @@ body.redimensionando * {
   línea si el fondo base cambia —está anotado en `:root` y en `.dark`— y a
   cambio no hay ningún navegador en el que esto se vea mal.
 
-  El velo es de verdad mínimo: sobre `oklch(0.99 0.004 240)` esto baja dos
-  puntos de luz y sube seis milésimas de croma. Se nota al cambiar de pantalla y
-  no se nota mirándola fija, que es exactamente lo que se pidió.
+  ── Y ES CASI IMPERCEPTIBLE, A PROPÓSITO ────────────────────────────────
+
+  La primera versión bajaba metro y medio de luz y se veía como un panel gris
+  metido dentro de la aplicación. Esto es la mitad de la mitad: sobre
+  `oklch(0.99 0.004 240)` baja cinco milésimas de luz y sube dos de croma —lo
+  justo para que el borde de la cabecera tenga algo contra qué apoyarse—. La
+  frontera la marcan el casco y la regla; el fondo solo acompaña.
 */
 .capa-inteligencia {
-  background: oklch(0.975 0.01 250);
+  background: oklch(0.985 0.006 248);
 }
 
 .dark .capa-inteligencia,
 :root[data-theme="dark"] .capa-inteligencia {
-  background: oklch(0.185 0.028 261);
+  background: oklch(0.169 0.022 261);
 }
 
 /*
@@ -679,8 +683,8 @@ body.redimensionando * {
   50% { transform: translateY(-3px) rotate(-2.5deg); }
 }
 
-/* Quien pide menos movimiento no necesita que el astronauta flote para saber
-   dónde está: la marca ya lo dice. */
+/* Quien pide menos movimiento no necesita que el casco flote para saber dónde
+   está: la marca ya lo dice. */
 @media (prefers-reduced-motion: reduce) {
   .capa-flota { animation: none; }
 }

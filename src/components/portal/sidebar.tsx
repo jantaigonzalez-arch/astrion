@@ -302,7 +302,7 @@ export function Sidebar({
                 ) : (
                   <p className="mb-2 flex items-center gap-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {/*
-                      EL ASTRONAUTA APARECE ANTES DE ENTRAR.
+                      EL CASCO APARECE ANTES DE ENTRAR.
 
                       Es la marca de la capa y su sitio natural es aquí: quien
                       recorre el menú tiene que poder distinguir el grupo que
