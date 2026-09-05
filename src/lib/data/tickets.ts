@@ -1,4 +1,5 @@
 import "server-only";
+import type { CampoOrdenMiembro } from "@/lib/data/people";
 import { and, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
 import { tickets, ticketComments, leads } from "@/lib/db/schema";
@@ -378,8 +379,10 @@ export async function getLeads() {
 
 // El padrón de la empresa activa, activos e inactivos: es la pantalla desde la
 // que se reactiva a alguien, así que ocultar a los inactivos la dejaría sin uso.
-export async function getUsers() {
-  return listTenantMembers({ orderBy: "createdAt", includeInactive: true });
+export async function getUsers(orden?: Orden<CampoOrdenMiembro>) {
+  // `includeInactive`: es la pantalla desde la que se readmite a alguien, así
+  // que esconder las bajas la dejaría sin forma de deshacer una.
+  return listTenantMembers({ orderBy: "createdAt", includeInactive: true, orden });
 }
 
 // Personal que puede atender tickets: agentes, administradores y el dueño.

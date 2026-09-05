@@ -1,4 +1,6 @@
 import "server-only";
+import { ordenarPor } from "@/lib/data/orden";
+import type { Orden } from "@/lib/listado";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { memberships, users, type MembershipRole } from "@/lib/db/platform";
@@ -89,7 +91,42 @@ export type MemberListOptions = {
   roles?: readonly MembershipRole[];
   /** Incluir bajas: pertenencias revocadas y cuentas deshabilitadas. */
   includeInactive?: boolean;
+  /**
+   * Orden fijo, para las llamadas que no vienen de una pantalla con URL —los
+   * `<select>` de asignación, el padrón de un correo—. Convive con `orden`: si
+   * llegan los dos, manda el de la URL, que es el que pidió una persona.
+   */
   orderBy?: "name" | "company" | "createdAt";
+  /** Orden pedido desde la URL. Ver `lib/listado.ts`. */
+  orden?: Orden<CampoOrdenMiembro>;
+};
+
+/**
+ * Por qué columnas se puede ordenar el padrón de la empresa.
+ *
+ * Lista blanca: `?orden=` es texto de fuera y aquí se vuelve columna o nada.
+ *
+ * `rol` ordena por el ENUM de Postgres, o sea por el orden en que se declaró
+ * —dueño, administrador, agente, vendedor, cliente—, que resulta ser de más a
+ * menos alcance. Es lo que se quiere al ordenar por rol: agrupar por lo que
+ * cada quien puede hacer, no alfabéticamente por su nombre.
+ */
+const ORDEN_MIEMBROS = {
+  nombre: users.name,
+  correo: users.email,
+  empresa: users.company,
+  rol: memberships.role,
+  alta: users.createdAt,
+} as const;
+export type CampoOrdenMiembro = keyof typeof ORDEN_MIEMBROS;
+export const CAMPOS_ORDEN_MIEMBROS = Object.keys(
+  ORDEN_MIEMBROS,
+) as CampoOrdenMiembro[];
+
+/** Por nombre: a un padrón se viene a buscar a alguien. */
+export const ORDEN_MIEMBROS_DEFECTO: Orden<CampoOrdenMiembro> = {
+  campo: "nombre",
+  dir: "asc",
 };
 
 export async function listTenantMembers(
@@ -114,12 +151,17 @@ export async function listTenantMembersFor(
 ): Promise<TenantMember[]> {
   const db = getDb();
 
-  const order =
-    opts?.orderBy === "company"
-      ? asc(users.company)
-      : opts?.orderBy === "createdAt"
-        ? desc(users.createdAt)
-        : asc(users.name);
+  // El de la URL manda sobre el fijo: uno lo pidió una persona y el otro es el
+  // que trae por omisión quien llama.
+  const order = opts?.orden
+    ? ordenarPor(opts.orden, ORDEN_MIEMBROS, users.id)
+    : [
+        opts?.orderBy === "company"
+          ? asc(users.company)
+          : opts?.orderBy === "createdAt"
+            ? desc(users.createdAt)
+            : asc(users.name),
+      ];
 
   return db
     .select(MEMBER_COLUMNS)
@@ -133,7 +175,7 @@ export async function listTenantMembersFor(
         opts?.roles?.length ? inArray(memberships.role, [...opts.roles]) : undefined,
       ),
     )
-    .orderBy(order);
+    .orderBy(...order);
 }
 
 /**

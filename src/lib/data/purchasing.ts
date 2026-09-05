@@ -1,4 +1,6 @@
 import "server-only";
+import { ordenarPor } from "@/lib/data/orden";
+import type { Orden } from "@/lib/listado";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
 import {
@@ -36,9 +38,48 @@ export async function getIncomingByPart() {
  * captura la factura de lo que ya entregó. Filtrar los suspendidos también del
  * alta de facturas dejaría fuera del sistema una deuda que existe.
  */
-export async function getSuppliers(onlyActive = false, purchasableOnly = false) {
+/**
+ * Por qué columnas se puede ordenar el padrón de proveedores.
+ *
+ * Lista BLANCA, como todas: lo que llega en `?orden=` es texto de fuera y aquí
+ * se convierte en una columna de verdad o en nada. Ver `lib/listado.ts`.
+ */
+export const ORDEN_PROVEEDORES = {
+  nombre: suppliers.name,
+  rfc: suppliers.rfc,
+  credito: suppliers.paymentTermsDays,
+  moneda: suppliers.currency,
+} as const;
+export type CampoOrdenProveedor = keyof typeof ORDEN_PROVEEDORES;
+export const CAMPOS_ORDEN_PROVEEDORES = Object.keys(
+  ORDEN_PROVEEDORES,
+) as CampoOrdenProveedor[];
+
+/** Por nombre: a un padrón se viene a buscar a alguien, no a comparar. */
+export const ORDEN_PROVEEDORES_DEFECTO: Orden<CampoOrdenProveedor> = {
+  campo: "nombre",
+  dir: "asc",
+};
+
+export async function getSuppliers(
+  onlyActive = false,
+  purchasableOnly = false,
+  /**
+   * Sin orden explícito manda el de siempre, alfabético. Es opcional a
+   * propósito: nueve llamadas de esta función son para rellenar un `<select>`,
+   * y ahí lo alfabético es lo correcto y no hay URL de la que sacar nada.
+   */
+  orden?: Orden<CampoOrdenProveedor>,
+) {
   const db = await tenantDb();
-  const q = db.select().from(suppliers).orderBy(asc(suppliers.name));
+  const q = db
+    .select()
+    .from(suppliers)
+    .orderBy(
+      ...(orden
+        ? ordenarPor(orden, ORDEN_PROVEEDORES, suppliers.name)
+        : [asc(suppliers.name)]),
+    );
   if (purchasableOnly) {
     return q.where(
       and(eq(suppliers.active, true), isNull(suppliers.suspendedAt)),
@@ -86,8 +127,49 @@ export type OrderRow = {
  * Se cuenta DESPUÉS de agrupar —y por eso la ventana va sobre el resultado
  * agrupado—: lo que se pagina son órdenes, no renglones de orden.
  */
+/**
+ * Por qué columnas se ordenan las órdenes de compra.
+ *
+ * `piezas` y `total` son agregados de los renglones, así que ordenan por la
+ * misma expresión que los calcula y no por una columna: con `group by`, un
+ * `order by` sobre el agregado es lo correcto y lo único que Postgres admite.
+ *
+ * `proveedor` sí sale de la tabla unida, que aquí es un `innerJoin` explícito
+ * —a diferencia de contactos, donde la relación la resuelve el cargador— y por
+ * eso se puede ordenar por él.
+ */
+export const ORDEN_ORDENES = {
+  folio: purchaseOrders.reference,
+  proveedor: suppliers.name,
+  estado: purchaseOrders.status,
+  piezas: sql`coalesce(sum(${purchaseOrderLines.quantity}), 0)`,
+  total: sql`coalesce(sum(${purchaseOrderLines.quantity} * coalesce(${purchaseOrderLines.unitCostMxn}, ${purchaseOrderLines.unitCostUsd}, 0)), 0)`,
+  espera: purchaseOrders.expectedAt,
+  creada: purchaseOrders.createdAt,
+} as const;
+export type CampoOrdenOrden = keyof typeof ORDEN_ORDENES;
+export const CAMPOS_ORDEN_ORDENES = Object.keys(
+  ORDEN_ORDENES,
+) as CampoOrdenOrden[];
+
+/**
+ * Lo más reciente primero: una cola se mira por lo que acaba de entrar.
+ *
+ * Por FOLIO y no por fecha de creación, aunque sean lo mismo —el folio sale de
+ * una secuencia y va rellenado con ceros, así que ordenarlo al revés da el
+ * mismo resultado—. La diferencia está en la pantalla: `creada` no es una
+ * columna visible, así que con ella el listado llegaba ordenado y SIN flecha en
+ * ningún encabezado. Un orden que no se puede ver es un orden que la persona
+ * no sabe que puede cambiar.
+ */
+export const ORDEN_ORDENES_DEFECTO: Orden<CampoOrdenOrden> = {
+  campo: "folio",
+  dir: "desc",
+};
+
 export async function getPurchaseOrders(
   page?: { limit: number; offset: number },
+  orden?: Orden<CampoOrdenOrden>,
 ): Promise<{ rows: OrderRow[]; total: number }> {
   const db = await tenantDb();
   const q = db
@@ -120,7 +202,11 @@ export async function getPurchaseOrders(
       purchaseOrders.expectedAt,
       purchaseOrders.createdAt,
     )
-    .orderBy(desc(purchaseOrders.createdAt));
+    .orderBy(
+      ...(orden
+        ? ordenarPor(orden, ORDEN_ORDENES, purchaseOrders.reference)
+        : [desc(purchaseOrders.createdAt)]),
+    );
 
   const rows = (await (page ? q.limit(page.limit).offset(page.offset) : q)) as Array<
     OrderRow & { total_count: number }

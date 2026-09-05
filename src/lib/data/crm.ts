@@ -1,4 +1,6 @@
 import "server-only";
+import { ordenarPor } from "@/lib/data/orden";
+import type { Orden } from "@/lib/listado";
 import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
 import {
@@ -540,11 +542,38 @@ export async function getContractForDeal(dealId: string) {
 }
 
 /* ------------------------- Contactos ------------------------- */
-export async function getContacts(ownerId?: string) {
+/**
+ * Por qué columnas se ordenan los contactos.
+ *
+ * Solo las de `crm_contacts`. Organización y responsable viven en otras tablas
+ * y las trae el cargador de relaciones: ordenar por ellas exigiría un join
+ * explícito y cambiar la forma de la consulta. Con contactos, además, la
+ * operación que se hace con la organización es FILTRAR, no ordenar.
+ */
+const ORDEN_CONTACTOS = {
+  nombre: crmContacts.name,
+  puesto: crmContacts.position,
+  correo: crmContacts.email,
+} as const;
+export type CampoOrdenContacto = keyof typeof ORDEN_CONTACTOS;
+export const CAMPOS_ORDEN_CONTACTOS = Object.keys(
+  ORDEN_CONTACTOS,
+) as CampoOrdenContacto[];
+export const ORDEN_CONTACTOS_DEFECTO: Orden<CampoOrdenContacto> = {
+  campo: "nombre",
+  dir: "asc",
+};
+
+export async function getContacts(
+  ownerId?: string,
+  orden?: Orden<CampoOrdenContacto>,
+) {
   const db = await tenantDb();
   return db.query.crmContacts.findMany({
     where: ownerId ? eq(crmContacts.ownerId, ownerId) : undefined,
-    orderBy: [asc(crmContacts.name)],
+    orderBy: orden
+      ? ordenarPor(orden, ORDEN_CONTACTOS, crmContacts.id)
+      : [asc(crmContacts.name)],
     with: {
       organization: { columns: { id: true, name: true } },
       owner: { columns: { id: true, name: true, email: true } },

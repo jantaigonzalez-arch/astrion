@@ -46,6 +46,7 @@ export function ThOrden<K extends string>({
   inicial = "asc",
   className,
   filtro,
+  numerica = false,
 }: {
   /** Sin campo, la columna no ordena: solo aloja su filtro. */
   campo?: K;
@@ -64,6 +65,17 @@ export function ThOrden<K extends string>({
    * archivo tenga que conocer sus dimensiones.
    */
   filtro?: React.ReactNode;
+  /**
+   * Columna de importes, cantidades o conteos.
+   *
+   * Marca la celda con `data-num`, que la alinea a la derecha y le pone cifras
+   * de ancho fijo —ver `globals.css`—. Se declara y no se deduce: un folio
+   * parece número y se lee como texto.
+   *
+   * Y de paso arranca ordenando de mayor a menor, que es lo que se busca al
+   * pulsar una columna de importes: quién debe más, no quién debe menos.
+   */
+  numerica?: boolean;
 }) {
   const activo = Boolean(campo && actual && actual.campo === campo);
   const Icono = !activo
@@ -72,8 +84,12 @@ export function ThOrden<K extends string>({
       ? ArrowUp
       : ArrowDown;
 
+  // Una columna numérica se mira primero de mayor a menor. Ver `numerica`.
+  const desde: Direccion = numerica ? "desc" : inicial;
+
   return (
     <th
+      data-num={numerica || undefined}
       className={cn("px-4 py-3 font-medium", className)}
       // Lo que un lector de pantalla necesita para anunciar el estado de la
       // columna. Sin esto, la flecha es información que solo existe si ves.
@@ -87,10 +103,10 @@ export function ThOrden<K extends string>({
             : "none"
       }
     >
-      <span className="inline-flex items-center gap-1">
+      <span className={cn("inline-flex items-center gap-1", numerica && "justify-end")}>
         {campo && actual ? (
           <Link
-            href={ordenHref(basePath, campo, actual, query, inicial)}
+            href={ordenHref(basePath, campo, actual, query, desde)}
             className={cn(
               "group inline-flex items-center gap-1 whitespace-nowrap rounded-sm transition-colors hover:text-foreground",
               activo && "text-foreground",

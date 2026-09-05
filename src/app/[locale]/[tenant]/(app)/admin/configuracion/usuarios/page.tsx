@@ -1,6 +1,12 @@
 import { setRequestLocale } from "next-intl/server";
 import { Boxes, Link2, Pencil, Unlink, UserPlus } from "lucide-react";
 import { getUsers } from "@/lib/data/tickets";
+import {
+  CAMPOS_ORDEN_MIEMBROS,
+  ORDEN_MIEMBROS_DEFECTO,
+} from "@/lib/data/people";
+import { parseOrden } from "@/lib/listado";
+import { ThOrden } from "@/components/portal/listado-controles";
 import { getOrganizationsByClient } from "@/lib/data/crm";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,16 +23,25 @@ const ROLE_STYLES: Record<string, string> = {
   sales: "bg-warning/15 text-warning ring-warning/25",
 };
 
+const BASE = "/admin/configuracion/usuarios";
+
 export default async function AdminUsersPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ orden?: string; dir?: string }>;
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
   const isAdmin = await puedeEn("configuracion", "administrar");
+  const orden = parseOrden(
+    await searchParams,
+    CAMPOS_ORDEN_MIEMBROS,
+    ORDEN_MIEMBROS_DEFECTO,
+  );
   const [users, orgsByClient] = await Promise.all([
-    getUsers(),
+    getUsers(orden),
     getOrganizationsByClient(),
   ]);
   const fmt = (d: Date | string) =>
@@ -53,13 +68,26 @@ export default async function AdminUsersPage({
           <table className="tabla-erp w-full text-sm">
             <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
-                <th className="px-4 py-3 font-medium">Nombre</th>
-                <th className="px-4 py-3 font-medium">Correo</th>
-                <th className="px-4 py-3 font-medium">Empresa</th>
-                <th className="px-4 py-3 font-medium">Rol</th>
+                <ThOrden campo="nombre" actual={orden} basePath={BASE}>
+                  Nombre
+                </ThOrden>
+                <ThOrden campo="correo" actual={orden} basePath={BASE}>
+                  Correo
+                </ThOrden>
+                <ThOrden campo="empresa" actual={orden} basePath={BASE}>
+                  Empresa
+                </ThOrden>
+                {/* Ordena por el enum de Postgres: dueño, administrador,
+                    agente, vendedor, cliente. Agrupa por alcance, que es lo que
+                    se busca al ordenar por rol. Ver `ORDEN_MIEMBROS`. */}
+                <ThOrden campo="rol" actual={orden} basePath={BASE}>
+                  Rol
+                </ThOrden>
                 <th className="px-4 py-3 font-medium">CRM</th>
                 <th className="px-4 py-3 font-medium">Activo</th>
-                <th className="px-4 py-3 font-medium">Alta</th>
+                <ThOrden campo="alta" actual={orden} basePath={BASE} inicial="desc">
+                  Alta
+                </ThOrden>
                 <th className="px-4 py-3 font-medium">Equipos</th>
                 {isAdmin && <th className="px-4 py-3 font-medium">Acciones</th>}
               </tr>

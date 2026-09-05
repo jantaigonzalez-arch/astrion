@@ -1,4 +1,10 @@
 import { setRequestLocale } from "next-intl/server";
+import {
+  CAMPOS_ORDEN_CONTACTOS,
+  ORDEN_CONTACTOS_DEFECTO,
+} from "@/lib/data/crm";
+import { parseOrden } from "@/lib/listado";
+import { ThOrden } from "@/components/portal/listado-controles";
 import { Plus, Users2 } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { getContacts } from "@/lib/data/crm";
@@ -7,17 +13,29 @@ import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { puedeEn } from "@/lib/tenancy/context";
 
+const BASE = "/admin/crm/contactos";
+
 export default async function ContactsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<{ orden?: string; dir?: string }>;
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
 
   const session = await auth();
   const admin = await puedeEn("ventas", "administrar");
-  const contacts = await getContacts(admin ? undefined : session!.user.id);
+  const orden = parseOrden(
+    await searchParams,
+    CAMPOS_ORDEN_CONTACTOS,
+    ORDEN_CONTACTOS_DEFECTO,
+  );
+  const contacts = await getContacts(
+    admin ? undefined : session!.user.id,
+    orden,
+  );
 
   return (
     <div className="space-y-6">
@@ -48,10 +66,16 @@ export default async function ContactsPage({
             <table className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Nombre</th>
-                  <th className="px-4 py-3 font-medium">Puesto</th>
+                  <ThOrden campo="nombre" actual={orden} basePath={BASE}>
+                    Nombre
+                  </ThOrden>
+                  <ThOrden campo="puesto" actual={orden} basePath={BASE}>
+                    Puesto
+                  </ThOrden>
                   <th className="px-4 py-3 font-medium">Organización</th>
-                  <th className="px-4 py-3 font-medium">Correo</th>
+                  <ThOrden campo="correo" actual={orden} basePath={BASE}>
+                    Correo
+                  </ThOrden>
                   <th className="px-4 py-3 font-medium">Teléfono</th>
                   <th className="px-4 py-3 font-medium">Negocios</th>
                   <th className="px-4 py-3 font-medium">Responsable</th>

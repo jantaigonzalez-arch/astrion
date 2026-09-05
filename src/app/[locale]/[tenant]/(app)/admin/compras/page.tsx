@@ -1,4 +1,10 @@
 import { Suspense } from "react";
+import {
+  CAMPOS_ORDEN_ORDENES,
+  ORDEN_ORDENES_DEFECTO,
+} from "@/lib/data/purchasing";
+import { parseOrden } from "@/lib/listado";
+import { ThOrden } from "@/components/portal/listado-controles";
 import { setRequestLocale } from "next-intl/server";
 import { Plus } from "lucide-react";
 import { redirectInTenant } from "@/lib/nav-server";
@@ -14,12 +20,14 @@ import { puedeEn } from "@/lib/tenancy/context";
 import { DashboardFab } from "@/components/portal/dashboard-fab";
 import { AnalysisSection, AnalysisSectionSkeleton } from "@/components/portal/analysis-section";
 
+const BASE = "/admin/compras";
+
 export default async function ComprasPage({
   params,
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string; por?: string }>;
+  searchParams: Promise<{ page?: string; por?: string; orden?: string; dir?: string }>;
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
@@ -30,11 +38,15 @@ export default async function ComprasPage({
 
   // La página llega por la URL, o sea de fuera: `parsePage` es el único sitio
   // donde deja de ser texto ajeno y pasa a ser un entero acotado.
-  const pageParams = parsePage(await searchParams);
-  const { rows: orders, total } = await getPurchaseOrders({
-    limit: pageParams.perPage,
-    offset: pageParams.offset,
-  });
+  const sp = await searchParams;
+  const pageParams = parsePage(sp);
+  // El orden viaja con la página: cambiar de columna y perder la página en la
+  // que estabas es lo mismo que no haber ordenado. Ver `queryLimpia`.
+  const orden = parseOrden(sp, CAMPOS_ORDEN_ORDENES, ORDEN_ORDENES_DEFECTO);
+  const { rows: orders, total } = await getPurchaseOrders(
+    { limit: pageParams.perPage, offset: pageParams.offset },
+    orden,
+  );
 
   return (
     <div className="space-y-6">
@@ -71,12 +83,24 @@ export default async function ComprasPage({
             <table className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Folio</th>
-                  <th className="px-4 py-3 font-medium">Proveedor</th>
-                  <th className="px-4 py-3 font-medium">Estado</th>
-                  <th data-num className="px-4 py-3 text-right font-medium">Piezas</th>
-                  <th data-num className="px-4 py-3 text-right font-medium">Total</th>
-                  <th className="px-4 py-3 font-medium">Se espera</th>
+                  <ThOrden campo="folio" actual={orden} basePath={BASE}>
+                    Folio
+                  </ThOrden>
+                  <ThOrden campo="proveedor" actual={orden} basePath={BASE}>
+                    Proveedor
+                  </ThOrden>
+                  <ThOrden campo="estado" actual={orden} basePath={BASE}>
+                    Estado
+                  </ThOrden>
+                  <ThOrden campo="piezas" actual={orden} basePath={BASE} numerica>
+                    Piezas
+                  </ThOrden>
+                  <ThOrden campo="total" actual={orden} basePath={BASE} numerica>
+                    Total
+                  </ThOrden>
+                  <ThOrden campo="espera" actual={orden} basePath={BASE} inicial="asc">
+                    Se espera
+                  </ThOrden>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
