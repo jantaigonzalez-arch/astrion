@@ -379,10 +379,19 @@ export async function getLeads() {
 
 // El padrón de la empresa activa, activos e inactivos: es la pantalla desde la
 // que se reactiva a alguien, así que ocultar a los inactivos la dejaría sin uso.
-export async function getUsers(orden?: Orden<CampoOrdenMiembro>) {
+export async function getUsers(
+  orden?: Orden<CampoOrdenMiembro>,
+  filtros?: { rol?: MembershipRole; activo?: boolean },
+) {
   // `includeInactive`: es la pantalla desde la que se readmite a alguien, así
-  // que esconder las bajas la dejaría sin forma de deshacer una.
-  return listTenantMembers({ orderBy: "createdAt", includeInactive: true, orden });
+  // que esconder las bajas la dejaría sin forma de deshacer una. El filtro de
+  // estado, si se pone, acota DENTRO de eso.
+  return listTenantMembers({
+    orderBy: "createdAt",
+    includeInactive: true,
+    orden,
+    ...filtros,
+  });
 }
 
 // Personal que puede atender tickets: agentes, administradores y el dueño.

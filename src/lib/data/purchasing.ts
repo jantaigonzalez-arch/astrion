@@ -1,11 +1,12 @@
 import "server-only";
 import { ordenarPor } from "@/lib/data/orden";
 import type { Orden } from "@/lib/listado";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
 import {
   inventoryMovements,
   purchaseOrderLines,
+  purchaseOrderStatus,
   purchaseOrders,
   suppliers,
 } from "@/lib/db/schema";
@@ -61,6 +62,39 @@ export const ORDEN_PROVEEDORES_DEFECTO: Orden<CampoOrdenProveedor> = {
   dir: "asc",
 };
 
+/**
+ * Por qué se filtra el padrón de proveedores.
+ *
+ * Dos preguntas reales y ninguna más. «¿A quién le puedo comprar hoy?» —que
+ * separa al suspendido y al dado de baja del que está operando— y «¿a quién le
+ * pago en dólares?», que es lo que decide con qué saldo se cuenta.
+ *
+ * El estado NO es la columna `active`: son tres situaciones distintas que hoy
+ * viven en dos columnas. Suspendido es temporal y con causa; de baja es
+ * definitivo. Confundirlos en la pantalla sería esconder justo la diferencia
+ * que `suspendSupplier` existe para registrar.
+ */
+export const ESTADOS_PROVEEDOR = ["operando", "suspendido", "baja"] as const;
+export type EstadoProveedor = (typeof ESTADOS_PROVEEDOR)[number];
+
+export const ESTADO_PROVEEDOR_LABEL: Record<EstadoProveedor, string> = {
+  operando: "Operando",
+  suspendido: "Suspendido",
+  baja: "Dado de baja",
+};
+
+function condicionEstado(e: EstadoProveedor) {
+  if (e === "baja") return eq(suppliers.active, false);
+  if (e === "suspendido")
+    return and(eq(suppliers.active, true), isNotNull(suppliers.suspendedAt));
+  return and(eq(suppliers.active, true), isNull(suppliers.suspendedAt));
+}
+
+export type FiltrosProveedor = {
+  estado?: EstadoProveedor;
+  moneda?: string;
+};
+
 export async function getSuppliers(
   onlyActive = false,
   purchasableOnly = false,
@@ -70,6 +104,7 @@ export async function getSuppliers(
    * y ahí lo alfabético es lo correcto y no hay URL de la que sacar nada.
    */
   orden?: Orden<CampoOrdenProveedor>,
+  filtros?: FiltrosProveedor,
 ) {
   const db = await tenantDb();
   const q = db
@@ -86,7 +121,55 @@ export async function getSuppliers(
     );
   }
   if (onlyActive) return q.where(eq(suppliers.active, true));
+  // Los filtros de la pantalla se combinan con `and`: cada uno acota al
+  // anterior, que es cómo se lee una tabla filtrada por dos columnas.
+  if (filtros?.estado || filtros?.moneda) {
+    return q.where(
+      and(
+        filtros.estado ? condicionEstado(filtros.estado) : undefined,
+        filtros.moneda ? eq(suppliers.currency, filtros.moneda) : undefined,
+      ),
+    );
+  }
   return q;
+}
+
+/**
+ * Cuántos proveedores caen en cada opción del filtro.
+ *
+ * Se cuenta sobre el padrón COMPLETO y no sobre lo ya filtrado: el menú tiene
+ * que poder decir «hay 4 en dólares» aunque estés mirando los de pesos, o
+ * cambiar de filtro sería un salto a ciegas.
+ *
+ * Los que dan cero no se ofrecen —lo hace `FiltroColumna`— porque una opción
+ * con cero es un camino a una lista vacía.
+ */
+export async function contarProveedores(): Promise<{
+  estado: Array<{ k: EstadoProveedor; n: number }>;
+  moneda: Array<{ k: string; n: number }>;
+}> {
+  const db = await tenantDb();
+  const filas = await db
+    .select({
+      currency: suppliers.currency,
+      activo: suppliers.active,
+      suspendido: sql<boolean>`${suppliers.suspendedAt} is not null`,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(suppliers)
+    .groupBy(suppliers.currency, suppliers.active, sql`${suppliers.suspendedAt} is not null`);
+
+  const porEstado = new Map<EstadoProveedor, number>();
+  const porMoneda = new Map<string, number>();
+  for (const f of filas) {
+    const e: EstadoProveedor = !f.activo ? "baja" : f.suspendido ? "suspendido" : "operando";
+    porEstado.set(e, (porEstado.get(e) ?? 0) + f.n);
+    porMoneda.set(f.currency, (porMoneda.get(f.currency) ?? 0) + f.n);
+  }
+  return {
+    estado: ESTADOS_PROVEEDOR.map((k) => ({ k, n: porEstado.get(k) ?? 0 })),
+    moneda: [...porMoneda].sort().map(([k, n]) => ({ k, n })),
+  };
 }
 
 export type OrderRow = {
@@ -167,9 +250,46 @@ export const ORDEN_ORDENES_DEFECTO: Orden<CampoOrdenOrden> = {
   dir: "desc",
 };
 
+/**
+ * Cuántas órdenes caen en cada opción del filtro.
+ *
+ * Sobre TODAS y no sobre lo ya filtrado, por lo mismo que en proveedores: el
+ * menú tiene que poder decir «hay 12 enviadas» aunque estés mirando borradores.
+ * Cambiar de filtro sin ese número es un salto a ciegas.
+ */
+export async function contarOrdenes(): Promise<{
+  estado: Array<{ k: string; n: number }>;
+  proveedor: Array<{ k: string; label: string; n: number }>;
+}> {
+  const db = await tenantDb();
+  const [porEstado, porProveedor] = await Promise.all([
+    db
+      .select({ k: purchaseOrders.status, n: sql<number>`count(*)::int` })
+      .from(purchaseOrders)
+      .groupBy(purchaseOrders.status),
+    db
+      .select({
+        k: purchaseOrders.supplierId,
+        label: suppliers.name,
+        n: sql<number>`count(*)::int`,
+      })
+      .from(purchaseOrders)
+      .innerJoin(suppliers, eq(suppliers.id, purchaseOrders.supplierId))
+      .groupBy(purchaseOrders.supplierId, suppliers.name)
+      .orderBy(asc(suppliers.name)),
+  ]);
+  return { estado: porEstado, proveedor: porProveedor };
+}
+
+export type FiltrosOrden = {
+  estado?: (typeof purchaseOrderStatus.enumValues)[number];
+  proveedor?: string;
+};
+
 export async function getPurchaseOrders(
   page?: { limit: number; offset: number },
   orden?: Orden<CampoOrdenOrden>,
+  filtros?: FiltrosOrden,
 ): Promise<{ rows: OrderRow[]; total: number }> {
   const db = await tenantDb();
   const q = db
@@ -193,6 +313,15 @@ export async function getPurchaseOrders(
     .from(purchaseOrders)
     .innerJoin(suppliers, eq(suppliers.id, purchaseOrders.supplierId))
     .leftJoin(purchaseOrderLines, eq(purchaseOrderLines.orderId, purchaseOrders.id))
+    // El `where` va ANTES del `group by`: filtra órdenes, no renglones. Puesto
+    // después, en un `having`, un filtro por proveedor recortaría los renglones
+    // agregados y los totales saldrían mal.
+    .where(
+      and(
+        filtros?.estado ? eq(purchaseOrders.status, filtros.estado) : undefined,
+        filtros?.proveedor ? eq(purchaseOrders.supplierId, filtros.proveedor) : undefined,
+      ),
+    )
     .groupBy(
       purchaseOrders.id,
       purchaseOrders.reference,

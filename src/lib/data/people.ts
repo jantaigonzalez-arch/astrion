@@ -1,7 +1,7 @@
 import "server-only";
 import { ordenarPor } from "@/lib/data/orden";
 import type { Orden } from "@/lib/listado";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { memberships, users, type MembershipRole } from "@/lib/db/platform";
 import { requireTenant } from "@/lib/tenancy/context";
@@ -99,6 +99,17 @@ export type MemberListOptions = {
   orderBy?: "name" | "company" | "createdAt";
   /** Orden pedido desde la URL. Ver `lib/listado.ts`. */
   orden?: Orden<CampoOrdenMiembro>;
+  /**
+   * Filtro por rol pedido desde la pantalla.
+   *
+   * Distinto de `roles`, que es el que fija quien llama —«dame solo agentes
+   * para este `<select>`»—. Si llegan los dos se aplican los dos: el de la URL
+   * no puede ampliar lo que quien llama acotó, o el desplegable de asignación
+   * ofrecería clientes con solo escribir `?rol=client`.
+   */
+  rol?: MembershipRole;
+  /** `true` solo activos, `false` solo bajas, ausente = todos. */
+  activo?: boolean;
 };
 
 /**
@@ -128,6 +139,45 @@ export const ORDEN_MIEMBROS_DEFECTO: Orden<CampoOrdenMiembro> = {
   campo: "nombre",
   dir: "asc",
 };
+
+/**
+ * Cuánta gente cae en cada opción del filtro del padrón.
+ *
+ * Sobre el padrón COMPLETO —bajas incluidas— y no sobre lo ya filtrado: el menú
+ * tiene que poder decir «hay 6 agentes» aunque estés mirando a los clientes.
+ * Cambiar de filtro sin ese número es un salto a ciegas.
+ */
+export async function contarMiembros(tenantId: string): Promise<{
+  rol: Array<{ k: MembershipRole; n: number }>;
+  activos: number;
+  bajas: number;
+}> {
+  const db = getDb();
+  const filas = await db
+    .select({
+      rol: memberships.role,
+      vivo: sql<boolean>`${memberships.active} and ${users.active}`,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(eq(memberships.tenantId, tenantId))
+    .groupBy(memberships.role, sql`${memberships.active} and ${users.active}`);
+
+  const porRol = new Map<MembershipRole, number>();
+  let activos = 0;
+  let bajas = 0;
+  for (const f of filas) {
+    porRol.set(f.rol, (porRol.get(f.rol) ?? 0) + f.n);
+    if (f.vivo) activos += f.n;
+    else bajas += f.n;
+  }
+  return {
+    rol: [...porRol].map(([k, n]) => ({ k, n })),
+    activos,
+    bajas,
+  };
+}
 
 export async function listTenantMembers(
   opts?: MemberListOptions,
@@ -173,6 +223,12 @@ export async function listTenantMembersFor(
         opts?.includeInactive ? undefined : eq(memberships.active, true),
         opts?.includeInactive ? undefined : eq(users.active, true),
         opts?.roles?.length ? inArray(memberships.role, [...opts.roles]) : undefined,
+        opts?.rol ? eq(memberships.role, opts.rol) : undefined,
+        opts?.activo === undefined
+          ? undefined
+          : opts.activo
+            ? and(eq(memberships.active, true), eq(users.active, true))
+            : or(eq(memberships.active, false), eq(users.active, false)),
       ),
     )
     .orderBy(...order);

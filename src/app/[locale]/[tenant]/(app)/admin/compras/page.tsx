@@ -2,9 +2,13 @@ import { Suspense } from "react";
 import {
   CAMPOS_ORDEN_ORDENES,
   ORDEN_ORDENES_DEFECTO,
+  contarOrdenes,
 } from "@/lib/data/purchasing";
-import { parseOrden } from "@/lib/listado";
-import { ThOrden } from "@/components/portal/listado-controles";
+import { parseFiltro, parseOrden, queryLimpia } from "@/lib/listado";
+import { ResumenFiltros, ThOrden } from "@/components/portal/listado-controles";
+import { FiltroColumna } from "@/components/portal/filtro-columna";
+import { PURCHASE_STATUS_LABEL } from "@/lib/domain/purchasing";
+import { purchaseOrderStatus } from "@/lib/db/schema";
 import { setRequestLocale } from "next-intl/server";
 import { Plus } from "lucide-react";
 import { redirectInTenant } from "@/lib/nav-server";
@@ -27,7 +31,14 @@ export default async function ComprasPage({
   searchParams,
 }: {
   params: Promise<{ locale: string }>;
-  searchParams: Promise<{ page?: string; por?: string; orden?: string; dir?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    por?: string;
+    orden?: string;
+    dir?: string;
+    estado?: string;
+    proveedor?: string;
+  }>;
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
@@ -43,10 +54,23 @@ export default async function ComprasPage({
   // El orden viaja con la página: cambiar de columna y perder la página en la
   // que estabas es lo mismo que no haber ordenado. Ver `queryLimpia`.
   const orden = parseOrden(sp, CAMPOS_ORDEN_ORDENES, ORDEN_ORDENES_DEFECTO);
-  const { rows: orders, total } = await getPurchaseOrders(
-    { limit: pageParams.perPage, offset: pageParams.offset },
-    orden,
-  );
+  const filtros = {
+    estado: parseFiltro(sp.estado, purchaseOrderStatus.enumValues),
+    proveedor: sp.proveedor,
+  };
+  const query = queryLimpia({
+    estado: filtros.estado,
+    proveedor: filtros.proveedor,
+  });
+
+  const [{ rows: orders, total }, conteos] = await Promise.all([
+    getPurchaseOrders(
+      { limit: pageParams.perPage, offset: pageParams.offset },
+      orden,
+      filtros,
+    ),
+    contarOrdenes(),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -79,26 +103,90 @@ export default async function ComprasPage({
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
+          <ResumenFiltros
+            basePath={BASE}
+            query={query}
+            puestos={[
+              filtros.estado && {
+                clave: "estado",
+                titulo: "Estado",
+                valor: PURCHASE_STATUS_LABEL[filtros.estado],
+              },
+              filtros.proveedor && {
+                clave: "proveedor",
+                titulo: "Proveedor",
+                valor:
+                  conteos.proveedor.find((p) => p.k === filtros.proveedor)?.label ??
+                  filtros.proveedor,
+              },
+            ].filter((x): x is { clave: string; titulo: string; valor: string } =>
+              Boolean(x),
+            )}
+          />
           <div className="overflow-x-auto">
             <table className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <ThOrden campo="folio" actual={orden} basePath={BASE}>
+                  <ThOrden campo="folio" actual={orden} basePath={BASE} query={query}>
                     Folio
                   </ThOrden>
-                  <ThOrden campo="proveedor" actual={orden} basePath={BASE}>
+                  <ThOrden
+                    campo="proveedor"
+                    actual={orden}
+                    basePath={BASE}
+                    query={query}
+                    filtro={
+                      <FiltroColumna
+                        titulo="Proveedor"
+                        clave="proveedor"
+                        activo={filtros.proveedor}
+                        basePath={BASE}
+                        query={query}
+                        opciones={[
+                          { label: "Todos" },
+                          ...conteos.proveedor.map((p) => ({
+                            valor: p.k,
+                            label: p.label,
+                            n: p.n,
+                          })),
+                        ]}
+                      />
+                    }
+                  >
                     Proveedor
                   </ThOrden>
-                  <ThOrden campo="estado" actual={orden} basePath={BASE}>
+                  <ThOrden
+                    campo="estado"
+                    actual={orden}
+                    basePath={BASE}
+                    query={query}
+                    filtro={
+                      <FiltroColumna
+                        titulo="Estado"
+                        clave="estado"
+                        activo={filtros.estado}
+                        basePath={BASE}
+                        query={query}
+                        opciones={[
+                          { label: "Todos" },
+                          ...purchaseOrderStatus.enumValues.map((e) => ({
+                            valor: e,
+                            label: PURCHASE_STATUS_LABEL[e],
+                            n: conteos.estado.find((c) => c.k === e)?.n ?? 0,
+                          })),
+                        ]}
+                      />
+                    }
+                  >
                     Estado
                   </ThOrden>
-                  <ThOrden campo="piezas" actual={orden} basePath={BASE} numerica>
+                  <ThOrden campo="piezas" actual={orden} basePath={BASE} query={query} numerica>
                     Piezas
                   </ThOrden>
-                  <ThOrden campo="total" actual={orden} basePath={BASE} numerica>
+                  <ThOrden campo="total" actual={orden} basePath={BASE} query={query} numerica>
                     Total
                   </ThOrden>
-                  <ThOrden campo="espera" actual={orden} basePath={BASE} inicial="asc">
+                  <ThOrden campo="espera" actual={orden} basePath={BASE} query={query} inicial="asc">
                     Se espera
                   </ThOrden>
                 </tr>
