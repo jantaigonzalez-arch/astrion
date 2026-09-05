@@ -139,13 +139,25 @@ export function pantallasDelRol(
 }
 
 /**
- * Añade la sección de tableros al final del menú de un rol.
+ * LA CAPA DE INTELIGENCIA: UN SOLO GRUPO AL FINAL DEL MENÚ.
  *
- * Va AL FINAL y no dentro de Análisis por lo mismo que ordena el resto: las
- * secciones siguen el circuito del trabajo —atiendo, vendo, tengo, compro— y un
- * tablero no es un paso de ese circuito, es la lectura de todos ellos. Y no
- * dentro de Análisis porque hay roles que no tienen esa sección y sí tienen
- * tableros que mirar.
+ * Inteligencia y los tableros van juntos y aparte de todo lo demás, y no es una
+ * cuestión de orden sino de qué clase de cosa son. Las secciones de arriba
+ * siguen el circuito del trabajo —atiendo, vendo, tengo, compro— y cada una
+ * enseña lo que alguien capturó. Estas dos no: una ESTIMA lo que todavía no ha
+ * pasado y la otra CRUZA los seis módulos para sacar una lectura. Son una capa
+ * encima, no un paso más del circuito, y mezclarlas con el resto hace que un
+ * pronóstico se lea como un reporte.
+ *
+ * Va al final por la misma razón, y con su propio aspecto una vez dentro: ver
+ * `.capa-inteligencia` en `globals.css`.
+ *
+ * ── POR QUÉ SIGUE SIENDO UNA FUNCIÓN Y NO UNA ENTRADA MÁS DE LA LISTA ─────
+ *
+ * Porque los tableros son datos, no rutas fijas: cuántos hay y cuáles se ven
+ * depende de quién mire (`tableroVisiblePara`). Inteligencia sí es fija, así que
+ * entra aquí como primer renglón del grupo — es la puerta de la capa, y los
+ * tableros, lo que se compone dentro de ella.
  */
 function conTableros(
   groups: NavGroup[],
@@ -153,7 +165,17 @@ function conTableros(
   role: MembershipRole,
   ajustes?: Ajustes,
 ): NavGroup[] {
-  const items = tableros
+  const items: NavItem[] = [];
+
+  // Inteligencia encabeza la capa. Se filtra igual que todo lo demás: quien no
+  // administra Análisis no la ve, y entonces el grupo puede quedar solo con
+  // tableros — que es lo correcto, porque hay quien tiene tableros que mirar sin
+  // poder configurar un modelo.
+  if (puedeEntrar(role, ajustes, "/admin/inteligencia")) {
+    items.push({ href: "/admin/inteligencia", label: "Inteligencia" });
+  }
+
+  const deTableros = tableros
     .filter((t) => tableroVisiblePara(role, t, ajustes))
     .map(
       (t): NavItem => ({
@@ -163,17 +185,19 @@ function conTableros(
       }),
     );
 
-  // Administración siempre puede crear uno, y por eso su sección existe aunque
-  // no haya ninguno todavía: sin este renglón, crear un tablero desde cero solo
-  // se podría desde el botón de una pantalla que no tenga — un camino que hay
-  // que descubrir por accidente.
+  items.push(...deTableros);
+
+  // Administración siempre puede crear uno, y por eso el renglón existe aunque
+  // no haya ningún tablero todavía: sin él, crear uno desde cero solo se podría
+  // desde el botón de una pantalla que no tenga — un camino que hay que
+  // descubrir por accidente.
   if (puedeComponerTableros(role, ajustes)) {
     items.push({ href: "/admin/dashboard/nuevo", label: "Nuevo tablero" });
   }
 
-  // Sin tableros ni permiso para crearlos no hay sección: un encabezado
-  // «Tableros» sobre una lista vacía ocupa sitio para decir que no hay nada.
-  return items.length > 0 ? [...groups, { section: "Tableros", items }] : groups;
+  // Sin nada dentro no hay grupo: un encabezado sobre una lista vacía ocupa
+  // sitio para decir que no hay nada.
+  return items.length > 0 ? [...groups, { section: "Inteligencia", items }] : groups;
 }
 
 /**
@@ -362,20 +386,7 @@ function menuDelRol(
     { section: "Compras", items: [...compras, porPagar] },
     {
       section: "Análisis",
-      items: [
-        { href: "/admin/rentabilidad", label: "Rentabilidad" },
-        ...analisis,
-        // La inteligencia va en Análisis y no en Configuración a propósito: no
-        // es un ajuste que se deja puesto, es una herramienta que se consulta
-        // para decidir, igual que Rentabilidad. Y no en una sección propia:
-        // es donde se configura lo que las otras pantallas van a decir, no un
-        // dominio de negocio aparte. Quien entra aquí viene de preguntarse
-        // «cómo vamos», no «qué modelo entreno».
-        // La única de Análisis que está en beta. Rentabilidad, Informes y
-        // Objetivos suman lo capturado; esta ESTIMA, y eso se avisa. La marca
-        // usa el mismo `badge` que ya distinguía a los tableros sin publicar.
-        { href: "/admin/inteligencia", label: "Inteligencia", badge: "beta" },
-      ],
+      items: [{ href: "/admin/rentabilidad", label: "Rentabilidad" }, ...analisis],
     },
   ];
 

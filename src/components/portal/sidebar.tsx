@@ -35,7 +35,8 @@ import type { MembershipRole } from "@/lib/db/platform";
 import { isAdminRole, ROLE_LABELS } from "@/lib/roles";
 import { navFor, type NavGroup, type NavItem, type TableroItem } from "@/lib/portal/menu";
 import type { Ajustes } from "@/lib/permisos";
-import { EtiquetaBeta, esRutaBeta } from "@/components/portal/aviso-beta";
+import { EtiquetaBeta } from "@/components/portal/capa-inteligencia";
+import { esCapaDeInteligencia } from "@/lib/capa";
 import { cn } from "@/lib/utils";
 
 /**
@@ -133,17 +134,16 @@ export const SIDEBAR_COOKIE = "evo_sidebar";
  * El tirador para plegar sí puede salirse: cuelga del `<aside>`, que no recorta.
  */
 /**
- * ¿Toda esta sección del menú lleva a pantallas en beta?
+ * ¿Todo este grupo del menú es la capa de inteligencia?
  *
- * Se exige que lo sean TODAS sus entradas, no alguna. Es exactamente lo que
- * separa a Tableros de Análisis: en Tableros lo es cada renglón, así que la
- * marca va en el título; en Análisis solo lo es Inteligencia, y ahí la lleva su
- * propio renglón. Marcar «Análisis» entera diría algo falso de Rentabilidad, de
- * Informes y de Objetivos —y una advertencia que sobra tres veces de cada cuatro
- * deja de leerse la vez que importa—.
+ * Se exige que lo sean TODAS sus entradas, no alguna: un grupo mixto marcado
+ * entero diría algo falso de las que no lo son. Hoy solo lo cumple el grupo de
+ * Inteligencia —que lleva dentro los tableros—; Análisis y el resto se quedan
+ * limpios, que es lo correcto: Rentabilidad, Informes y Objetivos suman lo
+ * capturado y no estiman nada.
  */
 function enBeta(g: NavGroup): boolean {
-  return g.items.length > 0 && g.items.every((i) => esRutaBeta(i.href));
+  return g.items.length > 0 && g.items.every((i) => esCapaDeInteligencia(i.href));
 }
 
 export function Sidebar({
