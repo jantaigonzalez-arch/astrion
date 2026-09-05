@@ -368,6 +368,9 @@ export default async function TicketDetailPage({
           {/* Asignación de agente (una vez que el ticket procede) */}
           {isStaff && ticket.status !== "pending_review" && ticket.status !== "rejected" && (
             <AssignPanel
+              /* El `key` es lo que re-sincroniza el selector cuando el
+                 asignado cambia. Ver la cabecera de `AssignPanel`. */
+              key={ticket.assignedToId ?? "sin-asignar"}
               ticketId={ticket.id}
               agents={agents}
               currentAssigneeId={ticket.assignedToId}

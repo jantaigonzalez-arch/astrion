@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useFormStatus } from "react-dom";
 import { Loader2, UserCheck } from "lucide-react";
 import { assignTicket } from "@/lib/actions/tickets";
@@ -27,6 +27,38 @@ function SaveBtn() {
   );
 }
 
+/**
+ * A quién le toca este ticket.
+ *
+ * ── EL SELECTOR SE QUEDABA EN «SIN ASIGNAR» ───────────────────────────────
+ *
+ * Al asignar un agente a un ticket que NO tenía ninguno, el desplegable volvía
+ * a la primera opción. Son dos comportamientos de React 19 que se encadenan, y
+ * ninguno es un fallo por su cuenta:
+ *
+ *   1. Un `<form>` cuya `action` es una función se RESETEA al terminar. Un
+ *      `<select>` controlado no lleva `selected` en ninguna opción —React lo
+ *      gobierna por la propiedad `value` del nodo—, así que el reseteo lo manda
+ *      a la primera. Que fuera «Sin asignar» y no el agente anterior es la
+ *      firma de esto: sin asignado previo, no había opción marcada a la que
+ *      volver.
+ *
+ *   2. La corrección venía de un efecto que ponía el valor del servidor. Pero
+ *      ese valor YA era el del estado —lo acababa de elegir la persona—, así
+ *      que `setValue` con lo mismo no cambia nada, React no vuelve a renderizar
+ *      y nunca reescribe el DOM. El efecto existía justo para esto y no podía
+ *      llegar.
+ *
+ * Ahora la re-sincronización va por `key` desde la pantalla: cuando el servidor
+ * manda otro asignado, React desmonta y vuelve a montar, y `useState` lee el
+ * valor nuevo sobre un `<select>` recién creado que ningún reseteo tocó. Es el
+ * «resetear el estado con una key» de la documentación, y el mismo mecanismo
+ * que usa `StatusPanel` — que tuvo este problema en su otra forma.
+ *
+ * De paso desaparece el efecto que ESLint marcaba: actualizar estado dentro de
+ * uno es lo que la propia documentación desaconseja, y aquí además no
+ * funcionaba.
+ */
 export function AssignPanel({
   ticketId,
   agents,
@@ -38,10 +70,7 @@ export function AssignPanel({
   currentAssigneeId: string | null;
   currentUserId: string;
 }) {
-  // Controlado y re-sincronizado con el servidor: React resetea el form
-  // tras la server action y con defaultValue volvería al valor anterior.
   const [value, setValue] = useState(currentAssigneeId ?? "");
-  useEffect(() => setValue(currentAssigneeId ?? ""), [currentAssigneeId]);
 
   const isMine = currentAssigneeId === currentUserId;
 
