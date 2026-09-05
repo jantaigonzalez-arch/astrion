@@ -15,6 +15,7 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:seed:crm": "tsx scripts/seed-crm.ts",
     "typecheck:probes": "tsc --noEmit -p tsconfig.check.json",
+    "domicilios": "tsx --tsconfig tsconfig.scripts.json scripts/domicilios.ts",
     "check:requisitions": "tsx --tsconfig tsconfig.scripts.json scripts/check-requisitions.ts",
     "db:seed:orders": "tsx --tsconfig tsconfig.scripts.json scripts/seed-orders.ts",
     "sync:prod": "bash scripts/sync-desde-prod.sh",

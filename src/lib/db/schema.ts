@@ -612,7 +612,58 @@ export const crmOrganizations = pgTable("crm_organizations", {
   industry: varchar("industry", { length: 120 }),
   website: varchar("website", { length: 255 }),
   phone: varchar("phone", { length: 40 }),
+  /**
+   * El domicilio TAL CUAL SE CAPTURÓ, sin desarmar.
+   *
+   * Es de dónde vienen las 148 direcciones del padrón de SAE, en una sola línea
+   * separada por comas. Se conserva como respaldo del desarmado: lo que el
+   * parser no supo colocar sigue estando aquí, y la ficha lo enseña cuando no
+   * hay nada estructurado. Ver `scripts/domicilios.ts`.
+   */
   address: text("address"),
+
+  /*
+    ── EL DOMICILIO FISCAL, DESARMADO COMO EL NODO `Domicilio` DEL SAT ──────
+
+    Calle, NumeroExterior, NumeroInterior, Colonia, Localidad, Referencia,
+    Municipio, Estado, Pais y CodigoPostal. Los nombres de aquí son los de la
+    casa —inglés, como el resto de columnas—, pero la correspondencia es uno a
+    uno y está anotada campo por campo para que nadie tenga que adivinarla al
+    armar un complemento.
+
+    De todos ellos, EL QUE IMPORTA HOY ES `postalCode`. En CFDI 4.0 el único
+    dato de domicilio que viaja del receptor es `DomicilioFiscalReceptor`, que
+    es el código postal, y tiene que coincidir exactamente con el que el SAT
+    tiene registrado en la Constancia de Situación Fiscal. Los demás no se
+    timbran; se capturan porque son los que pide el nodo `Domicilio` de los
+    complementos y porque recapturar 161 fichas después cuesta mucho más.
+
+    Colonia, municipio y estado van como TEXTO y no como clave de catálogo. Para
+    el CFDI da igual —no viajan—; el día que haga falta una Carta Porte habrá
+    que resolverlos contra `c_Colonia`, `c_Municipio` y `c_Estado`, y ese cruce
+    se hace con el código postal en la mano, que es lo que esto guarda.
+  */
+  /** SAT `Calle`. */
+  street: varchar("street", { length: 200 }),
+  /** SAT `NumeroExterior`. Texto, no número: «S/N», «12-A» y «KM 4.5» son reales. */
+  extNumber: varchar("ext_number", { length: 55 }),
+  /** SAT `NumeroInterior`. */
+  intNumber: varchar("int_number", { length: 55 }),
+  /** SAT `Colonia`. */
+  neighborhood: varchar("neighborhood", { length: 120 }),
+  /** SAT `Localidad`. */
+  locality: varchar("locality", { length: 120 }),
+  /** SAT `Municipio` (o alcaldía). */
+  municipality: varchar("municipality", { length: 120 }),
+  /** SAT `Estado`. */
+  state: varchar("state", { length: 120 }),
+  /** SAT `CodigoPostal`: los cinco dígitos que el CFDI 4.0 sí exige. */
+  postalCode: varchar("postal_code", { length: 5 }),
+  /** SAT `Pais`, clave del catálogo `c_Pais`. */
+  country: varchar("country", { length: 3 }).default("MEX"),
+  /** SAT `Referencia`: entre qué calles, seña para llegar. */
+  addressReference: varchar("address_reference", { length: 250 }),
+
   ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
   clientId: uuid("client_id").references(() => users.id, { onDelete: "set null" }),
   /**
@@ -645,6 +696,11 @@ export const crmOrganizations = pgTable("crm_organizations", {
   index("crm_organizations_owner_idx").on(t.ownerId),
   // Enlace organización ↔ cuenta de portal del laboratorio.
   index("crm_organizations_client_idx").on(t.clientId),
+  // «El cliente del 64460» es como pregunta facturación, y es el campo que hay
+  // que cruzar contra la Constancia. Parcial: hoy la mayoría está vacío.
+  index("crm_organizations_postal_idx")
+    .on(t.postalCode)
+    .where(sql`${t.postalCode} is not null`),
 ]);
 
 export const crmContacts = pgTable("crm_contacts", {

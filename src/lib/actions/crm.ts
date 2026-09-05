@@ -6,6 +6,7 @@ import {
   SLA_HORAS_MIN,
   slaHorasValidas,
 } from "@/lib/tickets";
+import { campoCp, estadoCanonico } from "@/lib/domicilio";
 import { revalidateTenant } from "@/lib/revalidate";
 import { redirectAfterAction } from "@/lib/nav-server";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
@@ -588,6 +589,29 @@ const OrgSchema = z.object({
   website: optText(255),
   phone: optText(40),
   address: optText(1000),
+
+  /*
+    ── EL DOMICILIO FISCAL ──────────────────────────────────────────────────
+
+    Todo opcional salvo la forma del código postal. Un prospecto al que se le va
+    a llamar por teléfono no tiene por qué traer domicilio, y exigirlo aquí
+    convertiría el alta en un trámite.
+
+    Lo que NO se acepta es un código postal a medias. Se normaliza primero —el
+    padrón trae «4,650» por 04650, porque cualquier hoja de cálculo se come el
+    cero de la izquierda— y después se exige que queden cinco dígitos. Guardar
+    «465» o «S/N» ahí no se descubre hasta el día del timbrado, y para entonces
+    ya se facturó mal: el SAT rechaza el CFDI si el CP no coincide con el de la
+    Constancia de Situación Fiscal.
+  */
+  street: optText(200),
+  extNumber: optText(55),
+  intNumber: optText(55),
+  neighborhood: optText(120),
+  municipality: optText(120),
+  state: optText(120),
+  addressReference: optText(250),
+  postalCode: campoCp(),
   ownerId: optUuid,
   clientId: optUuid,
   /*
@@ -638,6 +662,14 @@ function orgFields(formData: FormData) {
     website: (formData.get("website") as string) || undefined,
     phone: (formData.get("phone") as string) || undefined,
     address: (formData.get("address") as string) || undefined,
+    street: (formData.get("street") as string) || undefined,
+    extNumber: (formData.get("extNumber") as string) || undefined,
+    intNumber: (formData.get("intNumber") as string) || undefined,
+    neighborhood: (formData.get("neighborhood") as string) || undefined,
+    municipality: (formData.get("municipality") as string) || undefined,
+    state: (formData.get("state") as string) || undefined,
+    postalCode: (formData.get("postalCode") as string) || undefined,
+    addressReference: (formData.get("addressReference") as string) || undefined,
     ownerId: (formData.get("ownerId") as string) || undefined,
     clientId: (formData.get("clientId") as string) || undefined,
     slaHours: (formData.get("slaHours") as string) || undefined,
@@ -672,6 +704,17 @@ export async function createOrganization(
         website: parsed.data.website ?? null,
         phone: parsed.data.phone ?? null,
         address: parsed.data.address ?? null,
+        street: parsed.data.street ?? null,
+        extNumber: parsed.data.extNumber ?? null,
+        intNumber: parsed.data.intNumber ?? null,
+        neighborhood: parsed.data.neighborhood ?? null,
+        municipality: parsed.data.municipality ?? null,
+        // El estado se guarda CANÓNICO: «DISTRITO FEDERAL» y «CDMX» son la misma
+        // entidad, y dejar las tres formas en la tabla haría que filtrar por
+        // estado devolviera un tercio de lo que hay.
+        state: estadoCanonico(parsed.data.state) ?? parsed.data.state ?? null,
+        postalCode: parsed.data.postalCode,
+        addressReference: parsed.data.addressReference ?? null,
         ownerId: owner,
         clientId: parsed.data.clientId ?? null,
         notes: parsed.data.notes ?? null,
@@ -719,6 +762,17 @@ export async function updateOrganization(
         website: parsed.data.website ?? null,
         phone: parsed.data.phone ?? null,
         address: parsed.data.address ?? null,
+        street: parsed.data.street ?? null,
+        extNumber: parsed.data.extNumber ?? null,
+        intNumber: parsed.data.intNumber ?? null,
+        neighborhood: parsed.data.neighborhood ?? null,
+        municipality: parsed.data.municipality ?? null,
+        // El estado se guarda CANÓNICO: «DISTRITO FEDERAL» y «CDMX» son la misma
+        // entidad, y dejar las tres formas en la tabla haría que filtrar por
+        // estado devolviera un tercio de lo que hay.
+        state: estadoCanonico(parsed.data.state) ?? parsed.data.state ?? null,
+        postalCode: parsed.data.postalCode,
+        addressReference: parsed.data.addressReference ?? null,
         ownerId: owner,
         clientId: parsed.data.clientId ?? null,
         notes: parsed.data.notes ?? null,

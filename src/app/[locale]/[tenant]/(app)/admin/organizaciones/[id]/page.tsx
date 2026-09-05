@@ -13,6 +13,7 @@ import {
   Pencil,
   Phone,
   Plus,
+  Receipt,
   StickyNote,
   Ticket,
   User2,
@@ -33,6 +34,7 @@ import {
   money,
 } from "@/lib/crm";
 import { SLA_HOURS } from "@/lib/tickets";
+import { domicilioEnUnaLinea } from "@/lib/domicilio";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -419,9 +421,50 @@ export default async function OrganizationDetailPage({
                 <Globe className="size-4 shrink-0" /> {org.website}
               </a>
             )}
-            {org.address && (
+            {/*
+              EL DOMICILIO ESTRUCTURADO MANDA; EL TEXTO SUELTO ES EL RESPALDO.
+
+              Se compone de los campos del SAT y solo se cae al `address` de
+              origen cuando no hay ninguno capturado. Enseñar los dos a la vez
+              sería enseñar el mismo domicilio dos veces y en desacuerdo el día
+              que alguien corrija uno solo.
+            */}
+            {domicilioEnUnaLinea(org) ? (
               <p className="flex items-start gap-2 text-muted-foreground">
-                <MapPin className="mt-0.5 size-4 shrink-0" /> {org.address}
+                <MapPin className="mt-0.5 size-4 shrink-0" />
+                {domicilioEnUnaLinea(org)}
+              </p>
+            ) : (
+              org.address && (
+                <p className="flex items-start gap-2 text-muted-foreground">
+                  <MapPin className="mt-0.5 size-4 shrink-0" /> {org.address}
+                </p>
+              )
+            )}
+            {org.addressReference && (
+              <p className="pl-6 text-xs text-muted-foreground">
+                {org.addressReference}
+              </p>
+            )}
+            {/*
+              El RFC y el código postal, juntos y a la vista: son los dos datos
+              que hay que cuadrar contra la Constancia de Situación Fiscal antes
+              de timbrarle nada, y el CP es el que más rechazos causa.
+            */}
+            {(org.taxId || org.postalCode) && (
+              <p className="flex flex-wrap items-center gap-2 border-t border-border pt-3 text-xs">
+                <Receipt className="size-3.5 shrink-0 text-muted-foreground" />
+                <span className="text-muted-foreground">Datos fiscales:</span>
+                {org.taxId ? (
+                  <span className="font-mono font-medium">{org.taxId}</span>
+                ) : (
+                  <span className="text-warning">sin RFC</span>
+                )}
+                {org.postalCode ? (
+                  <span className="font-mono font-medium">C.P. {org.postalCode}</span>
+                ) : (
+                  <span className="text-warning">sin código postal</span>
+                )}
               </p>
             )}
             <p className="border-t border-border pt-3 text-xs text-muted-foreground">

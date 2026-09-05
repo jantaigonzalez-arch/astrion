@@ -14,6 +14,7 @@ import {
   updateOrganization,
   type CrmState,
 } from "@/lib/actions/crm";
+import { ESTADOS_MX } from "@/lib/domicilio";
 import { Link } from "@/lib/nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,7 +40,17 @@ export type OrgDefaults = {
   industry?: string | null;
   website?: string | null;
   phone?: string | null;
+  /** El domicilio de siempre, en una línea. Ver el bloque fiscal de abajo. */
   address?: string | null;
+  /* Domicilio desarmado como el nodo `Domicilio` del SAT. Ver `lib/domicilio.ts`. */
+  street?: string | null;
+  extNumber?: string | null;
+  intNumber?: string | null;
+  neighborhood?: string | null;
+  municipality?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  addressReference?: string | null;
   ownerId?: string | null;
   clientId?: string | null;
   /** Plazo propio de primera respuesta, en horas. Nulo = el general. */
@@ -123,15 +134,134 @@ export function OrganizationForm({
         </div>
       </div>
 
-      <div>
-        <Label htmlFor="address">Dirección</Label>
-        <Textarea
-          id="address"
-          name="address"
-          rows={2}
-          defaultValue={defaults?.address ?? ""}
-        />
-      </div>
+      {/*
+        ── EL DOMICILIO, DESARMADO COMO LO PIDE EL SAT ────────────────────────
+
+        Y el código postal PRIMERO, que es el orden contrario al que uno dicta
+        una dirección. Es deliberado: de todo este bloque, el CP es el único dato
+        que el CFDI 4.0 exige del receptor —`DomicilioFiscalReceptor`— y el que
+        más rechazos causa al timbrar, porque tiene que ser idéntico al de la
+        Constancia de Situación Fiscal. Ponerlo al final, entre calle y colonia,
+        lo convertía en un campo más que se llena de memoria.
+
+        Todo lo demás es opcional de verdad: a un prospecto al que solo se le va
+        a llamar no se le pide domicilio fiscal.
+      */}
+      <fieldset className="rounded-xl border border-border p-4">
+        <legend className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Domicilio fiscal
+        </legend>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div>
+            <Label htmlFor="postalCode">
+              Código postal <span className="text-primary">·</span>
+            </Label>
+            <Input
+              id="postalCode"
+              name="postalCode"
+              inputMode="numeric"
+              maxLength={5}
+              pattern="\d{5}"
+              defaultValue={defaults?.postalCode ?? ""}
+              placeholder="04650"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Cinco dígitos, igual que en su Constancia de Situación Fiscal. Es el
+              único dato del domicilio que viaja en la factura.
+            </p>
+          </div>
+          <div>
+            <Label htmlFor="state">Estado</Label>
+            <select
+              id="state"
+              name="state"
+              className={selectCls}
+              defaultValue={defaults?.state ?? ""}
+            >
+              <option value="">— Sin especificar —</option>
+              {ESTADOS_MX.map((e) => (
+                <option key={e} value={e}>
+                  {e}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label htmlFor="municipality">Municipio o alcaldía</Label>
+            <Input
+              id="municipality"
+              name="municipality"
+              defaultValue={defaults?.municipality ?? ""}
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-4">
+          <div className="sm:col-span-2">
+            <Label htmlFor="street">Calle</Label>
+            <Input id="street" name="street" defaultValue={defaults?.street ?? ""} />
+          </div>
+          <div>
+            {/* Texto y no número: «S/N», «12-A» y «KM 4.5» son domicilios reales. */}
+            <Label htmlFor="extNumber">Núm. exterior</Label>
+            <Input
+              id="extNumber"
+              name="extNumber"
+              defaultValue={defaults?.extNumber ?? ""}
+              placeholder="78 · S/N"
+            />
+          </div>
+          <div>
+            <Label htmlFor="intNumber">Núm. interior</Label>
+            <Input
+              id="intNumber"
+              name="intNumber"
+              defaultValue={defaults?.intNumber ?? ""}
+              placeholder="Opcional"
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="neighborhood">Colonia</Label>
+            <Input
+              id="neighborhood"
+              name="neighborhood"
+              defaultValue={defaults?.neighborhood ?? ""}
+            />
+          </div>
+          <div>
+            <Label htmlFor="addressReference">Referencia</Label>
+            <Input
+              id="addressReference"
+              name="addressReference"
+              defaultValue={defaults?.addressReference ?? ""}
+              placeholder="Entre qué calles, seña para llegar"
+            />
+          </div>
+        </div>
+
+        {/*
+          El texto de origen sigue aquí, y por una razón: 148 fichas llegaron con
+          el domicilio en una sola línea desde el padrón anterior, y lo que el
+          desarmado no supo colocar sigue estando en este campo. Se enseña al
+          final, plegado, para poder comparar sin que estorbe.
+        */}
+        <details className="mt-4">
+          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+            Domicilio tal como se capturó
+          </summary>
+          <Textarea
+            id="address"
+            name="address"
+            rows={2}
+            className="mt-2"
+            defaultValue={defaults?.address ?? ""}
+          />
+        </details>
+      </fieldset>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
