@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
 import type { DbOrTx } from "@/lib/db";
@@ -126,12 +127,11 @@ export async function getContracts(
  * durante un instante. En un paginador eso es tolerable; en un total de dinero
  * no lo sería.
  */
-export async function countContracts(
-  salesRepId?: string,
-  conexion?: DbOrTx,
-  filtros: FiltrosContratos = {},
+async function contar(
+  db: DbOrTx,
+  salesRepId: string | undefined,
+  filtros: FiltrosContratos,
 ): Promise<number> {
-  const db = conexion ?? (await tenantDb());
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(contracts)
@@ -139,6 +139,41 @@ export async function countContracts(
     // paginador ofrecería páginas que no existen.
     .where(whereContratos(salesRepId, filtros));
   return row?.n ?? 0;
+}
+
+/**
+ * La misma pregunta, una sola vez por petición.
+ *
+ * La pantalla pide dos conteos —el del paginador, con filtros, y el del
+ * encabezado, sin ellos— y sin filtros puestos son idénticos. Es el mismo caso
+ * que `countEquipment`, con el mismo motivo para arreglarlo: `count(*)` recorre
+ * la tabla entera y el desperdicio crece con ella.
+ *
+ * Los argumentos van sueltos y primitivos porque `cache()` los compara con
+ * `Object.is`: dos objetos de filtros de igual contenido no comparten clave.
+ */
+const contarContratos = cache(
+  async (
+    salesRepId?: string,
+    vigencia?: FiltrosContratos["vigencia"],
+    vendedor?: string,
+  ): Promise<number> => contar(await tenantDb(), salesRepId, { vigencia, vendedor }),
+);
+
+export async function countContracts(
+  salesRepId?: string,
+  conexion?: DbOrTx,
+  filtros: FiltrosContratos = {},
+): Promise<number> {
+  // Con conexión propia no se memoiza: quien pasa una transacción quiere contar
+  // DENTRO de ella —viendo lo que acaba de escribir—, y devolverle una lectura
+  // hecha antes, fuera, sería contestar a otra pregunta.
+  if (conexion) return contar(conexion, salesRepId, filtros);
+  return contarContratos(
+    salesRepId || undefined,
+    filtros.vigencia || undefined,
+    filtros.vendedor || undefined,
+  );
 }
 
 /**
