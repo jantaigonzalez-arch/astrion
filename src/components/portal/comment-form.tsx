@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { Link } from "@/lib/nav";
 import { useFormStatus } from "react-dom";
 import { Clock, Loader2, Package, Send, Wrench } from "lucide-react";
 import {
@@ -185,13 +186,39 @@ export function CommentForm({
           </span>
         </div>
 
-        {/* Refacciones utilizadas — buscador incremental */}
-        {parts.length > 0 && (
+        {/*
+          REFACCIONES UTILIZADAS.
+
+          El bloque se pinta para todo el EQUIPO, no solo cuando hay catálogo.
+          Antes colgaba de `parts.length > 0` y con el catálogo vacío
+          desaparecía entero: quien buscaba dónde registrar una refacción en un
+          servicio no encontraba nada y no había forma de saber si la función no
+          existía o si faltaban datos. Un control ausente sin explicación se lee
+          como una función que falta.
+
+          `canMarkInternal` es «esta persona es del equipo», que es lo mismo que
+          gobierna la nota interna: el cliente no captura bitácora ni consume
+          refacciones, así que a él no se le enseña ninguna de las dos.
+        */}
+        {canMarkInternal && (
           <div className="mt-3 border-t border-border pt-3">
             <Label className="flex items-center gap-1.5">
               <Package className="size-3.5 text-primary" /> Refacciones utilizadas
             </Label>
-            <PartsPicker parts={parts} value={used} onChange={setUsed} />
+            {parts.length > 0 ? (
+              <PartsPicker parts={parts} value={used} onChange={setUsed} />
+            ) : (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                No hay refacciones en el catálogo todavía. Se dan de alta en{" "}
+                <Link
+                  href="/admin/refacciones"
+                  className="font-medium text-primary hover:underline"
+                >
+                  Inventario · Refacciones
+                </Link>{" "}
+                y desde ahí quedan disponibles para cualquier servicio.
+              </p>
+            )}
           </div>
         )}
       </div>
