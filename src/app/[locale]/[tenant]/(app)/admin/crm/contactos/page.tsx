@@ -11,6 +11,7 @@ import { getContacts } from "@/lib/data/crm";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
+import { Telefono } from "@/components/portal/telefono";
 import { puedeEn } from "@/lib/tenancy/context";
 
 const BASE = "/admin/crm/contactos";
@@ -112,7 +113,7 @@ export default async function ContactsPage({
                       )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
-                      {c.phone ?? "—"}
+                      {c.phone ? <Telefono valor={c.phone} sinIcono /> : "—"}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {c.deals.length}

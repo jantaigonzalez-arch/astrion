@@ -4,6 +4,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { tenantDb, puedeEn } from "@/lib/tenancy/context";
+import { normalizarTelefono } from "@/lib/telefono";
 import { revalidateTenant } from "@/lib/revalidate";
 import { purchaseOrderLines, purchaseOrders, spareParts, suppliers } from "@/lib/db/schema";
 import { nextPurchaseOrderReference } from "@/lib/domain/references";
@@ -87,7 +88,7 @@ export async function createSupplier(
         rfc: d.rfc?.trim().toUpperCase() || null,
         contactName: d.contactName?.trim() || null,
         email: d.email?.trim().toLowerCase() || null,
-        phone: d.phone?.trim() || null,
+        phone: normalizarTelefono(d.phone),
         address: d.address?.trim() || null,
         paymentTermsDays: d.paymentTermsDays,
         currency: d.currency,
@@ -150,7 +151,7 @@ export async function updateSupplier(
         rfc: d.rfc?.trim().toUpperCase() || null,
         contactName: d.contactName?.trim() || null,
         email: d.email?.trim().toLowerCase() || null,
-        phone: d.phone?.trim() || null,
+        phone: normalizarTelefono(d.phone),
         address: d.address?.trim() || null,
         paymentTermsDays: d.paymentTermsDays,
         // La moneda es del proveedor, no de sus órdenes: las ya emitidas

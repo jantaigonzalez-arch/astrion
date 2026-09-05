@@ -9,7 +9,6 @@ import {
   Mail,
   PackageSearch,
   Pencil,
-  Phone,
   StickyNote,
   Tag,
   Trash2,
@@ -40,6 +39,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
+import { Telefono } from "@/components/portal/telefono";
 import { currentRole } from "@/lib/tenancy/context";
 import {
   ActivityQuickForm,
@@ -440,14 +440,7 @@ export default async function DealDetailPage({
                       <Mail className="size-3" /> {deal.contact.email}
                     </a>
                   )}
-                  {deal.contact.phone && (
-                    <a
-                      href={`tel:${deal.contact.phone}`}
-                      className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary"
-                    >
-                      <Phone className="size-3" /> {deal.contact.phone}
-                    </a>
-                  )}
+                  <Telefono valor={deal.contact.phone} className="text-xs" iconClassName="size-3" />
                 </div>
               </div>
             )}

@@ -10,7 +10,6 @@ import {
   Lock,
   Mail,
   Pencil,
-  Phone,
   TrendingDown,
   TrendingUp,
   UserRound,
@@ -31,6 +30,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
+import { Telefono } from "@/components/portal/telefono";
 import { StatusBadge } from "@/components/portal/badges";
 import type { TicketStatusValue } from "@/lib/tickets";
 import { currentRole } from "@/lib/tenancy/context";
@@ -261,11 +261,7 @@ export default async function ContractDetailPage({
             <div className="flex items-center gap-2 text-muted-foreground">
               <Mail className="size-3.5" /> {contract.client.email}
             </div>
-            {contract.client.phone && (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Phone className="size-3.5" /> {contract.client.phone}
-              </div>
-            )}
+            <Telefono valor={contract.client.phone} className="flex gap-2" />
           </dl>
         </Card>
 

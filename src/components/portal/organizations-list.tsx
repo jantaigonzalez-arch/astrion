@@ -2,10 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { ThLocal, useOrdenLocal } from "@/components/portal/orden-local";
-import { Building2, Phone, Search, X } from "lucide-react";
+import { Building2, Search, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "@/lib/nav";
+import { Telefono } from "@/components/portal/telefono";
 import {
   ORG_KIND_LABELS,
   ORG_KIND_STYLES,
@@ -280,13 +281,7 @@ export function OrganizationsList({
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
                       {o.phone ? (
-                        <a
-                          href={`tel:${o.phone}`}
-                          className="flex items-center gap-1.5 text-muted-foreground hover:text-primary"
-                        >
-                          <Phone className="size-3.5 shrink-0" />
-                          {o.phone}
-                        </a>
+                        <Telefono valor={o.phone} sinIcono />
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}

@@ -7,6 +7,7 @@ import {
   slaHorasValidas,
 } from "@/lib/tickets";
 import { campoCp, estadoCanonico } from "@/lib/domicilio";
+import { normalizarTelefono } from "@/lib/telefono";
 import { revalidateTenant } from "@/lib/revalidate";
 import { redirectAfterAction } from "@/lib/nav-server";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
@@ -702,7 +703,11 @@ export async function createOrganization(
         industry: parsed.data.industry ?? null,
         slaHours: parsed.data.slaHours,
         website: parsed.data.website ?? null,
-        phone: parsed.data.phone ?? null,
+        // Se guarda ya legible —«55 5590 2555»—, no en dígitos pelados. Este
+        // campo lo lee gente, se exporta a Excel y se pega en correos, y ahí
+        // «5555902555» obliga a contar con el dedo. Lo que no se entiende se
+        // deja tal cual: ver `normalizarTelefono`.
+        phone: normalizarTelefono(parsed.data.phone),
         address: parsed.data.address ?? null,
         street: parsed.data.street ?? null,
         extNumber: parsed.data.extNumber ?? null,
@@ -760,7 +765,11 @@ export async function updateOrganization(
         industry: parsed.data.industry ?? null,
         slaHours: parsed.data.slaHours,
         website: parsed.data.website ?? null,
-        phone: parsed.data.phone ?? null,
+        // Se guarda ya legible —«55 5590 2555»—, no en dígitos pelados. Este
+        // campo lo lee gente, se exporta a Excel y se pega en correos, y ahí
+        // «5555902555» obliga a contar con el dedo. Lo que no se entiende se
+        // deja tal cual: ver `normalizarTelefono`.
+        phone: normalizarTelefono(parsed.data.phone),
         address: parsed.data.address ?? null,
         street: parsed.data.street ?? null,
         extNumber: parsed.data.extNumber ?? null,
@@ -897,7 +906,11 @@ export async function createContact(
       .values({
         name: parsed.data.name.trim(),
         email: parsed.data.email ?? null,
-        phone: parsed.data.phone ?? null,
+        // Se guarda ya legible —«55 5590 2555»—, no en dígitos pelados. Este
+        // campo lo lee gente, se exporta a Excel y se pega en correos, y ahí
+        // «5555902555» obliga a contar con el dedo. Lo que no se entiende se
+        // deja tal cual: ver `normalizarTelefono`.
+        phone: normalizarTelefono(parsed.data.phone),
         position: parsed.data.position ?? null,
         organizationId: parsed.data.organizationId ?? null,
         ownerId: owner,
@@ -941,7 +954,11 @@ export async function updateContact(
       .set({
         name: parsed.data.name.trim(),
         email: parsed.data.email ?? null,
-        phone: parsed.data.phone ?? null,
+        // Se guarda ya legible —«55 5590 2555»—, no en dígitos pelados. Este
+        // campo lo lee gente, se exporta a Excel y se pega en correos, y ahí
+        // «5555902555» obliga a contar con el dedo. Lo que no se entiende se
+        // deja tal cual: ver `normalizarTelefono`.
+        phone: normalizarTelefono(parsed.data.phone),
         position: parsed.data.position ?? null,
         organizationId: parsed.data.organizationId ?? null,
         ownerId: owner,

@@ -8,7 +8,6 @@ import {
   X,
   Building2,
   Mail,
-  Phone,
   Users2,
   Clock,
   KeyRound,
@@ -22,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Telefono } from "@/components/portal/telefono";
 import { cn } from "@/lib/utils";
 
 /**
@@ -182,11 +182,7 @@ function SignupCard({ s }: { s: SignupRow }) {
                 {s.email}
               </a>
             </span>
-            {s.phone && (
-              <span className="flex items-center gap-1.5">
-                <Phone className="size-3.5" /> {s.phone}
-              </span>
-            )}
+            <Telefono valor={s.phone} className="flex gap-1.5" />
             <span className="flex items-center gap-1.5">
               <Clock className="size-3.5" /> {when}
             </span>

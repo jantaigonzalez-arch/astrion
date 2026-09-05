@@ -3,10 +3,11 @@
 import { useMemo, useState } from "react";
 import { SLA_HOURS } from "@/lib/tickets";
 import { ThLocal, useOrdenLocal } from "@/components/portal/orden-local";
-import { AlertTriangle, Building2, Phone, Search, X } from "lucide-react";
+import { AlertTriangle, Building2, Search, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "@/lib/nav";
+import { Telefono } from "@/components/portal/telefono";
 import { money } from "@/lib/crm";
 import { cn } from "@/lib/utils";
 
@@ -290,13 +291,7 @@ export function ClientsList({
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
                       {c.phone ? (
-                        <a
-                          href={`tel:${c.phone}`}
-                          className="flex items-center gap-1.5 text-muted-foreground hover:text-primary"
-                        >
-                          <Phone className="size-3.5 shrink-0" />
-                          {c.phone}
-                        </a>
+                        <Telefono valor={c.phone} sinIcono />
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}

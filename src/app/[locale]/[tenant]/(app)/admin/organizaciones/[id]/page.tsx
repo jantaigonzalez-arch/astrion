@@ -11,7 +11,6 @@ import {
   Mail,
   MapPin,
   Pencil,
-  Phone,
   Plus,
   Receipt,
   StickyNote,
@@ -35,6 +34,7 @@ import {
 } from "@/lib/crm";
 import { SLA_HOURS } from "@/lib/tickets";
 import { domicilioEnUnaLinea } from "@/lib/domicilio";
+import { Telefono } from "@/components/portal/telefono";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -403,14 +403,7 @@ export default async function OrganizationDetailPage({
             <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               <Building2 className="size-3.5" /> Datos
             </h2>
-            {org.phone && (
-              <a
-                href={`tel:${org.phone}`}
-                className="flex items-center gap-2 text-muted-foreground hover:text-primary"
-              >
-                <Phone className="size-4" /> {org.phone}
-              </a>
-            )}
+            <Telefono valor={org.phone} className="flex gap-2" iconClassName="size-4" />
             {org.website && (
               <a
                 href={org.website}
@@ -495,14 +488,7 @@ export default async function OrganizationDetailPage({
                         <Mail className="size-3" /> {c.email}
                       </a>
                     )}
-                    {c.phone && (
-                      <a
-                        href={`tel:${c.phone}`}
-                        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary"
-                      >
-                        <Phone className="size-3" /> {c.phone}
-                      </a>
-                    )}
+                    <Telefono valor={c.phone} className="text-xs" iconClassName="size-3" />
                   </li>
                 ))}
               </ul>

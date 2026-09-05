@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import {
   SLA_HORAS_MAX,
   SLA_HORAS_MIN,
@@ -15,6 +15,7 @@ import {
   type CrmState,
 } from "@/lib/actions/crm";
 import { ESTADOS_MX } from "@/lib/domicilio";
+import { avisoDelTelefono, telefonoLegible } from "@/lib/telefono";
 import { Link } from "@/lib/nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -119,10 +120,7 @@ export function OrganizationForm({
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <Label htmlFor="phone">Teléfono</Label>
-          <Input id="phone" name="phone" defaultValue={defaults?.phone ?? ""} />
-        </div>
+        <CampoTelefono id="phone" defaultValue={defaults?.phone ?? ""} />
         <div>
           <Label htmlFor="website">Sitio web</Label>
           <Input
@@ -462,10 +460,7 @@ export function ContactForm({
             defaultValue={defaults?.email ?? ""}
           />
         </div>
-        <div>
-          <Label htmlFor="phone">Teléfono</Label>
-          <Input id="phone" name="phone" defaultValue={defaults?.phone ?? ""} />
-        </div>
+        <CampoTelefono id="phone" defaultValue={defaults?.phone ?? ""} />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -532,5 +527,59 @@ export function ContactForm({
         {editing ? "Guardar cambios" : "Registrar contacto"}
       </Button>
     </form>
+  );
+}
+
+/**
+ * EL CAMPO DE TELÉFONO, CON ESPEJO DEBAJO.
+ *
+ * Mientras se escribe, dice cómo va a quedar guardado y leído: «55 5590 2555»,
+ * «800 503 0909», «2789 2000 ext. 1112». No corrige el campo mientras uno teclea
+ * —reescribir bajo los dedos es la forma más rápida de que alguien pelee con un
+ * formulario— sino que enseña el resultado al lado.
+ *
+ * ── EL AVISO ES EL PUNTO ──────────────────────────────────────────────────
+ *
+ * De los 68 teléfonos cargados, 32 tienen ocho dígitos: son de antes de 2019,
+ * cuando la Ciudad de México marcaba sin lada, y hoy no se pueden marcar. El
+ * sistema no les inventa el «55» —una lada equivocada hace llamar a un
+ * desconocido—, así que la única forma de que se arreglen es que quien tenga la
+ * ficha abierta lo vea. Aquí lo ve, en el momento en que puede preguntarlo.
+ */
+function CampoTelefono({
+  id,
+  defaultValue,
+}: {
+  id: string;
+  defaultValue: string;
+}) {
+  const [valor, setValor] = useState(defaultValue);
+  const legible = telefonoLegible(valor);
+  const aviso = avisoDelTelefono(valor);
+
+  return (
+    <div>
+      <Label htmlFor={id}>Teléfono</Label>
+      <Input
+        id={id}
+        name={id}
+        type="tel"
+        inputMode="tel"
+        value={valor}
+        onChange={(e) => setValor(e.target.value)}
+        placeholder="55 5590 2555"
+      />
+      {legible && (
+        <p className="mt-1 text-[11px]">
+          {aviso ? (
+            <span className="text-warning">
+              {legible} — {aviso}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">Se guardará como {legible}</span>
+          )}
+        </p>
+      )}
+    </div>
   );
 }
