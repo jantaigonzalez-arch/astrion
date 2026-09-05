@@ -830,6 +830,21 @@ export async function getClients() {
       clientId: crmOrganizations.clientId,
       /** Plazo propio de primera respuesta. Nulo = el general. Ver `slaDueFrom`. */
       slaHours: crmOrganizations.slaHours,
+      /*
+        Los contactos, también aquí.
+
+        Vivían solo en el catálogo de organizaciones, que no está en el menú, y
+        al mudar la ficha desaparecieron de la vista de todo el mundo. Son el
+        dato con el que se empieza a trabajar a una empresa —a quién se llama—,
+        y un cliente con cero contactos es una cuenta que no se puede atender
+        sin salir a preguntar. La subconsulta es correlacionada por el mismo
+        motivo que las de arriba: los `left join` con agregado multiplicaban
+        filas entre sí.
+      */
+      contacts: sql<number>`(
+        select count(*)::int from ${crmContacts}
+         where ${crmContacts}.organization_id = ${crmOrganizations}.id
+      )`,
       // Se piden en crudo y el cero se pone abajo, en JavaScript. Envolverlos
       // aquí en un `coalesce` obligaba a escribirlos dentro de una plantilla
       // `sql`, y ahí Drizzle pierde el prefijo de la subconsulta: dos de ellas

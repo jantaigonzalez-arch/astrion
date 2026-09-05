@@ -72,6 +72,23 @@ export default async function LeadOrganizationsPage({
             )}
             .
           </p>
+          {/*
+            LAS DOS PANTALLAS SON LA MISMA CARTERA EN DOS MOMENTOS.
+
+            Un prospecto no se copia ni se da de alta otra vez: la misma ficha
+            pasa a Clientes en cuanto hay una compra. Decirlo aquí y en Clientes
+            es lo que evita que alguien busque un botón de «convertir» que no
+            existe —ni debe existir: lo que convierte es ganar el negocio, no
+            marcar una casilla— o que dé de alta al cliente por segunda vez.
+          */}
+          <p className="text-xs text-muted-foreground">
+            Pasan a{" "}
+            <Link href="/admin/clientes" className="text-primary hover:underline">
+              Clientes
+            </Link>{" "}
+            solos, en cuanto se gana un negocio o se les firma un contrato. Es la
+            misma ficha: no hay que darlos de alta otra vez.
+          </p>
         </div>
         <Button asChild variant="accent">
           <Link href="/admin/organizaciones/nueva">

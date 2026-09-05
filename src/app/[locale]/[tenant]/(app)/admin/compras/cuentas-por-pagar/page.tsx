@@ -158,7 +158,7 @@ export default async function CuentasPorPagarPage({
           </div>
 
           <div className="overflow-x-auto border-t border-border">
-            <table className="tabla-erp w-full text-sm">
+            <table data-tabla="cuentas-por-pagar" className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-2 font-medium">Proveedor</th>

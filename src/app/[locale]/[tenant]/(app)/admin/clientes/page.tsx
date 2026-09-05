@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { setRequestLocale } from "next-intl/server";
 import { Building2 } from "lucide-react";
+import { Link } from "@/lib/nav";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getClients } from "@/lib/data/crm";
 import { puedeEn } from "@/lib/tenancy/context";
@@ -94,17 +95,27 @@ async function Resumen({ p }: { p: Promise<ClientRow[]> }) {
   const conAbiertos = clientes.filter((c) => c.openTickets > 0).length;
 
   return (
-    <p className="text-sm text-muted-foreground">
-      {clientes.length} laboratorio(s) y empresa(s) que ya compraron
-      {conAbiertos > 0 && (
-        <>
-          {" "}
-          · <span className="font-medium text-warning">{conAbiertos}</span> con tickets
-          abiertos
-        </>
-      )}
-      .
-    </p>
+    <>
+      <p className="text-sm text-muted-foreground">
+        {clientes.length} laboratorio(s) y empresa(s) que ya compraron
+        {conAbiertos > 0 && (
+          <>
+            {" "}
+            · <span className="font-medium text-warning">{conAbiertos}</span> con
+            tickets abiertos
+          </>
+        )}
+        .
+      </p>
+      {/* La otra mitad de la frase que empieza en Prospectos. */}
+      <p className="text-xs text-muted-foreground">
+        Llegan aquí desde{" "}
+        <Link href="/admin/crm/prospectos" className="text-primary hover:underline">
+          Prospectos
+        </Link>{" "}
+        al ganarse un negocio. Es la misma ficha, con más cosas que atender.
+      </p>
+    </>
   );
 }
 
@@ -122,6 +133,8 @@ async function Lista({ p, locale }: { p: Promise<ClientRow[]>; locale: string })
     name: c.name,
     taxId: c.taxId,
     industry: c.industry,
+    phone: c.phone,
+    contacts: c.contacts,
     ownerName: c.ownerName,
     slaHours: c.slaHours,
     hasPortal: c.hasPortal,

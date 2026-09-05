@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { SLA_HOURS } from "@/lib/tickets";
 import { ThLocal, useOrdenLocal } from "@/components/portal/orden-local";
-import { AlertTriangle, Building2, Search, X } from "lucide-react";
+import { AlertTriangle, Building2, Phone, Search, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "@/lib/nav";
@@ -30,6 +30,17 @@ export type ClientListRow = {
   name: string;
   taxId: string | null;
   industry: string | null;
+  /*
+    Teléfono y contactos: los DATOS DE LA EMPRESA, no del servicio.
+
+    Vivían únicamente en el catálogo de organizaciones, que no está en el menú,
+    así que al mudar la ficha se quedaron sin ninguna pantalla que los enseñara.
+    Y son lo primero que se busca cuando hay que llamar a un cliente: un cliente
+    con cero contactos es una cuenta que no se puede atender sin salir a
+    preguntar por quién responde ahí.
+  */
+  phone: string | null;
+  contacts: number;
   ownerName: string | null;
   /** Tiene cuenta de portal enlazada: sin ella no hay equipos ni tickets que encontrar. */
   hasPortal: boolean;
@@ -59,6 +70,10 @@ type Filter = "all" | "conAbiertos" | "sinPortal";
  */
 const VALORES = {
   nombre: (c: ClientListRow) => c.name,
+  // Cero contactos es un hueco de verdad —no hay a quién llamar—, así que ordena
+  // como nulo y `useOrdenLocal` lo manda al final en las dos direcciones. Es la
+  // misma decisión que en la cartera de prospectos.
+  contactos: (c: ClientListRow) => (c.contacts > 0 ? c.contacts : null),
   contratos: (c: ClientListRow) => (c.hasPortal ? c.contracts : null),
   equipos: (c: ClientListRow) => (c.hasPortal ? c.equipment : null),
   tickets: (c: ClientListRow) =>
@@ -93,9 +108,9 @@ export function ClientsList({
       if (filter === "conAbiertos" && c.openTickets === 0) return false;
       if (filter === "sinPortal" && c.hasPortal) return false;
       if (!term) return true;
-      return norm([c.name, c.taxId, c.industry].filter(Boolean).join(" ")).includes(
-        term,
-      );
+      return norm(
+        [c.name, c.taxId, c.industry, c.phone].filter(Boolean).join(" "),
+      ).includes(term);
     });
   }, [clients, q, filter]);
 
@@ -141,7 +156,7 @@ export function ClientsList({
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar por nombre, RFC o giro…"
+            placeholder="Buscar por nombre, RFC, giro o teléfono…"
             className="h-10 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             aria-label="Buscar cliente"
           />
@@ -188,12 +203,21 @@ export function ClientsList({
         </Card>
       ) : (
         <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="tabla-erp w-full text-sm">
+          <div className="tabla-caja overflow-x-auto">
+            {/*
+              `data-tabla` es lo que le da anchos arrastrables: sin él, esta era
+              la única lista grande del sistema cuyas columnas no se podían
+              estrechar. Ver `anchos-de-columna.tsx`.
+            */}
+            <table data-tabla="clientes" className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <ThLocal campo="nombre" orden={orden} onPulsar={pulsar}>
                     Cliente
+                  </ThLocal>
+                  <th className="px-4 py-3 font-medium">Teléfono</th>
+                  <ThLocal campo="contactos" orden={orden} onPulsar={pulsar} inicial="desc">
+                    Contactos
                   </ThLocal>
                   <ThLocal campo="contratos" orden={orden} onPulsar={pulsar} inicial="desc">
                     Contratos
@@ -262,6 +286,26 @@ export function ClientsList({
                           Sin cuenta de portal — enlázala para ver sus equipos y
                           tickets
                         </span>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {c.phone ? (
+                        <a
+                          href={`tel:${c.phone}`}
+                          className="flex items-center gap-1.5 text-muted-foreground hover:text-primary"
+                        >
+                          <Phone className="size-3.5 shrink-0" />
+                          {c.phone}
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td data-num className="px-4 py-3 text-right tabular-nums">
+                      {c.contacts > 0 ? (
+                        c.contacts
+                      ) : (
+                        <span className="text-muted-foreground">0</span>
                       )}
                     </td>
                     <td className="px-4 py-3 tabular-nums">

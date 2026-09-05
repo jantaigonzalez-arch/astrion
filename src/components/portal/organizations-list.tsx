@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { OrdenChipsLocal, useOrdenLocal } from "@/components/portal/orden-local";
-import { Building2, Search, X } from "lucide-react";
+import { ThLocal, useOrdenLocal } from "@/components/portal/orden-local";
+import { Building2, Phone, Search, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "@/lib/nav";
@@ -63,6 +63,10 @@ type Filter = "all" | "clients" | "leads" | "deals" | "unassigned";
  */
 const VALORES_ORG = {
   nombre: (o: OrganizationRow) => o.name,
+  // Los clientes primero al ordenar descendente: «client» < «lead» alfabéticamente,
+  // así que se invierte a mano. Quien pulsa esta columna busca separar las dos
+  // carteras, y la mitad que interesa mirar primero es la que ya compra.
+  tipo: (o: OrganizationRow) => (o.kind === "client" ? 1 : 0),
   abierto: (o: OrganizationRow) => (o.openDeals > 0 ? o.openValue : null),
   negocios: (o: OrganizationRow) => (o.openDeals > 0 ? o.openDeals : null),
   contactos: (o: OrganizationRow) => (o.contacts > 0 ? o.contacts : null),
@@ -184,20 +188,6 @@ export function OrganizationsList({
           )}
         </div>
 
-        <div className="mt-3">
-          <OrdenChipsLocal
-            orden={orden}
-            onPulsar={pulsar}
-            campos={[
-              { campo: "nombre", label: "Nombre" },
-              { campo: "abierto", label: "Abierto", inicial: "desc" },
-              { campo: "negocios", label: "Negocios", inicial: "desc" },
-              { campo: "contactos", label: "Contactos", inicial: "desc" },
-              { campo: "responsable", label: "Responsable" },
-            ]}
-          />
-        </div>
-
         <p className="mt-3 text-xs text-muted-foreground">
           Mostrando{" "}
           <span className="font-medium text-foreground">{filtered.length}</span> de{" "}
@@ -215,77 +205,141 @@ export function OrganizationsList({
           </p>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {filtered.map((o) => (
-            <Card
-              key={o.id}
-              className="p-5 transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <Link
-                    href={`/admin/organizaciones/${o.id}`}
-                    className="font-medium hover:text-primary"
-                  >
-                    {o.name}
-                  </Link>
-                  <p className="text-xs text-muted-foreground">
-                    {[o.industry, o.taxId].filter(Boolean).join(" · ") || "—"}
-                  </p>
-                </div>
-                {/*
-                  Siempre se pinta, también en los leads. Un distintivo que solo
-                  aparece en un caso obliga a razonar por ausencia («no dice
-                  nada, entonces será prospecto… ¿o se me olvidó cargarlo?»);
-                  decirlo en los dos casos hace que la lista se lea de un
-                  vistazo. El título del elemento explica de dónde sale.
-                */}
-                <span
-                  className="shrink-0"
-                  title={
-                    o.kind === "client"
-                      ? "Ya compró: tiene un negocio ganado, un contrato firmado o cuenta de portal."
-                      : "Todavía no tiene ninguna compra registrada."
-                  }
-                >
-                  <Badge className={ORG_KIND_STYLES[o.kind]}>
-                    {label(ORG_KIND_LABELS, o.kind, locale)}
-                  </Badge>
-                </span>
-              </div>
+        /*
+          TABLA, NO TARJETAS. Y por lo mismo que la de Clientes.
 
-              <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
-                <span>{o.contacts} contacto(s)</span>
-                <span>{o.openDeals} negocio(s) abierto(s)</span>
-                <span className="font-mono">
-                  {money(String(o.openValue), "MXN", locale)}
-                </span>
-              </div>
+          Eran tarjetas de dos columnas, y con eso esta pantalla se leía distinto
+          de todas las demás del sistema: no ordenaba por cabecera, no se podía
+          estrechar una columna, la densidad no la afectaba. La cartera de
+          prospectos y la de clientes son la MISMA cartera en dos momentos —un
+          prospecto termina convertido en cliente—, así que mirarlas no puede
+          exigir dos costumbres distintas.
 
-              <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
-                <span>Responsable: {o.ownerName ?? "Sin asignar"}</span>
-                {/*
-                  Tomar una ficha de la bandeja común sin pedirle a nadie que la
-                  reparta. Es un `form` y no un botón con `onClick` porque la
-                  acción es una escritura del servidor: así funciona también con
-                  el JavaScript a medio cargar, que en una tabla de 164 tarjetas
-                  es un instante real.
-                */}
-                {!o.ownerName && (
-                  <form action={claimOrganization}>
-                    <input type="hidden" name="id" value={o.id} />
-                    <button
-                      type="submit"
-                      className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-secondary"
-                    >
-                      Tomarla
-                    </button>
-                  </form>
-                )}
-              </div>
-            </Card>
-          ))}
-        </div>
+          Y en tarjetas no cabía lo que sí importa: teléfono y contactos vivían
+          solo en el catálogo de organizaciones, que no está en el menú.
+        */
+        <Card className="overflow-hidden">
+          <div className="tabla-caja overflow-x-auto">
+            <table data-tabla="organizaciones" className="tabla-erp w-full text-sm">
+              <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <ThLocal campo="nombre" orden={orden} onPulsar={pulsar}>
+                    Organización
+                  </ThLocal>
+                  <ThLocal campo="tipo" orden={orden} onPulsar={pulsar}>
+                    Tipo
+                  </ThLocal>
+                  <th className="px-4 py-3 font-medium">Teléfono</th>
+                  <ThLocal campo="contactos" orden={orden} onPulsar={pulsar} inicial="desc">
+                    Contactos
+                  </ThLocal>
+                  <ThLocal campo="negocios" orden={orden} onPulsar={pulsar} inicial="desc">
+                    Negocios
+                  </ThLocal>
+                  <ThLocal campo="abierto" orden={orden} onPulsar={pulsar} inicial="desc">
+                    Abierto
+                  </ThLocal>
+                  <ThLocal campo="responsable" orden={orden} onPulsar={pulsar}>
+                    Responsable
+                  </ThLocal>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filtered.map((o) => (
+                  <tr key={o.id} className="transition-colors hover:bg-secondary/40">
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/admin/organizaciones/${o.id}`}
+                        className="font-medium hover:text-primary"
+                      >
+                        {o.name}
+                      </Link>
+                      <p className="text-xs text-muted-foreground">
+                        {[o.industry, o.taxId].filter(Boolean).join(" · ") || "—"}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3">
+                      {/*
+                        Se pinta siempre, también donde todas las filas son
+                        prospectos. Un distintivo que solo aparece en un caso
+                        obliga a razonar por ausencia —«no dice nada, entonces
+                        será prospecto… ¿o se me olvidó cargarlo?»—. El título
+                        explica de dónde sale.
+                      */}
+                      <span
+                        title={
+                          o.kind === "client"
+                            ? "Ya compró: tiene un negocio ganado, un contrato firmado o cuenta de portal."
+                            : "Todavía no tiene ninguna compra registrada."
+                        }
+                      >
+                        <Badge className={ORG_KIND_STYLES[o.kind]}>
+                          {label(ORG_KIND_LABELS, o.kind, locale)}
+                        </Badge>
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {o.phone ? (
+                        <a
+                          href={`tel:${o.phone}`}
+                          className="flex items-center gap-1.5 text-muted-foreground hover:text-primary"
+                        >
+                          <Phone className="size-3.5 shrink-0" />
+                          {o.phone}
+                        </a>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td data-num className="px-4 py-3 text-right tabular-nums">
+                      {o.contacts > 0 ? (
+                        o.contacts
+                      ) : (
+                        <span className="text-muted-foreground">0</span>
+                      )}
+                    </td>
+                    <td data-num className="px-4 py-3 text-right tabular-nums">
+                      {o.openDeals > 0 ? (
+                        o.openDeals
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td data-num className="px-4 py-3 text-right tabular-nums">
+                      {o.openDeals > 0 ? (
+                        money(String(o.openValue), "MXN", locale)
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {o.ownerName ? (
+                        <span className="text-muted-foreground">{o.ownerName}</span>
+                      ) : (
+                        /*
+                          Tomar una ficha de la bandeja común sin pedirle a nadie
+                          que la reparta. Es un `form` y no un botón con
+                          `onClick` porque la acción es una escritura del
+                          servidor: así funciona también con el JavaScript a
+                          medio cargar.
+                        */
+                        <form action={claimOrganization}>
+                          <input type="hidden" name="id" value={o.id} />
+                          <button
+                            type="submit"
+                            className="rounded-md border border-border px-2 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-secondary"
+                          >
+                            Tomarla
+                          </button>
+                        </form>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </div>
   );
