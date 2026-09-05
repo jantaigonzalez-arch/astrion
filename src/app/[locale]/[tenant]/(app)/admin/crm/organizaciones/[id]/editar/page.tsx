@@ -60,6 +60,7 @@ export default async function EditOrganizationPage({
             address: org.address,
             ownerId: org.ownerId,
             clientId: org.clientId,
+            slaHours: org.slaHours,
             notes: org.notes,
           }}
         />

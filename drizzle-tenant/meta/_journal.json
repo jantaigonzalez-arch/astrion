@@ -169,6 +169,13 @@
       "when": 1786852307344,
       "tag": "0023_bandeja_de_avisos",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786852307345,
+      "tag": "0024_sla_por_cliente",
+      "breakpoints": true
     }
   ]
 }

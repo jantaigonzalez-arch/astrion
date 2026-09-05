@@ -112,8 +112,38 @@ export const PRIORITY_STYLES: Record<TicketPriorityValue, string> = {
   urgent: "bg-destructive/12 text-destructive ring-destructive/25",
 };
 
-// SLA de primera respuesta: la web promete < 2 h.
+/**
+ * El plazo de primera respuesta POR OMISIÓN, en horas.
+ *
+ * Es el que promete el sitio público, y el que rige para todo cliente que no
+ * haya pactado el suyo. Un cliente puede tener otro —ver `crmOrganizations.slaHours`—
+ * y entonces manda el suyo.
+ *
+ * Sigue siendo una constante y no un ajuste de la empresa: es la promesa
+ * comercial de base, no una preferencia. El día que dos inquilinos prometan
+ * cosas distintas, el sitio es `settings`.
+ */
 export const SLA_HOURS = 2;
+
+/** Lo que se admite al pactar un plazo propio: de una hora a treinta días. */
+export const SLA_HORAS_MIN = 1;
+export const SLA_HORAS_MAX = 720;
+
+/**
+ * ¿Es un plazo pactable? Lista blanca del lado del dominio.
+ *
+ * Cero no se admite y no es un descuido: un SLA de cero horas nace vencido
+ * siempre, así que sería una forma silenciosa de apagar el compromiso. Para no
+ * pactar nada está el campo vacío, que significa «el general».
+ */
+export function slaHorasValidas(h: unknown): h is number {
+  return (
+    typeof h === "number" &&
+    Number.isInteger(h) &&
+    h >= SLA_HORAS_MIN &&
+    h <= SLA_HORAS_MAX
+  );
+}
 
 /* ------------------------- Estado del SLA ------------------------- */
 /**
@@ -176,8 +206,22 @@ export const SLA_STYLES: Record<SlaState, string> = {
   vencido: "bg-destructive/12 text-destructive ring-destructive/25",
 };
 
-export function slaDueFrom(createdAt: Date): Date {
-  return new Date(createdAt.getTime() + SLA_HOURS * 60 * 60 * 1000);
+/**
+ * Cuándo vence la primera respuesta de un ticket.
+ *
+ * `horas` es lo pactado con el cliente. Nulo o inválido cae al plazo general:
+ * la caída es deliberada y no se avisa, porque un número raro en la ficha de un
+ * cliente no puede dejar un ticket sin compromiso — eso convertiría un dato mal
+ * capturado en una promesa apagada.
+ *
+ * Cuenta en horas CORRIDAS, no hábiles. Es lo que había y se conserva a
+ * propósito: cambiarlo aquí, de paso, movería el vencimiento de los 260 tickets
+ * que ya tienen plazo. Cuando se decida el horario laboral, este es el único
+ * sitio que hay que tocar.
+ */
+export function slaDueFrom(createdAt: Date, horas?: number | null): Date {
+  const h = slaHorasValidas(horas) ? horas : SLA_HOURS;
+  return new Date(createdAt.getTime() + h * 60 * 60 * 1000);
 }
 
 export function label(

@@ -1,6 +1,11 @@
 "use server";
 
 import { z } from "zod";
+import {
+  SLA_HORAS_MAX,
+  SLA_HORAS_MIN,
+  slaHorasValidas,
+} from "@/lib/tickets";
 import { revalidateTenant } from "@/lib/revalidate";
 import { redirectAfterAction } from "@/lib/nav-server";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
@@ -585,6 +590,24 @@ const OrgSchema = z.object({
   address: optText(1000),
   ownerId: optUuid,
   clientId: optUuid,
+  /*
+    El plazo de primera respuesta pactado con este cliente, en horas.
+
+    Vacío es lo NORMAL y significa «el plazo general», no «sin compromiso». Por
+    eso se transforma a `null` y no se rechaza: un campo obligatorio aquí
+    convertiría un acuerdo excepcional en un trámite de alta.
+
+    Lo que sí se rechaza es un número fuera de rango, con mensaje: cero horas
+    nace vencido siempre —sería apagar el SLA en silencio— y un número absurdo
+    es un dedazo que dejaría al cliente sin compromiso real durante meses.
+  */
+  slaHours: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.trim() ? Number(v) : null))
+    .refine((v) => v === null || slaHorasValidas(v), {
+      message: `Las horas de SLA van de ${SLA_HORAS_MIN} a ${SLA_HORAS_MAX}.`,
+    }),
   notes: optText(2000),
 });
 
@@ -617,6 +640,7 @@ function orgFields(formData: FormData) {
     address: (formData.get("address") as string) || undefined,
     ownerId: (formData.get("ownerId") as string) || undefined,
     clientId: (formData.get("clientId") as string) || undefined,
+    slaHours: (formData.get("slaHours") as string) || undefined,
     notes: (formData.get("notes") as string) || undefined,
   };
 }
@@ -644,6 +668,7 @@ export async function createOrganization(
       .values({
         name: parsed.data.name.trim(),
         industry: parsed.data.industry ?? null,
+        slaHours: parsed.data.slaHours,
         website: parsed.data.website ?? null,
         phone: parsed.data.phone ?? null,
         address: parsed.data.address ?? null,
@@ -690,6 +715,7 @@ export async function updateOrganization(
       .set({
         name: parsed.data.name.trim(),
         industry: parsed.data.industry ?? null,
+        slaHours: parsed.data.slaHours,
         website: parsed.data.website ?? null,
         phone: parsed.data.phone ?? null,
         address: parsed.data.address ?? null,

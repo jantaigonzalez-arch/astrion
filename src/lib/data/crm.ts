@@ -717,6 +717,35 @@ export async function getClientAccounts() {
  * cierto, y sigue significando «no hay por dónde encontrárselos», que es lo que
  * `hasPortal` traduce en la pantalla.
  */
+/**
+ * El plazo pactado con el cliente que levanta este ticket, en horas.
+ *
+ * `null` si no pactó ninguno —lo normal— y entonces rige el general. Ver
+ * `slaDueFrom`.
+ *
+ * Se busca por `clientId` porque es lo que une la cuenta que abre el ticket con
+ * su organización. Una cuenta sin organización vinculada devuelve nulo, que es
+ * lo correcto: sin ficha comercial no hay contrato del que salga un plazo
+ * propio.
+ *
+ * Se resuelve al CREAR el ticket y se congela en `sla_due_at`. Cambiar el plazo
+ * de un cliente no debe mover el vencimiento de lo que ya entró: el compromiso
+ * era el de ese día, y recalcularlo hacia atrás dejaría tickets que pasan de
+ * cumplidos a vencidos sin que nadie hiciera nada.
+ */
+export async function slaHorasDelCliente(
+  clientUserId: string,
+  conexion?: DbOrTx,
+): Promise<number | null> {
+  const db = conexion ?? (await tenantDb());
+  const [fila] = await db
+    .select({ h: crmOrganizations.slaHours })
+    .from(crmOrganizations)
+    .where(eq(crmOrganizations.clientId, clientUserId))
+    .limit(1);
+  return fila?.h ?? null;
+}
+
 export async function getClients() {
   const db = await tenantDb();
 

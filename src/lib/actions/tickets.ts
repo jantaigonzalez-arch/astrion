@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { slaHorasDelCliente } from "@/lib/data/crm";
 import { revalidateTenant } from "@/lib/revalidate";
 import {
   avisarAlta,
@@ -98,6 +99,15 @@ export async function createTicket(
     }
 
     const now = new Date();
+    /*
+      El plazo que rige para ESTE cliente.
+
+      Se resuelve al crear y se congela en la fila: cambiar después el SLA
+      pactado no debe mover el vencimiento de lo que ya entró. El compromiso era
+      el de ese día, y recalcularlo hacia atrás dejaría tickets que pasan de
+      cumplidos a vencidos sin que nadie hiciera nada.
+    */
+    const horasSla = await slaHorasDelCliente(session.user.id, db);
 
     const row = await db.transaction(async (tx) => {
       const [created] = await tx
@@ -116,7 +126,7 @@ export async function createTicket(
           createdById: session.user.id,
           equipmentId,
           moduleId,
-          slaDueAt: slaDueFrom(now),
+          slaDueAt: slaDueFrom(now, horasSla),
         })
         .returning({ id: tickets.id, reference: tickets.reference });
 
@@ -133,7 +143,7 @@ export async function createTicket(
           type: isStaff ? "service" : "request",
           equipmentId,
           moduleId,
-          slaDueAt: slaDueFrom(now).toISOString(),
+          slaDueAt: slaDueFrom(now, horasSla).toISOString(),
         },
       });
 
@@ -236,6 +246,10 @@ export async function createServiceTicket(
     }
 
     const now = new Date();
+    // El plazo es el del LABORATORIO al que se le levanta el servicio, no el de
+    // quien teclea: son dos personas distintas y el compromiso es con la
+    // empresa. Ver `slaHorasDelCliente`.
+    const horasSla = await slaHorasDelCliente(parsed.data.clientId, db);
 
     // El ticket pertenece al laboratorio (lo ve en su portal), pero lo levantó
     // el staff: entra directo a la cola, sin revisión.
@@ -255,7 +269,7 @@ export async function createServiceTicket(
           moduleId,
           reviewedById: session.user.id,
           reviewedAt: now,
-          slaDueAt: slaDueFrom(now),
+          slaDueAt: slaDueFrom(now, horasSla),
         })
         .returning({ id: tickets.id, reference: tickets.reference });
 
@@ -273,7 +287,7 @@ export async function createServiceTicket(
           clientId: parsed.data.clientId,
           equipmentId,
           moduleId,
-          slaDueAt: slaDueFrom(now).toISOString(),
+          slaDueAt: slaDueFrom(now, horasSla).toISOString(),
         },
       });
 

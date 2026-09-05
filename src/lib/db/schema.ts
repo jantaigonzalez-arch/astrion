@@ -615,6 +615,27 @@ export const crmOrganizations = pgTable("crm_organizations", {
   address: text("address"),
   ownerId: uuid("owner_id").references(() => users.id, { onDelete: "set null" }),
   clientId: uuid("client_id").references(() => users.id, { onDelete: "set null" }),
+  /**
+   * Horas de primera respuesta comprometidas CON ESTE CLIENTE.
+   *
+   * ── NULO = EL PLAZO GENERAL ───────────────────────────────────────────
+   *
+   * Y por eso es opcional: la inmensa mayoría de los clientes no negocia un
+   * SLA propio, y obligar a poner un número en cada ficha convertiría un
+   * acuerdo excepcional en un trámite de alta. Nulo no es «sin compromiso»:
+   * es «el de siempre», que hoy son las 2 h que promete el sitio público.
+   *
+   * ── POR QUÉ EN LA ORGANIZACIÓN Y NO EN LA CUENTA ──────────────────────
+   *
+   * Porque el SLA se pacta con la EMPRESA, no con la persona que abre el
+   * ticket. Y porque `users` vive en el plano de control, compartido entre
+   * inquilinos: una consultora que es cliente de dos laboratorios tendría un
+   * solo número para los dos, cuando cada uno firmó lo suyo.
+   *
+   * El ticket llega hasta aquí por `clientId`: quien lo levanta es la cuenta,
+   * y la cuenta pertenece a esta organización.
+   */
+  slaHours: integer("sla_hours"),
   companyId: uuid("company_id").references((): AnyPgColumn => companies.id, {
     onDelete: "set null",
   }),

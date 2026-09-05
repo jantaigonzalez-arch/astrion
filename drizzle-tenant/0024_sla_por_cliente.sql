@@ -1,0 +1,40 @@
+-- EL PLAZO DE PRIMERA RESPUESTA, PACTABLE CON CADA CLIENTE.
+--
+-- Estaba clavado en el código: `SLA_HOURS = 2`, con el comentario «la web
+-- promete < 2 h». Servía mientras hubiera un solo compromiso para todo el
+-- mundo; deja de servir en cuanto un laboratorio negocia el suyo — que es
+-- justamente lo que se hace al firmar un contrato de servicio.
+--
+-- ---------------------------------------------------------------------------
+-- NULO SIGNIFICA «EL DE SIEMPRE»
+--
+-- Y por eso la columna admite nulos y nace nula para todos. La inmensa mayoría
+-- de los clientes no negocia un SLA propio, y obligar a poner un número en cada
+-- ficha convertiría un acuerdo excepcional en un trámite de alta.
+--
+-- Nulo NO es «sin compromiso»: es el plazo general del sistema. La diferencia
+-- importa porque quien lea la ficha y vea el campo vacío tiene que entender que
+-- ese cliente está cubierto, no desprotegido.
+--
+-- Consecuencia práctica: esta migración no cambia el plazo de ningún ticket ni
+-- de ningún cliente existente. Lo único que hace es abrir la puerta.
+--
+-- ---------------------------------------------------------------------------
+-- POR QUÉ AQUÍ Y NO EN LA CUENTA DEL CLIENTE
+--
+-- El SLA se pacta con la EMPRESA, no con la persona que abre el ticket. Y
+-- `users` vive en el plano de control, compartido entre inquilinos: una
+-- consultora que es cliente de dos laboratorios tendría un solo número para los
+-- dos, cuando cada uno firmó lo suyo.
+--
+-- El ticket llega hasta esta fila por `client_id`: quien lo levanta es la
+-- cuenta, y la cuenta pertenece a esta organización.
+--
+-- ---------------------------------------------------------------------------
+-- ESCRITA A MANO
+--
+-- Como todas las de inquilino: `drizzle-kit generate` con esa configuración
+-- produce una migración rota. Ver `drizzle.tenant.config.ts` y la regla 4 de
+-- AGENTS.md.
+
+ALTER TABLE "crm_organizations" ADD COLUMN "sla_hours" integer;

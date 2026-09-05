@@ -1,6 +1,11 @@
 "use client";
 
 import { useActionState } from "react";
+import {
+  SLA_HORAS_MAX,
+  SLA_HORAS_MIN,
+  SLA_HOURS,
+} from "@/lib/tickets";
 import { Building2, CheckCircle2, Loader2, UserPlus } from "lucide-react";
 import {
   createContact,
@@ -37,6 +42,8 @@ export type OrgDefaults = {
   address?: string | null;
   ownerId?: string | null;
   clientId?: string | null;
+  /** Plazo propio de primera respuesta, en horas. Nulo = el general. */
+  slaHours?: number | null;
   notes?: string | null;
 };
 
@@ -173,6 +180,41 @@ export function OrganizationForm({
             ))}
           </select>
         </div>
+      </div>
+
+      {/*
+        EL PLAZO PACTADO CON ESTE CLIENTE.
+
+        Debajo de la cuenta de portal y no arriba con los datos de contacto: es
+        una condición del acuerdo, no una señas de la empresa.
+
+        Vacío es lo NORMAL y el texto lo dice con todas las letras, porque el
+        malentendido caro sería leer el campo en blanco como «este cliente no
+        tiene compromiso». Tiene el general; lo que no tiene es uno propio.
+      */}
+      <div>
+        <Label htmlFor="slaHours">Primera respuesta comprometida</Label>
+        <div className="mt-1 flex items-center gap-2">
+          <Input
+            id="slaHours"
+            name="slaHours"
+            type="number"
+            min={SLA_HORAS_MIN}
+            max={SLA_HORAS_MAX}
+            step={1}
+            className="w-28"
+            defaultValue={defaults?.slaHours ?? ""}
+            placeholder={String(SLA_HOURS)}
+          />
+          <span className="text-sm text-muted-foreground">horas</span>
+        </div>
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          Solo si este cliente pactó un plazo distinto. Déjalo vacío y se le
+          aplica el general de{" "}
+          <span className="font-medium text-foreground">{SLA_HOURS} horas</span>.
+          Se usa al levantar cada ticket y queda fijado en él: cambiarlo aquí no
+          mueve el vencimiento de los que ya entraron.
+        </p>
       </div>
 
       <div>
