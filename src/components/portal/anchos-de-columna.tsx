@@ -87,13 +87,44 @@ function guardar(tabla: string, anchos: Anchos) {
  * automático del navegador es mejor que cualquiera que se pueda calcular aquí.
  * Y con el automático un `width` es apenas una sugerencia — se arrastra la
  * columna y no pasa nada.
+ *
+ * ── ESTRECHAR TIENE QUE RECORTAR, NO DESBORDAR ────────────────────────────
+ *
+ * Casi todas las celdas de estos listados llevan `whitespace-nowrap` —un folio
+ * o una fecha partidos en dos renglones se leen peor— y una celda que no parte
+ * el texto y no lo recorta lo DERRAMA: al estrechar la columna, el nombre largo
+ * de un laboratorio se pintaba encima del correo de al lado y las dos columnas
+ * quedaban ilegibles a la vez.
+ *
+ * `overflow: hidden` lo corta y `text-overflow: ellipsis` avisa con los tres
+ * puntos de que hay más. Los puntos importan: sin ellos, un nombre recortado
+ * parece un nombre corto, y nadie ensancharía la columna para ver el resto.
+ *
+ * Va en ESTA hoja y no en la general porque solo tiene sentido con el reparto
+ * fijo. Sin anchos puestos, la columna crece con su contenido y no hay nada que
+ * recortar: aplicarlo siempre sería recortar por si acaso.
+ *
+ * Exportada para poder comprobar el CSS que produce desde un probe, sin montar
+ * un navegador: es la única parte de este archivo que se puede ejercitar sin
+ * DOM, y es donde vive la decisión.
  */
-function reglas(tabla: string, anchos: Anchos): string {
+export function reglasDeAncho(tabla: string, anchos: Anchos): string {
   const entradas = Object.entries(anchos);
   if (entradas.length === 0) return "";
-  const sel = `table.tabla-erp[data-tabla="${CSS.escape(tabla)}"]`;
+  /*
+    El nombre se VALIDA en vez de escaparse.
+
+    Sale de un `data-tabla` que escribimos nosotros, así que es un puñado de
+    identificadores en minúscula. Comprobarlo es más seguro que escaparlo —lo
+    que no encaja no produce selector, en lugar de producir uno raro— y además
+    no depende de `CSS.escape`, que solo existe en el navegador y dejaba esta
+    función imposible de ejercitar desde un probe.
+  */
+  if (!/^[a-z][a-z0-9_-]*$/.test(tabla)) return "";
+  const sel = `table.tabla-erp[data-tabla="${tabla}"]`;
   return [
     `${sel}{table-layout:fixed}`,
+    `${sel} th,${sel} td{overflow:hidden;text-overflow:ellipsis}`,
     ...entradas.map(
       ([i, w]) => `${sel} thead th:nth-child(${Number(i) + 1}){width:${w}px}`,
     ),
@@ -118,7 +149,7 @@ export function AnchosDeColumna() {
 
     function repintar() {
       hoja.textContent = [...estado]
-        .map(([t, a]) => reglas(t, a))
+        .map(([t, a]) => reglasDeAncho(t, a))
         .filter(Boolean)
         .join("\n");
     }
