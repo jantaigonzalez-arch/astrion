@@ -33,8 +33,9 @@ import { TenantMark, type TenantBrand } from "@/components/portal/tenant-mark";
 import { PoweredByAstraion } from "@/components/portal/powered-by";
 import type { MembershipRole } from "@/lib/db/platform";
 import { isAdminRole, ROLE_LABELS } from "@/lib/roles";
-import { navFor, type NavItem, type TableroItem } from "@/lib/portal/menu";
+import { navFor, type NavGroup, type NavItem, type TableroItem } from "@/lib/portal/menu";
 import type { Ajustes } from "@/lib/permisos";
+import { EtiquetaBeta, esRutaBeta } from "@/components/portal/aviso-beta";
 import { cn } from "@/lib/utils";
 
 /**
@@ -131,6 +132,20 @@ export const SIDEBAR_COOKIE = "evo_sidebar";
  *
  * El tirador para plegar sí puede salirse: cuelga del `<aside>`, que no recorta.
  */
+/**
+ * ¿Toda esta sección del menú lleva a pantallas en beta?
+ *
+ * Se exige que lo sean TODAS sus entradas, no alguna. Es exactamente lo que
+ * separa a Tableros de Análisis: en Tableros lo es cada renglón, así que la
+ * marca va en el título; en Análisis solo lo es Inteligencia, y ahí la lleva su
+ * propio renglón. Marcar «Análisis» entera diría algo falso de Rentabilidad, de
+ * Informes y de Objetivos —y una advertencia que sobra tres veces de cada cuatro
+ * deja de leerse la vez que importa—.
+ */
+function enBeta(g: NavGroup): boolean {
+  return g.items.length > 0 && g.items.every((i) => esRutaBeta(i.href));
+}
+
 export function Sidebar({
   role,
   permisos,
@@ -284,8 +299,19 @@ export function Sidebar({
                   // iconos sin ninguna estructura.
                   <div aria-hidden="true" className="mx-2 mb-2 border-t border-border" />
                 ) : (
-                  <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <p className="mb-2 flex items-center gap-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     {g.section}
+                    {/*
+                      La marca va en el TÍTULO de la sección, no en cada renglón:
+                      lo que está en beta es el conjunto, y repetirlo seis veces
+                      en una lista de seis lo convierte en ruido.
+
+                      Y se deduce de a qué módulo pertenecen sus enlaces, no de
+                      una lista de nombres de sección: «Análisis» y «Tableros» se
+                      llaman distinto y son el mismo módulo, así que preguntarlo
+                      por el nombre habría marcado una y dejado la otra.
+                    */}
+                    {enBeta(g) && <EtiquetaBeta />}
                   </p>
                 ))}
               <ul className="space-y-1">

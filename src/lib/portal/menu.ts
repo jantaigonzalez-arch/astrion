@@ -371,7 +371,10 @@ function menuDelRol(
         // es donde se configura lo que las otras pantallas van a decir, no un
         // dominio de negocio aparte. Quien entra aquí viene de preguntarse
         // «cómo vamos», no «qué modelo entreno».
-        { href: "/admin/inteligencia", label: "Inteligencia" },
+        // La única de Análisis que está en beta. Rentabilidad, Informes y
+        // Objetivos suman lo capturado; esta ESTIMA, y eso se avisa. La marca
+        // usa el mismo `badge` que ya distinguía a los tableros sin publicar.
+        { href: "/admin/inteligencia", label: "Inteligencia", badge: "beta" },
       ],
     },
   ];

@@ -12,6 +12,7 @@ import { Topbar } from "@/components/portal/topbar";
 import { TenantBar } from "@/components/portal/tenant-bar";
 import { Campana } from "@/components/portal/campana";
 import { AnchosDeColumna } from "@/components/portal/anchos-de-columna";
+import { AvisoBeta } from "@/components/portal/aviso-beta";
 import { DENSIDAD_COOKIE, densidadGuardada } from "@/lib/densidad";
 import { contarSinLeer, misAvisos } from "@/lib/notificaciones";
 import { tablerosDelMenu } from "@/lib/ml/dashboards";
@@ -182,7 +183,12 @@ export default async function TenantAppLayout({
               pidieron tirador —las que llevan `data-tabla`— y se lo pone. No
               pinta nada por su cuenta. */}
           <AnchosDeColumna />
-          <main className="print-main flex-1 bg-background p-6 lg:p-8">{children}</main>
+          <main className="print-main flex-1 bg-background p-6 lg:p-8">
+            {/* Se pinta solo en las pantallas del módulo Análisis —Tableros
+                incluidos—, y lo decide mirando la ruta. Ver `AvisoBeta`. */}
+            <AvisoBeta />
+            {children}
+          </main>
         </div>
       </div>
     </SessionProvider>
