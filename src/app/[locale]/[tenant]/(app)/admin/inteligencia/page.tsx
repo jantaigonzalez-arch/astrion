@@ -1,5 +1,5 @@
 import { setRequestLocale } from "next-intl/server";
-import { Brain, PlugZap } from "lucide-react";
+import { PlugZap } from "lucide-react";
 import { redirectInTenant } from "@/lib/nav-server";
 import { puedeEn } from "@/lib/tenancy/context";
 import { catalogo, perfilar, salud } from "@/lib/intelligence/client";
@@ -123,14 +123,31 @@ export default async function InteligenciaPage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            <Brain className="size-6 text-primary" /> Inteligencia
-          </h1>
+          {/* Sin icono propio: la marca de la capa ya está en la franja de
+              arriba y en la barra lateral. Un cerebro aquí era una TERCERA
+              marca para la misma cosa, a dos centímetros de las otras dos. */}
+          <h1 className="text-2xl font-semibold tracking-tight">Inteligencia</h1>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
             Configura qué quieres que el sistema te responda en cada módulo. Se
             entrena con tu propio historial, se evalúa contra el futuro, y solo
-            se aprueba si le gana a la respuesta ingenua y acierta lo suficiente
-            para decidir con ella.
+            se aprueba si le gana a la respuesta ingenua.
+          </p>
+          {/*
+            ESTO ERA UNA TARJETA ENTERA Y AHORA ES UNA LÍNEA.
+
+            Lo que dice importa —dónde viven los modelos es la pregunta que hace
+            cualquiera que evalúe meter su histórico aquí— pero no importa CADA
+            VEZ que se abre la pantalla. Como tarjeta era el tercer bloque de
+            texto seguido antes de llegar a un botón; como línea al pie del
+            título sigue estando para quien la busque.
+          */}
+          <p className="mt-1 text-xs text-muted-foreground">
+            Los modelos se entrenan y se guardan{" "}
+            <span className="font-medium text-foreground">
+              dentro del esquema de tu empresa
+            </span>
+            : el motor no guarda nada, y un respaldo de tu base se los lleva
+            consigo.
           </p>
         </div>
         <span className="font-mono text-xs text-muted-foreground">
@@ -156,18 +173,6 @@ export default async function InteligenciaPage({
           </p>
         </Card>
       )}
-
-      <Card className="border-border bg-secondary/30 p-4">
-        <p className="text-sm text-muted-foreground">
-          Los modelos se entrenan y se guardan{" "}
-          <span className="font-medium text-foreground">
-            dentro del esquema de tu empresa
-          </span>
-          . El motor que los calcula no guarda nada: se puede reiniciar o
-          reemplazar sin que pierdas un modelo, y un respaldo de tu base se los
-          lleva consigo.
-        </p>
-      </Card>
 
       {cat.ok && <IntelligenceNewQuestion modulos={opciones} familias={cat.value.familias} />}
 

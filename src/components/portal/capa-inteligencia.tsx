@@ -45,32 +45,37 @@ export function CapaInteligencia({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * La cabecera del instrumento.
+ * UNA LÍNEA, NO UN BLOQUE.
  *
- * Dice tres cosas y ninguna es decorativa: dónde estás, que esto estima, y para
- * qué NO sirve. Va pegada arriba, con regla a los dos lados, porque es la línea
- * que se cruza — si flotara con margen sería una tarjeta más de la página.
+ * La primera versión era una cabecera de tres renglones con su párrafo. Puesta
+ * encima de la pantalla de Inteligencia —que ya trae su propio título con
+ * descripción y, debajo, otra tarjeta explicando dónde se guardan los modelos—
+ * dejaba TRES BLOQUES DE TEXTO seguidos antes de que apareciera nada que se
+ * pudiera usar. Se vio en pantalla; leyendo el código no se nota, porque cada
+ * bloque por separado está bien escrito.
+ *
+ * Lo que queda es una franja de un renglón. Dice las tres cosas que tiene que
+ * decir —dónde estás, que aquí se estima, y que no sirve para cerrar un mes— sin
+ * ocupar el sitio del contenido. La advertencia larga no se perdió: vive en el
+ * `title`, para quien quiera detenerse.
+ *
+ * Va pegada arriba y a sangre porque es la línea que se cruza; con margen sería
+ * una tarjeta más de la página, que es justo lo que sobraba.
  */
 function CabeceraDeCapa() {
   return (
-    <header className="capa-inteligencia-marco flex items-start gap-3 px-6 py-4 lg:px-8">
-      <Astronauta className="capa-flota mt-0.5 size-8 shrink-0 text-primary" />
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-          <span className="text-sm font-semibold tracking-tight">
-            Capa de inteligencia
-          </span>
-          <span className="rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning ring-1 ring-warning/25">
-            Beta
-          </span>
-        </div>
-        <p className="mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground">
-          Aquí los números no se capturan: se <strong>estiman</strong> con tu
-          propio historial y se <strong>cruzan</strong> entre módulos. Sirven para
-          orientarse y decidir antes; no para cerrar un mes ni para reportar a un
-          tercero. Contrasta contra el módulo de origen antes de firmar nada.
-        </p>
-      </div>
+    <header className="capa-inteligencia-marco flex flex-wrap items-center gap-x-2.5 gap-y-1 px-6 py-2 lg:px-8">
+      <Astronauta className="capa-flota size-4 shrink-0 text-primary" />
+      <span className="text-xs font-semibold">Capa de inteligencia</span>
+      <span className="rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-warning ring-1 ring-warning/25">
+        Beta
+      </span>
+      <span
+        className="text-xs text-muted-foreground"
+        title="Los números de esta capa se estiman con tu propio historial y se cruzan entre módulos. Sirven para orientarse y decidir antes; no para cerrar un mes ni para reportar a un tercero. Contrasta contra el módulo de origen antes de firmar nada."
+      >
+        Estos números se estiman — contrástalos antes de firmar nada.
+      </span>
     </header>
   );
 }
