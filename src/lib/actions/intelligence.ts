@@ -3,7 +3,16 @@
 import { auth } from "@/lib/auth";
 import { puedeEn } from "@/lib/tenancy/context";
 import { revalidateDashboards } from "@/lib/revalidate";
-import { createQuestion, deleteQuestion, issueForecast, promoteModel, retireModel, trainQuestion } from "@/lib/intelligence/questions";
+import {
+  createQuestion,
+  deleteModel,
+  deleteQuestion,
+  deleteRejectedModels,
+  issueForecast,
+  promoteModel,
+  retireModel,
+  trainQuestion,
+} from "@/lib/intelligence/questions";
 
 /**
  * Acciones de la capa de inteligencia.
@@ -175,6 +184,46 @@ export async function retireModelAction(
   await retireModel(String(form.get("modelId") ?? ""));
   await revalidateDashboards();
   return { ok: true, message: "Retirado. Deja de emitir pronósticos." };
+}
+
+/**
+ * Borra un entrenamiento.
+ *
+ * Distinto de `retireModelAction`: aquel apaga un modelo que sirve y deja la
+ * fila; esto la quita. El motivo de la negativa —cuando está en producción—
+ * viaja tal cual a la pantalla, porque dice qué hacer antes.
+ */
+export async function deleteModelAction(
+  _prev: IntelState,
+  form: FormData,
+): Promise<IntelState> {
+  const no = await soloAdmin();
+  if (no) return { ok: false, error: no };
+
+  const r = await deleteModel(String(form.get("modelId") ?? ""));
+  if (!r.ok) return { ok: false, error: r.reason };
+
+  await revalidateDashboards();
+  return { ok: true, message: "Entrenamiento borrado." };
+}
+
+/** Borra de una vez todos los rechazados de una pregunta. */
+export async function cleanRejectedModelsAction(
+  _prev: IntelState,
+  form: FormData,
+): Promise<IntelState> {
+  const no = await soloAdmin();
+  if (no) return { ok: false, error: no };
+
+  const r = await deleteRejectedModels(String(form.get("slug") ?? ""));
+  await revalidateDashboards();
+  return {
+    ok: true,
+    message:
+      r.borrados === 1
+        ? "1 entrenamiento rechazado borrado."
+        : `${r.borrados} entrenamientos rechazados borrados.`,
+  };
 }
 
 export async function issueForecastAction(

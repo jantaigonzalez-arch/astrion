@@ -12,6 +12,8 @@ import {
   XCircle,
 } from "lucide-react";
 import {
+  cleanRejectedModelsAction,
+  deleteModelAction,
   deleteQuestionAction,
   issueForecastAction,
   promoteModelAction,
@@ -265,12 +267,13 @@ export function IntelligenceQuestionCard({ q }: { q: QuestionView }) {
         </details>
       )}
 
-      {/* Las versiones. Reentrenar no pisa: cada una queda. */}
+      {/* Las versiones. Reentrenar no pisa: cada una queda —hasta que se borra. */}
       {q.models.length > 0 && (
         <div className="mt-4 space-y-2 border-t border-border pt-3">
           {q.models.map((m) => (
             <Version key={m.id} m={m} slug={q.slug} />
           ))}
+          <LimpiarRechazados q={q} />
         </div>
       )}
     </Card>
@@ -345,6 +348,7 @@ function Version({ m, slug }: { m: ModelView; slug: string }) {
   const [prom, promover, promoviendo] = useActionState(promoteModelAction, inicial);
   const [ret, retirar, retirando] = useActionState(retireModelAction, inicial);
   const [fc, emitir, emitiendo] = useActionState(issueForecastAction, inicial);
+  const [bor, borrar, borrando] = useActionState(deleteModelAction, inicial);
   const e = ESTADO[m.status];
 
   return (
@@ -393,9 +397,43 @@ function Version({ m, slug }: { m: ModelView; slug: string }) {
             </form>
           </>
         )}
+
+        {/*
+          BORRAR EL ENTRENAMIENTO, en todo lo que NO está sirviendo.
+
+          Entrenar es barato y que salga rechazado es lo normal: se prueba, se
+          ajusta, se vuelve a probar. Sin esto la lista de versiones crecía para
+          siempre y la única forma de limpiarla era borrar la pregunta entera —o
+          sea, tirar también lo que sí sirve.
+
+          En producción no aparece, y no es un permiso que falte: borrarlo se
+          lleva sus pronósticos por cascada y dejaría la pregunta anunciando
+          números que nadie puede recalcular. Para eso está «Retirar», que es un
+          paso deliberado y reversible. El servidor lo vuelve a comprobar; esto
+          solo evita ofrecer un botón que va a decir que no.
+        */}
+        {m.status !== "production" && (
+          <form action={borrar}>
+            <input type="hidden" name="modelId" value={m.id} />
+            <Button
+              type="submit"
+              size="sm"
+              variant="ghost"
+              disabled={borrando}
+              title="Borrar este entrenamiento"
+              aria-label={`Borrar el entrenamiento v${m.version}`}
+            >
+              {borrando ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Trash2 className="size-3.5" />
+              )}
+            </Button>
+          </form>
+        )}
       </div>
 
-      {[prom, ret, fc].map((s, i) =>
+      {[prom, ret, fc, bor].map((s, i) =>
         s.error ? (
           <p key={i} className="w-full text-destructive">
             {s.error}
@@ -443,4 +481,42 @@ function Aviso({ state }: { state: IntelState }) {
 function fmt(v: number | undefined): string {
   if (v === undefined || !Number.isFinite(v)) return "—";
   return v.toLocaleString("es-MX", { maximumFractionDigits: v < 100 ? 2 : 0 });
+}
+
+/**
+ * «Limpiar los rechazados»: el mismo borrado, en lote.
+ *
+ * Existe porque el desperdicio se produce en lote. Nadie acumula UN rechazado:
+ * se acumulan cinco seguidos afinando la misma pregunta, y quitarlos de uno en
+ * uno es exactamente la molestia que hace que nadie los quite.
+ *
+ * ── APARECE A PARTIR DE DOS ───────────────────────────────────────────────
+ *
+ * Con uno solo, su propia papelera ya está a la vista dos renglones más arriba,
+ * y un botón que hace lo mismo que el de al lado solo obliga a elegir. Con dos o
+ * más, el botón de lote es más rápido que el de al lado y por eso se ofrece.
+ *
+ * Solo toca los rechazados: un modelo retirado fue bueno en su momento y su
+ * versión puede ser la explicación de un número que alguien archivó. Uno
+ * rechazado no llegó a emitir nada, por definición.
+ */
+function LimpiarRechazados({ q }: { q: QuestionView }) {
+  const [estado, limpiar, limpiando] = useActionState(
+    cleanRejectedModelsAction,
+    inicial,
+  );
+  const rechazados = q.models.filter((m) => m.status === "rejected").length;
+  if (rechazados < 2) return null;
+
+  return (
+    <form action={limpiar} className="flex items-center gap-2 pt-1">
+      <input type="hidden" name="slug" value={q.slug} />
+      <Button type="submit" size="sm" variant="ghost" disabled={limpiando}>
+        {limpiando && <Loader2 className="size-3 animate-spin" />}
+        <Trash2 className="size-3.5" />
+        Limpiar los {rechazados} rechazados
+      </Button>
+      {estado.error && <span className="text-xs text-destructive">{estado.error}</span>}
+    </form>
+  );
 }

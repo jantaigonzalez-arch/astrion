@@ -1,6 +1,7 @@
 import "server-only";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
+import type { DbOrTx } from "@/lib/db";
 import { mlForecasts, mlModels, mlTemplates } from "@/lib/db/schema";
 import * as intel from "./client";
 import type { Question, TrainResult } from "./contracts";
@@ -383,6 +384,88 @@ export async function retireModel(modelId: string): Promise<{ ok: boolean }> {
     .set({ status: "retired", retiredAt: new Date() })
     .where(eq(mlModels.id, modelId));
   return { ok: true };
+}
+
+/**
+ * BORRA UN ENTRENAMIENTO. Retirar y borrar no son lo mismo.
+ *
+ * Retirar apaga un modelo que está sirviendo y deja la fila: es un cambio de
+ * estado, reversible, y el registro de que ese modelo existió sigue ahí. Borrar
+ * lo quita del todo.
+ *
+ * Hacía falta porque entrenar es barato y rechazar es lo normal: se prueba, sale
+ * rechazado, se ajusta, se vuelve a probar. Sin esto la lista de versiones de una
+ * pregunta crecía para siempre con intentos que ya no le dicen nada a nadie, y no
+ * había ninguna forma de limpiarla salvo borrar la pregunta entera.
+ *
+ * ── LO QUE ESTÁ SIRVIENDO NO SE BORRA ─────────────────────────────────────
+ *
+ * Se rechaza con un motivo en vez de borrarlo y ya. Borrar el modelo en
+ * producción se lleva por delante sus pronósticos —la clave foránea es
+ * `on delete cascade`— y deja la pregunta anunciando números que nadie puede
+ * volver a calcular. Quien de verdad quiera quitarlo lo retira primero, que es
+ * un paso deliberado y reversible.
+ *
+ * ── LOS PRONÓSTICOS SE VAN CON ÉL, Y ESO ES CORRECTO ──────────────────────
+ *
+ * Un pronóstico sin el modelo que lo emitió no se puede explicar ni reproducir:
+ * conservarlo sería guardar un número sin autor. La cascada ya estaba declarada
+ * en el esquema; esto solo la usa.
+ *
+ * ── LA CONEXIÓN ENTRA POR PARÁMETRO PARA PODER PROBARLO ───────────────────
+ *
+ * `tenantDb()` lee la sesión de la petición y fuera de Next no existe, así que
+ * una función que solo sabe llamarla no se puede ejercitar contra la base. Es el
+ * mismo par que `payablesSummaryFrom` y por el mismo motivo: esto borra filas, y
+ * lo que borra hay que poder comprobarlo corriéndolo, no leyéndolo.
+ */
+export async function deleteModel(
+  modelId: string,
+  conexion?: DbOrTx,
+): Promise<{ ok: boolean; reason?: string }> {
+  const db = conexion ?? (await tenantDb());
+  const [m] = await db
+    .select({ status: mlModels.status, version: mlModels.version })
+    .from(mlModels)
+    .where(eq(mlModels.id, modelId))
+    .limit(1);
+
+  if (!m) return { ok: false, reason: "Ese entrenamiento ya no existe." };
+  if (m.status === "production") {
+    return {
+      ok: false,
+      reason:
+        "Está sirviendo. Retíralo primero: borrarlo se llevaría sus pronósticos " +
+        "y la pregunta se quedaría sin nada que responder.",
+    };
+  }
+
+  await db.delete(mlModels).where(eq(mlModels.id, modelId));
+  return { ok: true };
+}
+
+/**
+ * Borra DE UNA VEZ todos los entrenamientos rechazados de una pregunta.
+ *
+ * Es el mismo borrado de arriba, en lote, y existe porque el desperdicio se
+ * produce en lote: nadie acumula un rechazado, se acumulan seis seguidos
+ * afinando la misma pregunta. Quitarlos de uno en uno es exactamente la molestia
+ * que hace que nadie los quite.
+ *
+ * Solo toca los rechazados. Un modelo retirado fue bueno en su momento y su
+ * versión puede ser la explicación de un número que alguien archivó; uno
+ * rechazado no llegó a emitir nada por definición.
+ */
+export async function deleteRejectedModels(
+  slug: string,
+  conexion?: DbOrTx,
+): Promise<{ ok: boolean; borrados: number }> {
+  const db = conexion ?? (await tenantDb());
+  const borradas = await db
+    .delete(mlModels)
+    .where(and(eq(mlModels.template, slug), eq(mlModels.status, "rejected")))
+    .returning({ id: mlModels.id });
+  return { ok: true, borrados: borradas.length };
 }
 
 /**

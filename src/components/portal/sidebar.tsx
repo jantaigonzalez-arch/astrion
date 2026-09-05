@@ -35,7 +35,6 @@ import type { MembershipRole } from "@/lib/db/platform";
 import { isAdminRole, ROLE_LABELS } from "@/lib/roles";
 import { navFor, type NavGroup, type NavItem, type TableroItem } from "@/lib/portal/menu";
 import type { Ajustes } from "@/lib/permisos";
-import { Astronauta } from "@/components/portal/astronauta";
 import { EtiquetaBeta } from "@/components/portal/capa-inteligencia";
 import { esCapaDeInteligencia } from "@/lib/capa";
 import { cn } from "@/lib/utils";
@@ -292,7 +291,19 @@ export function Sidebar({
           {groups.map((g) => (
             // La clave sale del primer enlace: el grupo del Panel no tiene título
             // y `undefined` no distingue a nadie.
-            <div key={g.section ?? g.items[0].href}>
+            <div
+              key={g.section ?? g.items[0].href}
+              /*
+                LA CAPA SE SEPARA CON AIRE Y UNA REGLA, NO CON UN DIBUJO.
+
+                Aquí vivía el casco a 16 px y al lado de un rótulo en versalitas
+                se leía como una mancha oscura — se vio en pantalla; en el código
+                era «un icono más». A ese tamaño y contra ese texto no hay marca
+                que funcione, así que la señal la dan el espacio y el color, que
+                no dependen de resolver un dibujo en dieciséis píxeles.
+              */
+              className={cn(enBeta(g) && wide && "mt-2 border-t border-border pt-5")}
+            >
               {g.section &&
                 (!wide ? (
                   // Plegada no hay lugar para el título, pero la separación entre
@@ -300,23 +311,21 @@ export function Sidebar({
                   // iconos sin ninguna estructura.
                   <div aria-hidden="true" className="mx-2 mb-2 border-t border-border" />
                 ) : (
-                  <p className="mb-2 flex items-center gap-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  <p
+                    className={cn(
+                      "mb-2 flex items-center gap-2 px-3 text-xs font-semibold uppercase tracking-wider",
+                      // El título de la capa va en el color de la marca y el
+                      // resto en gris. Es la diferencia que se lee de un vistazo
+                      // recorriendo la columna, sin añadir nada nuevo.
+                      enBeta(g) ? "text-primary" : "text-muted-foreground",
+                    )}
+                  >
+                    {g.section}
                     {/*
-                      EL CASCO APARECE ANTES DE ENTRAR.
-
-                      Es la marca de la capa y su sitio natural es aquí: quien
-                      recorre el menú tiene que poder distinguir el grupo que
-                      estima del que suma sin leer los rótulos. Dentro, la
-                      cabecera lo repite en grande.
-
                       La etiqueta de beta va en el TÍTULO y no en cada renglón:
                       lo que está en beta es la capa entera, y repetirlo en cada
                       tablero convierte una advertencia en ruido.
                     */}
-                    {enBeta(g) && (
-                      <Astronauta className="size-4 shrink-0 text-primary" />
-                    )}
-                    {g.section}
                     {enBeta(g) && <EtiquetaBeta />}
                   </p>
                 ))}
