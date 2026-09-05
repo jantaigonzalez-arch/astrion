@@ -489,3 +489,104 @@
   overflow-x: auto;
   overscroll-behavior-x: contain;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CUANDO LA TABLA NO CABE
+
+   ── LA BARRA SE VE, Y NO ES UN DESCUIDO ──────────────────────────────────
+
+   Esconderla queda más limpio y es peor: un desplazamiento invisible es una
+   capacidad que solo descubre quien ya sabía que estaba. La persona ve seis
+   columnas, no sabe que hay nueve, y las tres que faltan es como si no
+   existieran. En una tabla de ERP eso no es una molestia estética — es un dato
+   que no se consulta.
+
+   Lo que sí dice la práctica asentada es que el desplazamiento horizontal se
+   EVITE, no que se oculte: se reduce enseñando menos columnas y dejando elegir
+   cuáles, y cuando aun así hace falta, se acompaña de dos cosas que aquí abajo
+   están.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* 1 · LA PRIMERA COLUMNA SE QUEDA.
+      Es al desplazamiento horizontal lo que el encabezado pegajoso es al
+      vertical: sin ella, tres columnas a la derecha ya no se sabe de qué fila
+      se está leyendo el importe. */
+.tabla-erp tbody td:first-child,
+.tabla-erp thead th:first-child {
+  position: sticky;
+  left: 0;
+}
+.tabla-erp tbody td:first-child {
+  /* Opaca y del color de la tarjeta que la contiene: si fuera translúcida, las
+     columnas de la derecha se leerían POR DEBAJO al desplazarse. */
+  background: var(--color-card);
+}
+.tabla-erp thead th:first-child {
+  /* Por encima del propio encabezado, que ya es pegajoso: esta celda tiene que
+     ganar en los dos ejes a la vez. */
+  z-index: 2;
+}
+/* La fila realzada también realza su ancla, o al pasar el cursor la primera
+   celda se quedaría con el color de fondo mientras el resto se ilumina. */
+.tabla-erp tbody tr:hover td:first-child {
+  background: color-mix(in oklab, var(--color-secondary) 55%, var(--color-card));
+}
+
+/* 2 · Y SE VE QUE HAY MÁS.
+      La sombra aparece sola en el borde por el que queda contenido y se va al
+      llegar al final. Es el truco de los cuatro fondos: dos «tapas» del color
+      del papel fijadas a los extremos y dos sombras ancladas al contenido, que
+      solo asoman cuando la tapa se ha ido. Sin JavaScript y sin medir nada. */
+.tabla-caja {
+  background:
+    linear-gradient(to right, var(--color-card) 30%, transparent) left center,
+    linear-gradient(to left, var(--color-card) 30%, transparent) right center,
+    radial-gradient(farthest-side at 0 50%, rgb(0 0 0 / 0.14), transparent) left center,
+    radial-gradient(farthest-side at 100% 50%, rgb(0 0 0 / 0.14), transparent) right center;
+  background-repeat: no-repeat;
+  background-size: 28px 100%, 28px 100%, 12px 100%, 12px 100%;
+  /* Las dos primeras viajan con la caja y las dos últimas con el contenido:
+     ahí está todo el truco. */
+  background-attachment: local, local, scroll, scroll;
+}
+
+/* 3 · EL TIRADOR DEL ANCHO.
+      Lo inyecta `AnchosDeColumna` en cada encabezado. Ancho de 9 px y no de 1:
+      una línea de un píxel es imposible de agarrar con el ratón, y el área
+      sensible tiene que ser más grande que la marca que se ve. */
+.tabla-tirador {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  z-index: 3;
+  width: 9px;
+  height: 100%;
+  cursor: col-resize;
+  /* No se pinta hasta que se lo busca: una tabla con nueve rayitas verticales
+     parece rota. Al pasar por el encabezado aparece, que es cuando la persona
+     ya está mirando la frontera entre dos columnas. */
+  opacity: 0;
+  transition: opacity 0.12s;
+  touch-action: none;
+}
+.tabla-erp thead th:hover .tabla-tirador,
+.tabla-tirador:hover {
+  opacity: 1;
+}
+.tabla-tirador::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  left: 4px;
+  width: 1px;
+  height: 60%;
+  background: var(--color-primary);
+}
+
+/* Mientras se arrastra: el cursor no cambia al pasar sobre el texto y nada se
+   selecciona. Sin esto, arrastrar deja media tabla en azul de selección. */
+body.redimensionando,
+body.redimensionando * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}

@@ -96,7 +96,7 @@ export default async function PedidosPage({
 
           <Card className="overflow-hidden p-0">
             <div className="overflow-x-auto">
-              <table className="tabla-erp w-full text-sm">
+              <table data-tabla="pedidos" className="tabla-erp w-full text-sm">
                 <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 font-medium">Folio</th>

@@ -108,7 +108,7 @@ export default async function AdminUsersPage({
           )}
         />
         <div className="overflow-x-auto">
-          <table className="tabla-erp w-full text-sm">
+          <table data-tabla="usuarios" className="tabla-erp w-full text-sm">
             <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <ThOrden campo="nombre" actual={orden} basePath={BASE} query={query}>

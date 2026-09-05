@@ -102,7 +102,7 @@ export default async function ProveedoresPage({
             )}
           />
           <div className="overflow-x-auto">
-            <table className="tabla-erp w-full text-sm">
+            <table data-tabla="proveedores" className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   {/*

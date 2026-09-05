@@ -11,6 +11,7 @@ import { SoloLectura } from "@/components/portal/solo-lectura";
 import { Topbar } from "@/components/portal/topbar";
 import { TenantBar } from "@/components/portal/tenant-bar";
 import { Campana } from "@/components/portal/campana";
+import { AnchosDeColumna } from "@/components/portal/anchos-de-columna";
 import { DENSIDAD_COOKIE, densidadGuardada } from "@/lib/densidad";
 import { contarSinLeer, misAvisos } from "@/lib/notificaciones";
 import { tablerosDelMenu } from "@/lib/ml/dashboards";
@@ -177,6 +178,10 @@ export default async function TenantAppLayout({
               )
             }
           />
+          {/* Una sola vez para toda la aplicación: busca las tablas que
+              pidieron tirador —las que llevan `data-tabla`— y se lo pone. No
+              pinta nada por su cuenta. */}
+          <AnchosDeColumna />
           <main className="print-main flex-1 bg-background p-6 lg:p-8">{children}</main>
         </div>
       </div>
