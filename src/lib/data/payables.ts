@@ -75,8 +75,13 @@ export async function getPayables(opts?: {
   onlyClosed?: boolean;
   limit?: number;
   offset?: number;
-}): Promise<PayableRow[]> {
-  const db = await tenantDb();
+}, conexion?: DbOrTx): Promise<PayableRow[]> {
+  /*
+    Conexión explícita para la CAPA DE EXTRACCIÓN: una descarga corre por el pool
+    de SOLO LECTURA para no ocupar una de las dos conexiones que la empresa tiene
+    para su trabajo del día. Ver `tenantDbReadOnly`.
+  */
+  const db = conexion ?? (await tenantDb());
 
   const pagado = sql<string>`coalesce((
     select sum(p.amount) from ${supplierPayments} p

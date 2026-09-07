@@ -23,6 +23,7 @@ import type { PurchaseOrderStatus } from "@/lib/db/schema";
 import { puedeEn } from "@/lib/tenancy/context";
 import { DashboardFab } from "@/components/portal/dashboard-fab";
 import { AnalysisSection, AnalysisSectionSkeleton } from "@/components/portal/analysis-section";
+import { BotonDescargar } from "@/components/portal/boton-descargar";
 
 const BASE = "/admin/compras";
 
@@ -91,6 +92,8 @@ export default async function ComprasPage({
             <Plus className="size-4" /> Nueva orden
           </Link>
         </Button>
+
+        <BotonDescargar dataset="compras" query={query} />
       </div>
 
       {orders.length === 0 ? (

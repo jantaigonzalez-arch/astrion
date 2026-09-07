@@ -8,6 +8,7 @@ import { PartsInventory } from "@/components/portal/parts-inventory";
 import { puedeEn } from "@/lib/tenancy/context";
 import { DashboardFab } from "@/components/portal/dashboard-fab";
 import { AnalysisSection, AnalysisSectionSkeleton } from "@/components/portal/analysis-section";
+import { BotonDescargar } from "@/components/portal/boton-descargar";
 
 export default async function SparePartsPage({
   params,
@@ -39,6 +40,8 @@ export default async function SparePartsPage({
           </p>
         </div>
         <AddPartForm />
+
+        <BotonDescargar dataset="refacciones" />
       </div>
 
       <PartsInventory

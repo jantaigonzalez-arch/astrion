@@ -1,4 +1,5 @@
 import "server-only";
+import type { DbOrTx } from "@/lib/db";
 import { cache } from "react";
 import { asc, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
@@ -197,8 +198,16 @@ export async function getEquipmentList({
   offset: number;
   orden?: Orden<CampoOrdenEquipos>;
   filtros?: FiltrosEquipos;
-}) {
-  const db = await tenantDb();
+}, conexion?: DbOrTx) {
+  /*
+    Conexión explícita para la CAPA DE EXTRACCIÓN.
+
+    Una descarga corre por el pool de SOLO LECTURA para no ocupar una de las dos
+    conexiones que la empresa tiene para su trabajo del día. Opcional y con el
+    mismo comportamiento al omitirla, así que ninguna de las llamadas que ya
+    existían cambia. Ver `tenantDbReadOnly`.
+  */
+  const db = conexion ?? (await tenantDb());
   const col = ORDEN_EQUIPOS[orden.campo];
   return db
     .select({

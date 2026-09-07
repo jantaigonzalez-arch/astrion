@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { puedeEn } from "@/lib/tenancy/context";
+import { BotonDescargar } from "@/components/portal/boton-descargar";
 
 function money(v: string | null, currency: "MXN" | "USD", locale: string) {
   if (!v) return "—";
@@ -104,6 +105,8 @@ export default async function ContractsPage({
             </Link>
           </Button>
         )}
+
+        <BotonDescargar dataset="contratos" query={query} />
       </div>
 
       {totalSinFiltros > 0 && (

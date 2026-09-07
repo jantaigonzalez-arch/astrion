@@ -408,8 +408,14 @@ export async function getOrganizations(
    * es lo que necesita el catálogo completo y el selector del negocio—.
    */
   opts?: { only?: OrgKind },
+  conexion?: DbOrTx,
 ) {
-  const db = await tenantDb();
+  /*
+    Conexión explícita para la CAPA DE EXTRACCIÓN: una descarga corre por el pool
+    de SOLO LECTURA para no ocupar una de las dos conexiones que la empresa tiene
+    para su trabajo del día. Ver `tenantDbReadOnly`.
+  */
+  const db = conexion ?? (await tenantDb());
 
   const rows = await db
     .select({
@@ -795,8 +801,13 @@ export async function slaHorasDelCliente(
   return fila?.h ?? null;
 }
 
-export async function getClients() {
-  const db = await tenantDb();
+export async function getClients(conexion?: DbOrTx) {
+  /*
+    Conexión explícita para la CAPA DE EXTRACCIÓN: una descarga corre por el pool
+    de SOLO LECTURA para no ocupar una de las dos conexiones que la empresa tiene
+    para su trabajo del día. Ver `tenantDbReadOnly`.
+  */
+  const db = conexion ?? (await tenantDb());
 
   const porContrato = db
     .select({

@@ -1,4 +1,5 @@
 import "server-only";
+import type { DbOrTx } from "@/lib/db";
 import type { CampoOrdenMiembro } from "@/lib/data/people";
 import { and, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
@@ -263,8 +264,16 @@ export async function getQueuePage({
   limit: number;
   offset: number;
   orden?: Orden<CampoOrdenCola>;
-} & FiltrosCola) {
-  const db = await tenantDb();
+} & FiltrosCola, conexion?: DbOrTx) {
+  /*
+    Conexión explícita para la CAPA DE EXTRACCIÓN.
+
+    Una descarga corre por el pool de SOLO LECTURA para no ocupar una de las dos
+    conexiones que la empresa tiene para su trabajo del día. Opcional y con el
+    mismo comportamiento al omitirla, así que ninguna de las llamadas que ya
+    existían cambia. Ver `tenantDbReadOnly`.
+  */
+  const db = conexion ?? (await tenantDb());
   return db.query.tickets.findMany({
     where: whereCola(filtros),
     orderBy: orderByCola(orden),

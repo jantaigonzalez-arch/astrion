@@ -19,6 +19,7 @@ import { FiltroColumna } from "@/components/portal/filtro-columna";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "@/lib/nav";
+import { BotonDescargar } from "@/components/portal/boton-descargar";
 
 const BASE = "/admin/equipos";
 
@@ -111,6 +112,8 @@ export default async function EquiposPage({
             {totalSinFiltros} equipo(s) bajo cuidado de la empresa.
           </p>
         </div>
+
+        <BotonDescargar dataset="equipos" query={query} />
       </div>
 
       <Card className="overflow-hidden">

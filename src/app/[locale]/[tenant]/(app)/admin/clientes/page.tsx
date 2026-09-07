@@ -9,6 +9,7 @@ import { ClientsList, type ClientListRow } from "@/components/portal/clients-lis
 import { DashboardFab } from "@/components/portal/dashboard-fab";
 import { Skeleton, TableSkeleton } from "@/components/portal/skeletons";
 import type { ClientRow } from "@/lib/data/crm";
+import { BotonDescargar } from "@/components/portal/boton-descargar";
 
 /**
  * Clientes: el módulo de la post-venta.
@@ -63,6 +64,8 @@ export default async function ClientesPage({
             <Resumen p={clientes} />
           </Suspense>
         </div>
+
+        <BotonDescargar dataset="clientes" />
       </div>
 
       <Suspense fallback={<TableSkeleton rows={8} cols={6} />}>

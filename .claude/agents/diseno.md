@@ -136,6 +136,38 @@ Patrón `combobox` de WAI-ARIA. Ninguna de estas piezas es decorativa:
 
 ---
 
+## Ventanas modales
+
+Una decisión con varias partes —elegir columnas, formato y alcance de una
+descarga— no cabe en un desplegable y estorba en la propia pantalla. Ahí va una
+modal; para todo lo demás, no.
+
+**`<dialog>` con `showModal()`, siempre.** Trae gratis lo que un modal casero
+casi nunca reconstruye entero: el foco atrapado dentro —tabular no se escapa a
+la página de atrás—, el cierre con Esc, el fondo inerte para el lector de
+pantalla, y la capa superior del navegador, que es la única forma de no pelearse
+para siempre con los `z-index` de la barra lateral.
+
+- `showModal()` va en un efecto, nunca en el render: es una operación sobre el
+  DOM, no una propiedad.
+- Escuchá `onClose`. Esc y el clic en el fondo cierran el diálogo por su cuenta,
+  y sin sincronizar el estado el botón deja de abrir a la segunda.
+- El clic en el fondo se detecta comparando `e.target` con el propio `<dialog>`:
+  el contenido está dentro de un hijo, así que solo el fondo coincide.
+- **Una acción destructiva o irreversible no se confirma en una modal que se
+  cierra con Esc.** Esc es un gesto de descarte; si la ventana ejecuta algo,
+  descartarla no puede ser lo mismo que aceptarla.
+
+**Lo que se va a hacer, se enseña.** La ventana de descarga lista los filtros
+puestos uno por uno en vez de decir «3 filtros»: quien va a mandar ese archivo a
+otra persona necesita saber qué recorte lleva dentro.
+
+**Nada de puertas que no abren.** Con cero columnas marcadas no hay un botón
+apagado: hay un renglón que dice qué falta elegir. Y el servidor lo rechaza
+igual — la pantalla explica, el borde protege. Ver `descargar-dialogo.tsx`.
+
+---
+
 ## Formularios
 
 - **El campo que decide va primero.** En un gasto de viáticos, el ticket de

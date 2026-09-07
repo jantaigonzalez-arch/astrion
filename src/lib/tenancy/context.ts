@@ -522,6 +522,32 @@ export async function tenantDb() {
   return clientFor(ctx.schemaName, ctx.impersonated || bloqueado);
 }
 
+/**
+ * Conexión de SOLO LECTURA de la empresa activa, para extracciones.
+ *
+ * ── DOS COSAS, Y LA SEGUNDA ES LA QUE IMPORTA ──────────────────────────────
+ *
+ * 1 · No puede escribir, y lo hace cumplir Postgres con
+ *     `default_transaction_read_only`. Una descarga es una lectura por
+ *     definición, así que si algún día un dataset acabara llamando a algo que
+ *     escribe, el motor lo rechaza en vez de confiar en que nadie se equivoque.
+ *
+ * 2 · ES OTRO POOL. Y ahí está el motivo real de que esto exista: cada empresa
+ *     tiene dos conexiones para todo su tráfico (`DB_TENANT_POOL_MAX`). Una
+ *     extracción que recorre veinte mil filas ocupando una de esas dos deja al
+ *     resto de la oficina con la mitad de la banca mientras dura. Con pool
+ *     aparte, la descarga se pelea con otras descargas y no con quien está
+ *     atendiendo un ticket.
+ *
+ * No es infraestructura nueva: es el mismo pool `#ro` que ya sostiene la visita
+ * de un operador de Astraion y la empresa con la suscripción vencida. Lo único
+ * que hacía falta era poder pedirlo a propósito.
+ */
+export async function tenantDbReadOnly() {
+  const ctx = await requireTenant();
+  return clientFor(ctx.schemaName, true);
+}
+
 /** Para tareas fuera de una petición (cron, importadores): esquema explícito. */
 export function tenantDbFor(schemaName: string) {
   return clientFor(schemaName);

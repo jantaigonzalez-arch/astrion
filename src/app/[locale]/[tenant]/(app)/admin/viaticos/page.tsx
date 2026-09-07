@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ESTADO_LABELS, mxnViatico, type ViaticoEstado } from "@/lib/viaticos";
 import type { ViaticoFila } from "@/lib/data/viaticos";
+import { BotonDescargar } from "@/components/portal/boton-descargar";
 
 export const dynamic = "force-dynamic";
 
@@ -223,6 +224,8 @@ export default async function ViaticosPage({
             Pedir viáticos
           </Link>
         </Button>
+
+        <BotonDescargar dataset="viaticos" />
       </div>
 
       {/*

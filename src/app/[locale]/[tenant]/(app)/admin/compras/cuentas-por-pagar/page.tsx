@@ -14,6 +14,7 @@ import { puedeEn } from "@/lib/tenancy/context";
 import { cn } from "@/lib/utils";
 import { DashboardFab } from "@/components/portal/dashboard-fab";
 import { AnalysisSection, AnalysisSectionSkeleton } from "@/components/portal/analysis-section";
+import { BotonDescargar } from "@/components/portal/boton-descargar";
 
 export default async function CuentasPorPagarPage({
   params,
@@ -76,6 +77,8 @@ export default async function CuentasPorPagarPage({
             </Link>
           </Button>
         </div>
+
+        <BotonDescargar dataset="cuentas-por-pagar" />
       </div>
 
       {/* Vencido y por vencer separados: son dos decisiones distintas. Lo

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { puedeEnAlguno } from "@/lib/tenancy/context";
 import { OrganizationsList, type OrganizationRow } from "@/components/portal/organizations-list";
+import { BotonDescargar } from "@/components/portal/boton-descargar";
 
 /**
  * Catálogo completo: clientes y leads juntos.
@@ -83,6 +84,8 @@ export default async function OrganizationsPage({
             <Plus className="size-4" /> Nueva organización
           </Link>
         </Button>
+
+        <BotonDescargar dataset="organizaciones" />
       </div>
 
       {rows.length === 0 ? (

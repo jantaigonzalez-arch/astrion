@@ -29,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { StatusBadge, PriorityBadge } from "@/components/portal/badges";
 import { DashboardFab } from "@/components/portal/dashboard-fab";
+import { BotonDescargar } from "@/components/portal/boton-descargar";
 import {
   AnalysisSection,
   AnalysisSectionSkeleton,
@@ -351,6 +352,8 @@ export default async function AdminTicketsPage({
             <ClipboardPlus className="size-4" /> Nuevo levantamiento
           </Link>
         </Button>
+
+        <BotonDescargar dataset="tickets" query={query} />
       </div>
 
       {/* Solicitudes que esperan aprobación */}

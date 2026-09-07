@@ -1,4 +1,5 @@
 import "server-only";
+import type { DbOrTx } from "@/lib/db";
 import { ordenarPor } from "@/lib/data/orden";
 import type { Orden } from "@/lib/listado";
 import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
@@ -290,8 +291,14 @@ export async function getPurchaseOrders(
   page?: { limit: number; offset: number },
   orden?: Orden<CampoOrdenOrden>,
   filtros?: FiltrosOrden,
+  conexion?: DbOrTx,
 ): Promise<{ rows: OrderRow[]; total: number }> {
-  const db = await tenantDb();
+  /*
+    Conexión explícita para la CAPA DE EXTRACCIÓN: una descarga corre por el pool
+    de SOLO LECTURA para no ocupar una de las dos conexiones que la empresa tiene
+    para su trabajo del día. Ver `tenantDbReadOnly`.
+  */
+  const db = conexion ?? (await tenantDb());
   const q = db
     .select({
       total_count: sql<number>`count(*) over ()::int`,
