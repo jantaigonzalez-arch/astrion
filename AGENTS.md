@@ -59,10 +59,19 @@ carga, qué hacer si un despliegue sale mal— está en
 
 ```
 npm test                 las que no necesitan base — segundos
-npm run pruebas:base     levanta la base de pruebas (BORRA la que le indiques)
+npm run pruebas:base     levanta la base de pruebas (una vez)
 npm run test:integracion contra esa base
+npm run test:todo        las dos
+npm run test:ui          el panel de Vitest en el navegador
 npm run probes:local     los que solo valen contra los datos reales
 ```
+
+Ninguno pide que exportes nada. La base de pruebas es `evoelution_ci`, en tu
+mismo servidor de Postgres: se toma el servidor de `.env.local` y se le cambia
+el nombre de la base. El servidor se hereda, el destino **nunca** — así ninguna
+prueba puede escribir en la copia de producción, que es lo que `.env.local`
+apunta. `pruebas:base` además se niega a borrar una base cuyo nombre no termine
+en `_ci`, `_test` o `_pruebas`.
 
 GitHub Actions corre las dos primeras en cada PR y en cada push a la rama de
 trabajo. `pruebas/registro.ts` dice qué prueba corre dónde y por qué.

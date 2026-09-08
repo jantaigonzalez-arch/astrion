@@ -28,6 +28,20 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+# Sin `DATABASE_URL` se deriva del servidor de `.env.local` cambiándole el
+# nombre de la base. Es la misma regla que usan las pruebas (`pruebas/base.ts`):
+# se hereda el servidor —usuario, contraseña, puerto— y NUNCA el destino, para
+# que un descuido no acabe apuntando a la copia de producción. Así `npm run
+# pruebas:base` funciona recién clonado el repositorio, sin exportar nada.
+if [ -z "${DATABASE_URL:-}" ] && [ -f .env.local ]; then
+  origen="$(grep -m1 -oE 'postgres(ql)?://[^"'"'"' ]+' .env.local || true)"
+  if [ -n "$origen" ]; then
+    DATABASE_URL="${origen%/*}/evoelution_ci"
+    export DATABASE_URL
+    echo "▸ Sin DATABASE_URL: usando «evoelution_ci» en el servidor de .env.local"
+  fi
+fi
+
 : "${DATABASE_URL:?Hace falta DATABASE_URL apuntando a la base de PRUEBAS}"
 
 # ── La guardia ───────────────────────────────────────────────────────────────
