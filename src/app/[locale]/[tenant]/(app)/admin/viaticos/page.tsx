@@ -218,14 +218,15 @@ export default async function ViaticosPage({
               : "Tus solicitudes de viaje y la comprobación de tus gastos."}
           </p>
         </div>
-        <Button asChild variant="accent">
-          <Link href="/admin/viaticos/nuevo">
-            <Plus className="size-4" />
-            Pedir viáticos
-          </Link>
-        </Button>
-
-        <BotonDescargar dataset="viaticos" />
+        <div className="flex flex-wrap items-center gap-2">
+          <BotonDescargar dataset="viaticos" />
+          <Button asChild variant="accent">
+            <Link href="/admin/viaticos/nuevo">
+              <Plus className="size-4" />
+              Pedir viáticos
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/*

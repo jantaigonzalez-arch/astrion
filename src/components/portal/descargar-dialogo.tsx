@@ -103,7 +103,15 @@ export function DescargarDialogo({
           // Clic en el fondo —el propio `<dialog>`, no su contenido— cierra.
           if (e.target === ref.current) setAbierto(false);
         }}
-        className="w-[min(32rem,92vw)] rounded-xl border border-border bg-popover p-0 text-foreground shadow-xl backdrop:bg-black/40"
+        /*
+          `m-auto` NO es un ajuste fino: sin él la ventana se va a la esquina.
+
+          Un `<dialog>` modal se centra porque el navegador le da `inset: 0` y
+          `margin: auto`. El Preflight de Tailwind pone `margin: 0` a todo, así
+          que se lleva por delante la mitad del mecanismo y deja la ventana
+          arriba a la izquierda. Es la misma línea que ya lleva `org-picker`.
+        */
+        className="m-auto w-[min(32rem,92vw)] rounded-xl border border-border bg-popover p-0 text-foreground shadow-xl backdrop:bg-black/40"
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
           <h2 className="font-semibold">Descargar</h2>

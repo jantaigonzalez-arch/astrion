@@ -347,13 +347,17 @@ export default async function AdminTicketsPage({
             </p>
           )}
         </div>
-        <Button asChild variant="accent">
-          <Link href="/admin/tickets/new">
-            <ClipboardPlus className="size-4" /> Nuevo levantamiento
-          </Link>
-        </Button>
-
-        <BotonDescargar dataset="tickets" query={query} />
+        {/* Las acciones van juntas en UN hijo: el encabezado reparte con
+            `justify-between`, así que dos hijos sueltos separan el botón
+            principal del título y lo dejan flotando a media pantalla. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <BotonDescargar dataset="tickets" query={query} />
+          <Button asChild variant="accent">
+            <Link href="/admin/tickets/new">
+              <ClipboardPlus className="size-4" /> Nuevo levantamiento
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Solicitudes que esperan aprobación */}

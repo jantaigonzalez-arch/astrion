@@ -39,9 +39,13 @@ export default async function SparePartsPage({
             Busca por número de parte, descripción o marca.
           </p>
         </div>
-        <AddPartForm />
-
-        <BotonDescargar dataset="refacciones" />
+        {/* `items-start` y no `items-center` como en los demás: `AddPartForm`
+            se despliega en un panel alto, y centrado dejaría el botón de
+            descargar flotando a media altura del formulario abierto. */}
+        <div className="flex flex-wrap items-start gap-2">
+          <BotonDescargar dataset="refacciones" />
+          <AddPartForm />
+        </div>
       </div>
 
       <PartsInventory

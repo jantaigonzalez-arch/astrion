@@ -98,15 +98,18 @@ export default async function ContractsPage({
               : `${total} contrato(s) a tu cargo.`}
           </p>
         </div>
-        {admin && (
-          <Button asChild variant="accent">
-            <Link href="/admin/contratos/nuevo">
-              <FileSignature className="size-4" /> Nuevo contrato
-            </Link>
-          </Button>
-        )}
-
-        <BotonDescargar dataset="contratos" query={query} />
+        {/* El grupo existe siempre —descargar no depende de administrar—; lo
+            que entra o no es el botón de alta. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <BotonDescargar dataset="contratos" query={query} />
+          {admin && (
+            <Button asChild variant="accent">
+              <Link href="/admin/contratos/nuevo">
+                <FileSignature className="size-4" /> Nuevo contrato
+              </Link>
+            </Button>
+          )}
+        </div>
       </div>
 
       {totalSinFiltros > 0 && (

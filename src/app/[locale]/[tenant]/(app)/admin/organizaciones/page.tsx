@@ -79,13 +79,14 @@ export default async function OrganizationsPage({
             .
           </p>
         </div>
-        <Button asChild variant="accent">
-          <Link href="/admin/organizaciones/nueva">
-            <Plus className="size-4" /> Nueva organización
-          </Link>
-        </Button>
-
-        <BotonDescargar dataset="organizaciones" />
+        <div className="flex flex-wrap items-center gap-2">
+          <BotonDescargar dataset="organizaciones" />
+          <Button asChild variant="accent">
+            <Link href="/admin/organizaciones/nueva">
+              <Plus className="size-4" /> Nueva organización
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {rows.length === 0 ? (

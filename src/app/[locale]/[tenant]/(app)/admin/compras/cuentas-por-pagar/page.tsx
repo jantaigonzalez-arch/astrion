@@ -60,7 +60,7 @@ export default async function CuentasPorPagarPage({
             Lo que se le debe a cada proveedor y cuándo vence.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button asChild variant="ghost">
             <Link href="/admin/compras/cuentas-por-pagar/analisis">
               <BarChart3 className="size-4" /> Análisis
@@ -71,14 +71,13 @@ export default async function CuentasPorPagarPage({
               <Upload className="size-4" /> Importar
             </Link>
           </Button>
+          <BotonDescargar dataset="cuentas-por-pagar" />
           <Button asChild variant="accent">
             <Link href="/admin/compras/cuentas-por-pagar/nueva">
               <Plus className="size-4" /> Capturar factura
             </Link>
           </Button>
         </div>
-
-        <BotonDescargar dataset="cuentas-por-pagar" />
       </div>
 
       {/* Vencido y por vencer separados: son dos decisiones distintas. Lo

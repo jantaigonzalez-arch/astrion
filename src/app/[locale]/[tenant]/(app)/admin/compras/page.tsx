@@ -87,13 +87,14 @@ export default async function ComprasPage({
         {/* Proveedores salió de aquí: ahora es su propio renglón del menú, al
             lado de este. Un botón que lleva a otra sección hacía parecer que
             los proveedores vivían dentro de las órdenes. */}
-        <Button asChild variant="accent">
-          <Link href="/admin/compras/nueva">
-            <Plus className="size-4" /> Nueva orden
-          </Link>
-        </Button>
-
-        <BotonDescargar dataset="compras" query={query} />
+        <div className="flex flex-wrap items-center gap-2">
+          <BotonDescargar dataset="compras" query={query} />
+          <Button asChild variant="accent">
+            <Link href="/admin/compras/nueva">
+              <Plus className="size-4" /> Nueva orden
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {orders.length === 0 ? (
