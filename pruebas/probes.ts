@@ -113,10 +113,32 @@ export function correr(archivo: string): Resultado {
   }
 }
 
-/** Lo último que dijo un probe: es lo que hay que leer cuando se pone rojo. */
+/**
+ * Lo que hay que leer cuando un probe se pone rojo.
+ *
+ * ── POR QUÉ NO ES SOLO LA COLA ─────────────────────────────────────────────
+ *
+ * La primera versión devolvía las últimas doce líneas, y eso cortaba justo lo
+ * único que importaba. Cuando diez probes murieron en Actions por un módulo que
+ * faltaba, el registro mostró doce líneas de pila de tsx y NO la línea que decía
+ * qué módulo era: iba arriba del todo. Hubo que reproducirlo a mano para
+ * averiguar lo que el propio fallo ya había dicho.
+ *
+ * Así que se busca la línea que nombra el error, y solo si no la hay se cae a
+ * la cola. Un mensaje de fallo que obliga a reproducir el fallo no sirve de nada.
+ */
 export function resumenDeFallo(r: Resultado): string {
   const lineas = r.salida.split("\n").filter((l) => l.trim());
-  const malas = lineas.filter((l) => l.startsWith("✗"));
-  const cola = (malas.length ? malas : lineas.slice(-12)).slice(0, 12);
-  return "\n" + cola.join("\n");
+
+  const marcas = lineas.filter((l) => l.trimStart().startsWith("✗"));
+  if (marcas.length) return "\n" + marcas.slice(0, 12).join("\n");
+
+  // Sin marcas es que reventó: lo que explica el reventón es la primera línea
+  // que nombra el error, no la última de la pila.
+  const causa = lineas.filter((l) =>
+    /Cannot find module|MODULE_NOT_FOUND|^\s*(Error|TypeError|SyntaxError|AssertionError)\b|error:/i.test(l),
+  );
+  if (causa.length) return "\n" + causa.slice(0, 6).join("\n") + "\n…\n" + lineas.slice(-4).join("\n");
+
+  return "\n" + lineas.slice(-12).join("\n");
 }

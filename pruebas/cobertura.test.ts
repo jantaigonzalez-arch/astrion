@@ -16,6 +16,8 @@
  */
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { todosLosProbes, invocacion, RAIZ } from "./probes";
 import {
   CLASIFICADOS,
@@ -99,6 +101,49 @@ describe("el registro cubre todos los probes", () => {
         ? `\nEstos probes los necesita el CI y NO están en el repositorio:\n  ${fuera.join("\n  ")}\n\n` +
             "Agregá una excepción por cada uno en .gitignore (`!nombre.mts`) y " +
             "hacé `git add`. Sin eso, Actions falla con ENOENT y el motivo no se ve.\n"
+        : undefined,
+    ).toEqual([]);
+  });
+
+  it("lo que los probes necesitan para arrancar también está versionado", () => {
+    /*
+      NO BASTA CON QUE ESTÉN LOS PROBES.
+
+      `tsconfig.check.json` redirige `server-only` a un módulo vacío, porque los
+      57 archivos de `src/` que abren con `import "server-only"` no se pueden
+      cargar fuera de una petición de Next. Ese módulo vivía en `.probe/`, que
+      estaba ignorado: en el clon del CI no existía y los diez probes de
+      integración morían con un `MODULE_NOT_FOUND` que culpaba a
+      `src/lib/mail/index.ts` —tres saltos más allá de donde estaba el problema.
+
+      Fue la segunda vez en una tarde que el CI se cayó por un archivo que aquí
+      está y allá no. Esta comprobación cierra la clase entera: todo destino de
+      `paths` en la configuración con la que corren los probes tiene que estar
+      en git.
+    */
+    const cfg = readFileSync(path.join(RAIZ, "tsconfig.check.json"), "utf8");
+    // El tsconfig lleva comentarios, así que no es JSON válido: se sacan los
+    // destinos con una expresión en vez de intentar analizarlo.
+    const destinos = [...cfg.matchAll(/\[\s*"(\.\/[^"]+)"\s*\]/g)].map((m) => m[1]);
+    expect(destinos.length, "no se encontró ningún `paths` en tsconfig.check.json").toBeGreaterThan(0);
+
+    const fuera = destinos.filter((d) => {
+      const rel = d.replace(/^\.\//, "");
+      try {
+        execFileSync("git", ["ls-files", "--error-unmatch", rel], {
+          cwd: RAIZ,
+          stdio: ["ignore", "ignore", "ignore"],
+        });
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    expect(
+      fuera,
+      fuera.length
+        ? `\ntsconfig.check.json apunta a archivos que no están en git:\n  ${fuera.join("\n  ")}\n\n` +
+            "Sin ellos los probes no arrancan en un clon limpio. Agregá la excepción en .gitignore.\n"
         : undefined,
     ).toEqual([]);
   });

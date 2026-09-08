@@ -117,6 +117,14 @@ scripts/_dash.ts
 !probe-viaticos.mts
 !scripts/_probe-budget.ts
 
+# Y con ellos, el módulo vacío al que `tsconfig.check.json` manda `server-only`.
+# Son once bytes —`export {};`— y sin él ningún probe arranca: 57 archivos de
+# `src/` abren con `import "server-only"`, que fuera de una petición de Next no
+# existe. Faltaba en el clon del CI y el síntoma era un `MODULE_NOT_FOUND` que
+# señalaba a `src/lib/mail/index.ts`, tres saltos más allá de la causa.
+!.probe/
+!.probe/noop.ts
+
 # Volcados de la sincronización prod → local. Son la base de producción entera:
 # nombres de clientes, importes de contratos, la bitácora. Nunca al repositorio.
 .sync/
