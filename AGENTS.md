@@ -54,3 +54,30 @@ El detalle completo —qué desarma la sincronización y por qué, cómo ensayar
 carga, qué hacer si un despliegue sale mal— está en
 [`docs/ENTORNOS.md`](docs/ENTORNOS.md). El runbook del servidor, en
 [`docs/DEPLOY.md`](docs/DEPLOY.md).
+
+## Las pruebas
+
+```
+npm test                 las que no necesitan base — segundos
+npm run pruebas:base     levanta la base de pruebas (BORRA la que le indiques)
+npm run test:integracion contra esa base
+npm run probes:local     los que solo valen contra los datos reales
+```
+
+GitHub Actions corre las dos primeras en cada PR y en cada push a la rama de
+trabajo. `pruebas/registro.ts` dice qué prueba corre dónde y por qué.
+
+1. **Un probe nuevo va al registro.** Hay una prueba que lo exige, así que no es
+   opcional: si no lo clasificás, la suite se pone roja. Existe porque catorce
+   probes llevaban meses reventando y otros catorce no comprobaban nada, y nadie
+   lo sabía — figuraban como cobertura sin cubrir.
+2. **Si lo querés en el CI, versionalo.** Los probes están en `.gitignore` por
+   defecto; los que sostienen el flujo llevan su excepción explícita. El CI se
+   cayó dos veces por esto y el error nunca se pareció a la causa.
+3. **El CI no toca datos reales, y no es manía:** este repositorio es PÚBLICO y
+   los registros de Actions también. La base se siembra con `seed-synthetic`. Lo
+   que necesite el padrón de verdad va a `SOLO_LOCAL` y corre en tu máquina.
+4. **`npm ci` es parte de la prueba.** Un `npm install` desde la Mac poda del
+   candado entradas opcionales que Linux sí necesita —pasó con `@swc/helpers` y
+   tumbó un despliegue— y el CI lo detecta ahora en el PR. Si tocás
+   dependencias, revisá que el diff del candado no traiga BORRADOS.
