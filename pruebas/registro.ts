@@ -88,11 +88,6 @@ export const SOLO_LOCAL: Record<string, string> = {
   "scripts/_probe-perf.ts":
     "Mide tiempos contra el volumen real. Un umbral de rendimiento en un " +
     "ejecutor compartido de CI es una prueba que falla los martes.",
-  "scripts/_probe-clientes.ts":
-    "Importa `scripts/_stub-*.ts`, que sustituyen la sesión y el contexto de " +
-    "inquilino. Esos stubs se quedan fuera del repositorio a propósito —nadie " +
-    "debería poder importarlos por accidente desde la aplicación— y sin ellos " +
-    "este probe no arranca, así que se queda fuera del CI con ellos.",
 };
 
 /**
@@ -112,6 +107,11 @@ export const SOLO_LOCAL: Record<string, string> = {
 export const ROTAS: Record<string, string> = Object.fromEntries(
   [
     "probe-roles.mts",
+    // Este llegó tarde a la lista: se había clasificado como SOLO_LOCAL por
+    // importar los stubs, y resultó estar roto por lo mismo que los demás. Lo
+    // delató `npm run probes:local`, que es exactamente para lo que sirve
+    // correr las suites en vez de razonar sobre ellas.
+    "scripts/_probe-clientes.ts",
     "scripts/_probe-arq.ts",
     "scripts/_probe-arreglos.ts",
     "scripts/_probe-borrar.ts",
