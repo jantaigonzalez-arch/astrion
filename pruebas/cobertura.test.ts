@@ -24,7 +24,7 @@ import {
   UNITARIAS,
   INTEGRACION,
   SOLO_LOCAL,
-  ROTAS,
+  CON_STUBS,
   DIAGNOSTICO,
 } from "./registro";
 
@@ -37,7 +37,7 @@ describe("el registro cubre todos los probes", () => {
         ? `\nEstos probes no están en pruebas/registro.ts:\n  ${huerfanos.join("\n  ")}\n\n` +
             "Añadilo a la lista que le toque: UNITARIAS si no necesita base, " +
             "INTEGRACION si sí, SOLO_LOCAL si depende de los datos reales de " +
-            "producción, y ROTAS o DIAGNOSTICO con su motivo si todavía no puede correr.\n"
+            "producción, y CON_STUBS si necesita los stubs, y DIAGNOSTICO si solo informa.\n"
         : undefined,
     ).toEqual([]);
   });
@@ -47,7 +47,7 @@ describe("el registro cubre todos los probes", () => {
       ...UNITARIAS,
       ...INTEGRACION,
       ...Object.keys(SOLO_LOCAL),
-      ...Object.keys(ROTAS),
+      ...Object.keys(CON_STUBS),
       ...Object.keys(DIAGNOSTICO),
     ];
     const repetidos = todas.filter((f, i) => todas.indexOf(f) !== i);

@@ -91,31 +91,35 @@ export const SOLO_LOCAL: Record<string, string> = {
 };
 
 /**
- * ROTAS. Deuda declarada, a la vista y no disimulada.
+ * LAS CATORCE QUE PARECÍAN ROTAS. No lo estaban: estaban mal invocadas.
  *
- * Las catorce revientan al arrancar, y no por culpa de la base: lo hacen igual
- * contra la de desarrollo. Todas por lo mismo — llaman a `tenantDb()`, que
- * exige el contexto de una petición de Next (`headers()`), y fuera de un
- * servidor ese contexto no existe. Se escribieron cuando esa llamada aún
- * funcionaba suelta y nadie las volvió a correr desde entonces.
+ * Durante meses reventaron con «`headers` was called outside a request scope»
+ * y se dieron por muertas. El diagnóstico era correcto en el síntoma y erróneo
+ * en la causa: llaman a `tenantDb()`, sí, pero el repositorio ya tenía la
+ * respuesta —`tsconfig.probe.json` sustituye `@/lib/tenancy/context` por un
+ * stub que fija la empresa con `PROBE_SCHEMA`— y a ninguna se le había escrito
+ * en la cabecera que había que correrlas con esa configuración. El runner les
+ * aplicaba el valor por omisión de su carpeta y cargaban el módulo de verdad.
  *
- * Están aquí y no borradas porque el criterio que contienen sigue siendo bueno:
- * rescatarlas es darles una conexión explícita, como ya hicieron las funciones
- * de datos para la capa de extracción. Mientras tanto NO corren, y esta lista
- * es el recordatorio de que no lo hacen.
+ * Ahora las catorce declaran su orden y las catorce corren. Corren en local, con
+ * `npm run probes:local`.
+ *
+ * ── POR QUÉ NO ESTÁN EN EL CI ──────────────────────────────────────────────
+ *
+ * Solo por una razón, y es una decisión pendiente, no un impedimento técnico:
+ * necesitan `tsconfig.probe.json` y `scripts/_stub-*.ts`, que están fuera del
+ * repositorio a propósito —sustituyen la sesión y el contexto de inquilino, y
+ * nadie debería importarlos por accidente desde la aplicación—. Versionarlos
+ * las llevaría al CI tal cual están.
  */
-export const ROTAS: Record<string, string> = Object.fromEntries(
+export const CON_STUBS: Record<string, string> = Object.fromEntries(
   [
     "probe-roles.mts",
-    // Este llegó tarde a la lista: se había clasificado como SOLO_LOCAL por
-    // importar los stubs, y resultó estar roto por lo mismo que los demás. Lo
-    // delató `npm run probes:local`, que es exactamente para lo que sirve
-    // correr las suites en vez de razonar sobre ellas.
-    "scripts/_probe-clientes.ts",
     "scripts/_probe-arq.ts",
     "scripts/_probe-arreglos.ts",
     "scripts/_probe-borrar.ts",
     "scripts/_probe-busqueda.ts",
+    "scripts/_probe-clientes.ts",
     "scripts/_probe-contratos.ts",
     "scripts/_probe-goals.ts",
     "scripts/_probe-huerfanos.ts",
@@ -124,7 +128,11 @@ export const ROTAS: Record<string, string> = Object.fromEntries(
     "scripts/_probe-profit.ts",
     "scripts/_probe-rent.ts",
     "scripts/_probe-siembra.ts",
-  ].map((f) => [f, "Revienta: llama a `tenantDb()` fuera del contexto de una petición."]),
+  ].map((f) => [
+    f,
+    "Corre con `tsconfig.probe.json` y los stubs, que no se versionan. " +
+      "Fuera del CI por eso, no por estar rota.",
+  ]),
 );
 
 /**
@@ -159,6 +167,6 @@ export const CLASIFICADOS = new Set<string>([
   ...UNITARIAS,
   ...INTEGRACION,
   ...Object.keys(SOLO_LOCAL),
-  ...Object.keys(ROTAS),
+  ...Object.keys(CON_STUBS),
   ...Object.keys(DIAGNOSTICO),
 ]);

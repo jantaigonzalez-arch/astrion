@@ -29,30 +29,38 @@ cd "$(dirname "$0")/.."
 # existe. El síntoma era «mapfile: command not found» seguido de dos variables
 # sin definir.
 PROBES=()
-while IFS= read -r linea; do
-  [ -n "$linea" ] && PROBES+=("$linea")
+ORDENES=()
+while IFS=$'\t' read -r archivo orden; do
+  [ -n "$archivo" ] || continue
+  PROBES+=("$archivo")
+  ORDENES+=("$orden")
 done < <(
   npx tsx --tsconfig tsconfig.check.json scripts/_solo-local.ts 2>/dev/null
 )
 
 if [ "${#PROBES[@]}" -eq 0 ]; then
-  echo "No pude leer SOLO_LOCAL de pruebas/registro.ts" >&2
+  echo "No pude leer el registro de pruebas/registro.ts" >&2
   exit 1
 fi
 
+# La orden viene del registro, NO se arma aquí.
+#
+# Armarla aquí ya falló: se le ponía `tsconfig.scripts.json` a todo lo de
+# `scripts/`, y los probes que usan stubs cargaban así el módulo de inquilino
+# de verdad, que pide las cookies de una petición inexistente. Trece probes
+# parecían rotos y lo que estaba mal era esta línea.
 fallos=0
-for f in "${PROBES[@]}"; do
+i=0
+while [ "$i" -lt "${#PROBES[@]}" ]; do
+  f="${PROBES[$i]}"
   printf '\n\033[1m── %s ──\033[0m\n' "$f"
-  case "$f" in
-    scripts/*) cmd=(npx tsx --tsconfig tsconfig.scripts.json "$f") ;;
-    *)         cmd=(npx tsx --tsconfig tsconfig.check.json "$f") ;;
-  esac
-  if "${cmd[@]}"; then
+  if bash -c "${ORDENES[$i]}"; then
     echo "✅ $f"
   else
     echo "❌ $f"
     fallos=$((fallos + 1))
   fi
+  i=$((i + 1))
 done
 
 echo

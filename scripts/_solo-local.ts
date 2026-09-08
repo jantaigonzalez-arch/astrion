@@ -1,13 +1,21 @@
 /**
- * Imprime la lista de probes que solo corren contra datos reales.
+ * Imprime, por cada probe que corre solo en local, su archivo y su orden.
  *
- * Existe como archivo y no como un `-e` dentro del script de shell porque el
- * registro es TypeScript y hay que importarlo: la lista tiene que salir de
- * `pruebas/registro.ts` y no repetirse en el shell, o serían dos listas que
- * mantener y una de las dos se quedaría vieja.
+ * Una línea por probe:  `archivo<TAB>orden completa`
  *
- * Lo usa `scripts/probes-locales.sh`.
+ * ── POR QUÉ TAMBIÉN LA ORDEN ───────────────────────────────────────────────
+ *
+ * Porque el shell no la puede adivinar, y adivinarla fue un fallo real: el
+ * runner aplicaba `--tsconfig tsconfig.scripts.json` a todo lo de `scripts/`, y
+ * con esa configuración los probes que usan stubs cargan el módulo de inquilino
+ * de verdad y mueren pidiendo las cookies de una petición. Se veía como «este
+ * probe está roto» cuando lo roto era la orden.
+ *
+ * La orden sale de `invocacion()`, la misma que usa Vitest. Una sola fuente.
  */
-import { SOLO_LOCAL } from "../pruebas/registro";
+import { SOLO_LOCAL, CON_STUBS } from "../pruebas/registro";
+import { invocacion } from "../pruebas/probes";
 
-for (const archivo of Object.keys(SOLO_LOCAL)) console.log(archivo);
+for (const archivo of [...Object.keys(SOLO_LOCAL), ...Object.keys(CON_STUBS)]) {
+  console.log(`${archivo}\t${invocacion(archivo)}`);
+}
