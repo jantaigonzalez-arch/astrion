@@ -1,0 +1,115 @@
+# Lo que tiene que estar en verde antes de que algo llegue a producción.
+#
+# ── POR QUÉ ESTE FLUJO EXISTE ────────────────────────────────────────────────
+#
+# El repositorio tenía 53 probes escritos con muy buen criterio y nada que los
+# corriera. El 2026-09-07 se desplegó a producción un cambio con dos fallos que
+# `probe-tablas` detectaba desde el primer día: la prueba estaba escrita, pasaba
+# el código por delante y nadie la ejecutó. Una prueba que hay que acordarse de
+# correr no es una red, es documentación.
+#
+# ── EL ORDEN NO ES CASUAL ────────────────────────────────────────────────────
+#
+# Primero lo que falla en segundos y sin infraestructura (tipos, estilo, las
+# pruebas sin base), después lo que necesita levantar Postgres y sembrarlo. Así
+# un error de tipos se ve al minuto en vez de a los diez, y no se gastan minutos
+# de ejecutor en preparar una base para un PR que no compila.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [astraion/erp-ventas-servicio-ml]
+
+# Un empujón nuevo cancela la ejecución anterior de la misma rama: revisar el
+# resultado de un commit que ya quedó atrás no sirve para decidir nada.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rapido:
+    name: Tipos, estilo y pruebas sin base
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          # 22 y no la del `.nvmrc`: es la del `Dockerfile`, o sea la que corre
+          # en producción. El CI tiene que validar lo que se va a desplegar, no
+          # lo que casualmente tenga instalado quien desarrolla.
+          node-version: 22
+          cache: npm
+
+      # `npm ci` y no `npm install`, y eso ya salvó un despliegue: `ci` exige
+      # que el candado esté completo y se niega a resolver nada por su cuenta.
+      # Un `npm install` hecho en macOS poda entradas opcionales que Linux sí
+      # necesita —pasó con `@swc/helpers`— y el candado queda válido allá e
+      # inservible aquí. Ese fallo salía al construir la imagen de producción;
+      # ahora sale en el PR.
+      - run: npm ci
+
+      - run: npm run typecheck
+      - run: npm run lint
+        # El estilo informa, no bloquea: hay 43 avisos heredados y convertirlos
+        # en un muro rojo desde el primer día enseña a saltarse el tablero. Se
+        # limpian aparte y entonces se le quita esta línea.
+        continue-on-error: true
+
+      - name: Pruebas sin base de datos
+        run: npm run test:unitarias
+
+  integracion:
+    name: Pruebas contra base sembrada
+    runs-on: ubuntu-latest
+    needs: rapido
+
+    services:
+      postgres:
+        # 16, la misma de producción. Probar contra otra versión mayor es
+        # probar contra otro motor en lo que a comportamiento respecta.
+        image: postgres:16
+        env:
+          POSTGRES_USER: evoelution
+          POSTGRES_PASSWORD: pruebas
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U evoelution"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # Termina en `_ci`, que es lo que exige la guardia de
+      # `scripts/base-de-pruebas.sh` antes de dejar borrar una base.
+      DATABASE_URL: postgresql://evoelution:pruebas@localhost:5432/evoelution_ci
+      # La aplicación exige que exista; aquí no protege nada real y por eso se
+      # escribe a la vista en lugar de gastar un secreto del repositorio.
+      AUTH_SECRET: ci-sin-valor-real
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Cliente de Postgres
+        # Hace falta `psql`: lo usan la creación de la base y la comprobación de
+        # que quedó sembrada.
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      # Se SIEMBRA, nunca se copia producción. Este repositorio es público y sus
+      # registros también: un nombre de cliente o el importe de un contrato
+      # impresos aquí quedan publicados. `seed-synthetic` genera una empresa
+      # entera —diez años, catorce mil tickets— sin un solo dato real dentro.
+      - name: Levantar la base de pruebas
+        run: npm run pruebas:base
+
+      - name: Pruebas de integración
+        run: npm run test:integracion

@@ -79,7 +79,7 @@ function TablaViaticos({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-2.5 font-medium">Folio</th>
@@ -89,8 +89,8 @@ function TablaViaticos({
                   ) : null}
                   <th className="px-4 py-2.5 font-medium">Contrato</th>
                   <th className="px-4 py-2.5 font-medium">Fechas</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Autorizado</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Gastado</th>
+                  <th data-num className="px-4 py-2.5 text-right font-medium">Autorizado</th>
+                  <th data-num className="px-4 py-2.5 text-right font-medium">Gastado</th>
                   <th className="px-4 py-2.5 font-medium">Estado</th>
                 </tr>
               </thead>
@@ -117,10 +117,10 @@ function TablaViaticos({
                     <td className="px-4 py-2.5 text-muted-foreground">
                       {fecha(v.departsOn)} – {fecha(v.returnsOn)}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
+                    <td data-num className="px-4 py-2.5 text-right tabular-nums">
                       {v.authorizedMxn ? mxnViatico(Number(v.authorizedMxn)) : "—"}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
+                    <td data-num className="px-4 py-2.5 text-right tabular-nums">
                       {v.gastos > 0 ? mxnViatico(v.gastadoMxn) : "—"}
                     </td>
                     <td className="px-4 py-2.5">

@@ -291,7 +291,7 @@ export default async function ViaticoPage({
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-2.5 font-medium">Fecha</th>
@@ -299,7 +299,7 @@ export default async function ViaticoPage({
                   <th className="px-4 py-2.5 font-medium">Descripción</th>
                   <th className="px-4 py-2.5 font-medium">Ticket</th>
                   <th className="px-4 py-2.5 font-medium">Comprobante</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Importe</th>
+                  <th data-num className="px-4 py-2.5 text-right font-medium">Importe</th>
                   {soyElSolicitante && v.status === "autorizado" ? (
                     <th className="w-8 px-2 py-2.5" />
                   ) : null}
@@ -344,11 +344,11 @@ export default async function ViaticoPage({
                         <span className="text-xs text-warning">Sin comprobante</span>
                       )}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
+                    <td data-num className="px-4 py-2.5 text-right tabular-nums">
                       {mxnViatico(Number(g.amountMxn))}
                     </td>
                     {soyElSolicitante && v.status === "autorizado" ? (
-                      <td className="px-2 py-2.5 text-right">
+                      <td data-num className="px-2 py-2.5 text-right">
                         <QuitarGasto gastoId={g.id} />
                       </td>
                     ) : null}
@@ -360,7 +360,7 @@ export default async function ViaticoPage({
                   <td className="px-4 py-2.5 font-medium" colSpan={5}>
                     Total comprobado
                   </td>
-                  <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                  <td data-num className="px-4 py-2.5 text-right font-semibold tabular-nums">
                     {mxnViatico(gastado)}
                   </td>
                   {soyElSolicitante && v.status === "autorizado" ? <td /> : null}
