@@ -5,6 +5,7 @@ import { getTenantBrand } from "@/lib/data/platform";
 import { SettingsForm } from "@/components/portal/settings-form";
 import { BrandForm } from "@/components/portal/brand-form";
 import { CurrencyForm } from "@/components/portal/currency-form";
+import { ViaticosProspectosForm } from "@/components/portal/viaticos-prospectos-form";
 import { CorreoForm } from "@/components/portal/correo-form";
 import { getCorreoDeLaEmpresa } from "@/lib/data/correo";
 import { puedeEn } from "@/lib/tenancy/context";
@@ -39,6 +40,8 @@ export default async function SettingsPage({
       />
 
       <CurrencyForm usdRate={s.usdRate} />
+
+      <ViaticosProspectosForm activo={s.viaticosProspectos} />
     </div>
   );
 }

@@ -9,6 +9,7 @@ import {
   Mail,
   PackageSearch,
   Pencil,
+  Plane,
   StickyNote,
   Tag,
   Trash2,
@@ -53,6 +54,8 @@ import {
   LabelPicker,
 } from "@/components/portal/crm/deal-extras";
 import { DealSupplyPanel } from "@/components/portal/crm/deal-supply";
+import { viaticosPorNegocio } from "@/lib/data/viaticos";
+import { mxnViatico } from "@/lib/viaticos";
 
 export default async function DealDetailPage({
   params,
@@ -77,12 +80,22 @@ export default async function DealDetailPage({
   const support = isSupport(role);
   const intl = locale === "en" ? "en-US" : "es-MX";
 
-  const [labels, catalog, templates, linkedContract] = await Promise.all([
+  const [labels, catalog, templates, linkedContract, viajes] = await Promise.all([
     getLabels(),
     getCatalogOptions(),
     getEmailTemplates(),
     getContractForDeal(deal.id),
+    /*
+      LO QUE LLEVAMOS GASTADO EN CERRAR ESTE NEGOCIO.
+
+      Se pregunta por los GASTOS cargados a esta oportunidad y no por los
+      viáticos que la nombran: un viaje de prospección puede cargarle una comida
+      a la oportunidad y dejar el hotel como gasto comercial del viaje. Sumar el
+      viático entero le cargaría al negocio un viaje que fue por tres cosas.
+    */
+    viaticosPorNegocio([deal.id]),
   ]);
+  const costoDeViaje = viajes.get(deal.id) ?? 0;
 
   const fmtDateTime = (d: Date | string | null) =>
     d ? new Date(d).toLocaleString(intl, { dateStyle: "medium", timeStyle: "short" }) : "—";
@@ -393,6 +406,30 @@ export default async function DealDetailPage({
               }}
             />
           </Card>
+
+          {/*
+            El costo de viaje solo aparece cuando lo hay.
+
+            Al revés que en el contrato, donde el renglón sale siempre aunque
+            esté en cero: allá es una partida del cálculo de utilidad y su
+            ausencia se leería como que no se calculó. Aquí es un dato suelto, y
+            una tarjeta en cero en la mayoría de los negocios —a casi ninguno se
+            viaja— sería ruido en todas las fichas para servir a unas pocas.
+          */}
+          {costoDeViaje > 0 ? (
+            <Card className="p-5">
+              <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <Plane className="size-3.5" />
+                Costo de viaje
+              </h2>
+              <p className="mt-2 text-xl font-semibold tabular-nums">
+                {mxnViatico(costoDeViaje)}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Gastos de viáticos cerrados cargados a esta oportunidad.
+              </p>
+            </Card>
+          ) : null}
 
           <Card className="space-y-3 p-5 text-sm">
             <h2 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

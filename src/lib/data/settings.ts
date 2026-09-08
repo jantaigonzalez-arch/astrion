@@ -15,12 +15,21 @@ export type AppSettings = {
    * pantallas lo informan aparte en vez de sumar un número inventado.
    */
   usdRate: number | null;
+  /**
+   * ¿La empresa paga viajes a quien todavía no es cliente?
+   *
+   * Apagado de fábrica, y también apagado cuando no hay fila de ajustes: una
+   * empresa recién dada de alta no ha decidido nada todavía, y el valor por
+   * omisión de una política de gasto tiene que ser el que no gasta.
+   */
+  viaticosProspectos: boolean;
 };
 
 const DEFAULTS: AppSettings = {
   laborCostPerHour: 0,
   laborRatePerHour: 0,
   usdRate: null,
+  viaticosProspectos: false,
 };
 
 export async function getSettings(conexion?: DbOrTx): Promise<AppSettings> {
@@ -39,5 +48,6 @@ export async function getSettings(conexion?: DbOrTx): Promise<AppSettings> {
     laborCostPerHour: Number(row.laborCostPerHour ?? 0),
     laborRatePerHour: Number(row.laborRatePerHour ?? 0),
     usdRate: rate > 0 ? rate : null,
+    viaticosProspectos: row.viaticosProspectos,
   };
 }

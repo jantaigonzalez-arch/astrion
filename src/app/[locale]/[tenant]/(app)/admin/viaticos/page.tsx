@@ -87,7 +87,15 @@ function TablaViaticos({
                   {administra ? (
                     <th className="px-4 py-2.5 font-medium">Ingeniero</th>
                   ) : null}
-                  <th className="px-4 py-2.5 font-medium">Contrato</th>
+                  {/*
+                    «Asunto» y no «Contrato»: desde la 0028 la columna enseña un
+                    contrato o un prospecto, y el rótulo viejo hacía leer los
+                    renglones de prospección como contratos que faltan.
+                  */}
+                  <th className="px-4 py-2.5 font-medium">Asunto</th>
+                  {administra ? (
+                    <th className="px-4 py-2.5 font-medium">A firma de</th>
+                  ) : null}
                   <th className="px-4 py-2.5 font-medium">Fechas</th>
                   <th data-num className="px-4 py-2.5 text-right font-medium">Autorizado</th>
                   <th data-num className="px-4 py-2.5 text-right font-medium">Gastado</th>
@@ -111,9 +119,28 @@ function TablaViaticos({
                         {v.solicitante ?? "—"}
                       </td>
                     ) : null}
-                    <td className="px-4 py-2.5 font-mono text-xs text-muted-foreground">
-                      {v.contractNumber}
+                    <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                      {v.contractNumber ? (
+                        <span className="font-mono">{v.contractNumber}</span>
+                      ) : (
+                        <>
+                          {v.prospecto}
+                          <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[11px]">
+                            prospecto
+                          </span>
+                        </>
+                      )}
                     </td>
+                    {administra ? (
+                      <td className="px-4 py-2.5 text-muted-foreground">
+                        {/*
+                          El guion es la respuesta correcta para los anteriores
+                          a la 0028: no es que falte el dato, es que ahí la
+                          firma seguía siendo de cualquiera que administre.
+                        */}
+                        {v.aprobador ?? "—"}
+                      </td>
+                    ) : null}
                     <td className="px-4 py-2.5 text-muted-foreground">
                       {fecha(v.departsOn)} – {fecha(v.returnsOn)}
                     </td>
@@ -192,11 +219,27 @@ export default async function ViaticosPage({
     La misma regla que titula la ficha, aplicada a la lista: los dos estados de
     captura son de quien viajó, los dos de firma son de quien administra. Se
     calcula aquí y no en la fila para no repetirlo en cada iteración.
+
+    ── Y DESDE LA 0028, «DE QUIEN ADMINISTRA» YA NO ES CUALQUIERA ────────────
+
+    Si el viático nombra aprobador, solo a él le toca. Sin esta condición la
+    marca «Te toca» le habría salido a las seis personas que administran gastos
+    en los viáticos de las otras cinco — que es exactamente el ruido que el
+    aprobador nombrado vino a quitar, reaparecido en la lista.
+
+    Nulo sigue significando «a cualquiera»: son las filas anteriores a la 0028 y
+    ahí la marca vieja es la respuesta correcta.
   */
-  const meToca = (f: { status: ViaticoEstado; solicitanteId: string | null }) =>
+  const yo = session?.user?.id ?? null;
+  const meToca = (f: {
+    status: ViaticoEstado;
+    solicitanteId: string | null;
+    aprobadorId: string | null;
+  }) =>
     administra
       ? (f.status === "enviado" || f.status === "en_revision") &&
-        f.solicitanteId !== (session?.user?.id ?? null)
+        f.solicitanteId !== yo &&
+        (f.aprobadorId === null || f.aprobadorId === yo)
       : f.status === "borrador" || f.status === "autorizado";
 
   const porEstado = new Map(conteos.map((c) => [c.k, c.n]));

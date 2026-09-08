@@ -308,7 +308,17 @@ const viaticos = dataset({
   columnas: [
     { titulo: "Folio", tipo: "texto", valor: (v) => v.reference, ancho: 18 },
     { titulo: "Ingeniero", tipo: "texto", valor: (v) => v.solicitante, ancho: 28 },
+    /*
+      DOS COLUMNAS Y NO UNA «asunto» combinada.
+
+      Quien se lleva esto a Excel filtra por una o por la otra —el contralor
+      mira contratos, Ventas mira prospección—, y una sola columna con las dos
+      cosas mezcladas obliga a partirla con una fórmula antes de poder usarla.
+      Vacío significa «este viaje no era de eso», que es una respuesta.
+    */
     { titulo: "Contrato", tipo: "texto", valor: (v) => v.contractNumber, ancho: 20 },
+    { titulo: "Prospecto", tipo: "texto", valor: (v) => v.prospecto, ancho: 28 },
+    { titulo: "Autoriza", tipo: "texto", valor: (v) => v.aprobador, ancho: 24 },
     { titulo: "Destino", tipo: "texto", valor: (v) => v.destination, ancho: 28 },
     { titulo: "Estado", tipo: "texto", valor: (v) => v.status },
     { titulo: "Salida", tipo: "fecha", valor: (v) => dia(v.departsOn) },

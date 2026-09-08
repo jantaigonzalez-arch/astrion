@@ -36,6 +36,16 @@ import type { DbOrTx } from "@/lib/db";
  * y vuelta: se pide y se autoriza (o se rechaza), se comprueba y se cierra (o
  * se devuelve). Cada uno de esos momentos deja a alguien esperando, y quien
  * espera es precisamente quien tiene que enterarse.
+ *
+ * El sexto, `viatico.reasignado`, no es una etapa del flujo sino un cambio de
+ * destinatario: desde la 0028 el viático se manda a una persona concreta, y
+ * reasignarlo le pone trabajo en la bandeja a alguien que no lo esperaba. Sin
+ * aviso, el documento cambiaría de manos en silencio y el nuevo firmante se
+ * enteraría cuando alguien fuera a preguntarle por qué no ha firmado.
+ *
+ * `kind` es `varchar`, no un enum de Postgres, así que ampliar esta lista no
+ * lleva migración. Es a propósito: los avisos se añaden a menudo y un enum
+ * obligaría a un `ALTER TYPE` por cada uno.
  */
 export const TIPOS_DE_AVISO = [
   "ticket.creado",
@@ -48,6 +58,7 @@ export const TIPOS_DE_AVISO = [
   "viatico.comprobado",
   "viatico.devuelto",
   "viatico.cerrado",
+  "viatico.reasignado",
 ] as const;
 export type TipoDeAviso = (typeof TIPOS_DE_AVISO)[number];
 

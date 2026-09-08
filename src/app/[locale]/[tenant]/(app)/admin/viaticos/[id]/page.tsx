@@ -5,10 +5,20 @@ import { auth } from "@/lib/auth";
 import { Link } from "@/lib/nav";
 import { redirectInTenant } from "@/lib/nav-server";
 import { puedeEn } from "@/lib/tenancy/context";
-import { getViatico, ticketsDelContrato } from "@/lib/data/viaticos";
+import {
+  getViatico,
+  negociosDelProspecto,
+  ticketsDelContrato,
+} from "@/lib/data/viaticos";
+import { aprobadoresPosibles } from "@/lib/domain/viaticos";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AccionesViatico, QuitarGasto } from "@/components/portal/viaticos/acciones";
+import {
+  AccionesViatico,
+  QuitarGasto,
+  ReasignarViatico,
+  ReclasificarGasto,
+} from "@/components/portal/viaticos/acciones";
 import { GastoForm } from "@/components/portal/viaticos/gasto-form";
 import {
   CATEGORIA_LABELS,
@@ -43,15 +53,29 @@ export default async function ViaticoPage({
 
   const soyElSolicitante = v.requestedById === yo;
   /*
-    PUEDO FIRMAR = puedo administrar Y no soy quien lo pidió.
+    PUEDO FIRMAR = puedo administrar, no soy quien lo pidió, Y ME LO MANDARON.
 
-    La segunda mitad es la que importa y la que se olvida: el administrador que
-    además viaja tiene permiso de módulo sobre sus propios viáticos. El servidor
-    lo rechaza igual —`firmaValida` en `domain/viaticos.ts`—, y aquí se repite
-    para que el botón ni siquiera aparezca. Que la pantalla y el guardia digan
-    lo mismo es lo que evita ofrecer una puerta que luego se cierra.
+    Las dos últimas mitades son las que importan y las que se olvidan:
+
+      · el administrador que además viaja tiene permiso de módulo sobre sus
+        propios viáticos;
+      · desde la 0028 el documento va a nombre de una persona, y quien
+        administra puede verlos todos sin que le toque firmar los de los demás.
+
+    Las tres condiciones son EXACTAMENTE las de `firmaValida()` en
+    `domain/viaticos.ts`, que es quien decide de verdad; aquí se repiten para que
+    el botón ni siquiera aparezca. Que la pantalla y el guardia digan lo mismo
+    es lo que evita ofrecer una puerta que luego se cierra — y sin la tercera,
+    a cinco personas les habría salido un «Autorizar» que responde «está a
+    nombre de otra persona».
+
+    Aprobador nulo sigue significando «cualquiera que administre»: son las filas
+    anteriores a la 0028.
   */
-  const puedoFirmar = administra && !soyElSolicitante;
+  const puedoFirmar =
+    administra &&
+    !soyElSolicitante &&
+    (v.approverId === null || v.approverId === yo);
 
   /*
     ¿La pelota es de quien está mirando?
@@ -73,10 +97,46 @@ export default async function ViaticoPage({
   const puedeCapturar = soyElSolicitante && v.status === "autorizado";
   const hayQueMostrarGastos = v.gastos.length > 0 || puedeCapturar;
 
-  // Los tickets solo hacen falta mientras se pueden capturar gastos.
+  /*
+    Lo que hace falta para capturar un gasto, y solo mientras se puede capturar.
+
+    De qué se llena el selector depende del ASUNTO: un viático de contrato carga
+    a tickets del servicio; uno de prospecto, a una oportunidad o a nada. Pedir
+    las dos cosas siempre serían dos consultas por pantalla para descartar una.
+  */
+  /*
+    ¿Tiene sentido reasignar? Solo mientras alguien tenga que firmar algo: en
+    borrador todavía no se ha mandado a nadie, y cerrado ya no hay nada que
+    mover. Los mismos tres estados que admite el dominio.
+  */
+  const puedeReasignarse =
+    v.status === "enviado" || v.status === "autorizado" || v.status === "en_revision";
+  // Sin el solicitante: no se firma lo que uno pide, tampoco tras una
+  // reasignación.
+  const aprobadores =
+    administra && puedeReasignarse ? await aprobadoresPosibles(v.requestedById) : [];
+
+  const capturando = soyElSolicitante && v.status === "autorizado";
+  /*
+    ¿Se pueden mover los renglones de sitio?
+
+    Solo quien firma, solo en revisión y solo en un viático de prospecto: en uno
+    de contrato los tres destinos se reducen a uno —el gasto va a un ticket del
+    servicio— y ofrecer un desplegable de una sola opción es ofrecer una
+    decisión que no existe.
+  */
+  const reclasificando =
+    puedoFirmar && v.status === "en_revision" && Boolean(v.organizationId);
   const tickets =
-    soyElSolicitante && v.status === "autorizado"
-      ? await ticketsDelContrato(v.contractId)
+    capturando && v.contractId ? await ticketsDelContrato(v.contractId) : [];
+  /*
+    Los negocios hacen falta también EN REVISIÓN, no solo al capturar: quien
+    firma reclasifica desde ahí, y el desplegable tiene que traer las mismas
+    opciones que tuvo quien capturó.
+  */
+  const negocios =
+    v.organizationId && (capturando || (puedoFirmar && v.status === "en_revision"))
+      ? await negociosDelProspecto(v.organizationId)
       : [];
 
   const loc = locale === "en" ? "en-US" : "es-MX";
@@ -97,14 +157,52 @@ export default async function ViaticoPage({
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {fecha(v.departsOn)} – {fecha(v.returnsOn)} ·{" "}
-            <Link
-              href={`/admin/contratos/${v.contractId}`}
-              className="font-mono hover:underline"
-            >
-              {v.contractNumber}
-            </Link>
+            {/*
+              EL ASUNTO, que es de uno de los dos tipos y nunca de los dos.
+
+              El contrato lleva al expediente del contrato; el prospecto, a su
+              ficha en Ventas. Enseñar «—» cuando falta el contrato habría sido
+              lo cómodo y lo que esconde el modelo: quien mira un viático de
+              prospección tiene que poder llegar a la empresa desde aquí igual
+              que llega al contrato en el otro caso.
+            */}
+            {v.contractId ? (
+              <Link
+                href={`/admin/contratos/${v.contractId}`}
+                className="font-mono hover:underline"
+              >
+                {v.contractNumber}
+              </Link>
+            ) : (
+              <Link
+                href={`/admin/organizaciones/${v.organizationId}`}
+                className="hover:underline"
+              >
+                {v.prospecto}
+                <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+                  prospecto
+                </span>
+              </Link>
+            )}
             {v.solicitante ? ` · ${v.solicitante}` : ""}
           </p>
+          {/*
+            EL NEGOCIO, cuando el viaje va por una oportunidad concreta. En su
+            propio renglón y no pegado al anterior: son dos cosas distintas —a
+            qué empresa se viaja y por qué trato— y juntarlas en una línea hacía
+            que se leyeran como una sola.
+          */}
+          {v.dealId ? (
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Por el negocio{" "}
+              <Link
+                href={`/admin/crm/negocios/${v.dealId}`}
+                className="text-primary hover:underline"
+              >
+                {v.negocio}
+              </Link>
+            </p>
+          ) : null}
         </div>
         <Badge className="ring-1 ring-border">{ESTADO_LABELS[v.status]}</Badge>
       </div>
@@ -127,6 +225,28 @@ export default async function ViaticoPage({
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-primary">
             {leToca ? "Te toca" : "En espera"}
           </p>
+          {/*
+            A NOMBRE DE QUIÉN ESTÁ, dicho antes que los botones.
+
+            Un viático que espera firma y no dice de quién la espera es el
+            documento que se queda parado dos semanas mientras cada uno supone
+            que lo mirará otro. Es exactamente lo que la 0028 vino a arreglar,
+            así que la respuesta va donde se hace la pregunta.
+
+            No aparece en los que no tienen aprobador —los anteriores a la
+            0028—: ahí la respuesta sigue siendo «cualquiera que administre», y
+            escribirlo en cada uno sería ruido.
+          */}
+          {v.approverId && !estaCerrado(v.status) ? (
+            <p className="mb-3 text-sm text-muted-foreground">
+              A firma de{" "}
+              <span className="font-medium text-foreground">
+                {v.aprobador ?? "—"}
+              </span>
+              {v.approverId === yo ? " · eres tú" : ""}
+            </p>
+          ) : null}
+
           <AccionesViatico
             id={v.id}
             estado={v.status}
@@ -135,6 +255,22 @@ export default async function ViaticoPage({
             estimado={Number(v.estimatedMxn)}
             gastos={v.gastos.length}
           />
+
+          {/*
+            REASIGNAR: la salida cuando quien tiene que firmar no está.
+
+            Solo para quien administra, y no solo para el aprobador actual —el
+            caso que esto resuelve es justamente que el aprobador actual está de
+            vacaciones—. Va debajo de las acciones y no entre ellas porque no es
+            una decisión sobre el viaje: es una decisión sobre quién lo mira.
+          */}
+          {administra && puedeReasignarse ? (
+            <ReasignarViatico
+              id={v.id}
+              actual={v.approverId}
+              aprobadores={aprobadores}
+            />
+          ) : null}
         </Card>
       ) : null}
 
@@ -297,7 +433,14 @@ export default async function ViaticoPage({
                   <th className="px-4 py-2.5 font-medium">Fecha</th>
                   <th className="px-4 py-2.5 font-medium">Categoría</th>
                   <th className="px-4 py-2.5 font-medium">Descripción</th>
-                  <th className="px-4 py-2.5 font-medium">Ticket</th>
+                  {/*
+                    «Se carga a» y no «Ticket»: desde la 0028 la columna
+                    contesta una pregunta más amplia —a qué se le imputa este
+                    gasto— y las tres respuestas posibles son un ticket, un
+                    negocio o nada. Dejarla titulada «Ticket» habría hecho leer
+                    los renglones comerciales como tickets que faltan.
+                  */}
+                  <th className="px-4 py-2.5 font-medium">Se carga a</th>
                   <th className="px-4 py-2.5 font-medium">Comprobante</th>
                   <th data-num className="px-4 py-2.5 text-right font-medium">Importe</th>
                   {soyElSolicitante && v.status === "autorizado" ? (
@@ -319,13 +462,48 @@ export default async function ViaticoPage({
                     </td>
                     <td className="px-4 py-2.5">{g.description}</td>
                     <td className="px-4 py-2.5">
-                      <Link
-                        href={`/tickets/${g.ticketId}`}
-                        className="font-mono text-xs text-primary hover:underline"
-                        title={g.ticketSubject}
-                      >
-                        {g.ticketReference}
-                      </Link>
+                      {g.ticketId ? (
+                        <Link
+                          href={`/tickets/${g.ticketId}`}
+                          className="font-mono text-xs text-primary hover:underline"
+                          title={g.ticketSubject ?? undefined}
+                        >
+                          {g.ticketReference}
+                        </Link>
+                      ) : g.dealId ? (
+                        <Link
+                          href={`/admin/crm/negocios/${g.dealId}`}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          {g.dealTitle}
+                        </Link>
+                      ) : (
+                        /*
+                          «Gasto comercial» con todas sus letras, y no un
+                          guion. El guion se lee como dato que falta, y este es
+                          un destino elegido: la diferencia importa justo
+                          cuando quien revisa decide si moverlo.
+                        */
+                        <span className="text-xs text-muted-foreground">
+                          Gasto comercial
+                        </span>
+                      )}
+                      {g.reclassifiedAt ? (
+                        <span
+                          className="ml-1.5 text-xs text-muted-foreground"
+                          title="Lo movió quien revisó la comprobación"
+                        >
+                          (reclasificado)
+                        </span>
+                      ) : null}
+                      {reclasificando ? (
+                        <ReclasificarGasto
+                          gastoId={g.id}
+                          negocios={negocios}
+                          actual={g.dealId ? "negocio" : "comercial"}
+                          dealActual={g.dealId}
+                        />
+                      ) : null}
                     </td>
                     <td className="px-4 py-2.5">
                       {g.receiptPath ? (
@@ -372,7 +550,12 @@ export default async function ViaticoPage({
 
         {soyElSolicitante && v.status === "autorizado" ? (
           <div className="border-t border-border bg-muted/20 p-5">
-            <GastoForm viaticoId={v.id} tickets={tickets} />
+            <GastoForm
+              viaticoId={v.id}
+              tickets={tickets}
+              negocios={negocios}
+              esProspecto={Boolean(v.organizationId)}
+            />
           </div>
         ) : null}
       </Card>

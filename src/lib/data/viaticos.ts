@@ -5,6 +5,7 @@ import { tenantDb } from "@/lib/tenancy/context";
 import {
   contractEquipment,
   contracts,
+  crmDeals,
   crmOrganizations,
   equipment,
   equipmentModules,
@@ -14,7 +15,19 @@ import {
   viaticos,
 } from "@/lib/db/schema";
 import { users } from "@/lib/db/platform";
+import { alias } from "drizzle-orm/pg-core";
 import type { ViaticoEstado } from "@/lib/viaticos";
+
+/**
+ * `users` otra vez, con otro nombre.
+ *
+ * Un viático nombra a dos personas —quien pide y quien firma— y las dos salen
+ * de la misma tabla. Sin alias, el segundo `join` chocaría con el primero y
+ * Postgres devolvería el nombre de quien pidió en las dos columnas: un fallo
+ * que no rompe nada y que en pantalla se lee como que todo el mundo se autoriza
+ * sus propios viajes.
+ */
+const aprobador = alias(users, "aprobador");
 
 /**
  * Lectura de viáticos.
@@ -42,10 +55,21 @@ export type ViaticoFila = {
   returnsOn: string;
   estimatedMxn: string;
   authorizedMxn: string | null;
-  contractNumber: string;
+  /**
+   * EL ASUNTO, en las dos formas que puede tener.
+   *
+   * Exactamente uno de los dos viene con valor —lo garantiza el CHECK de la
+   * 0028—, y por eso la pantalla puede pintar el que no sea nulo sin preguntar
+   * por un tercer campo que diga cuál mirar.
+   */
+  contractNumber: string | null;
+  prospecto: string | null;
   solicitante: string | null;
   /** Para saber si le toca mover a quien mira. Ver la lista. */
   solicitanteId: string;
+  /** A quién le toca firmar. Nulo en los anteriores a la 0028. */
+  aprobadorId: string | null;
+  aprobador: string | null;
   /** Cuántos gastos lleva cargados y por cuánto. */
   gastos: number;
   gastadoMxn: number;
@@ -96,8 +120,11 @@ export async function listViaticos(
       estimatedMxn: viaticos.estimatedMxn,
       authorizedMxn: viaticos.authorizedMxn,
       contractNumber: contracts.number,
+      prospecto: crmOrganizations.name,
       solicitante: users.name,
       solicitanteId: viaticos.requestedById,
+      aprobadorId: viaticos.approverId,
+      aprobador: aprobador.name,
       /*
         Subconsultas correlacionadas y no `left join` + `count`: con el join,
         cada viático se repetiría una vez por gasto antes de agrupar, y el
@@ -115,8 +142,21 @@ export async function listViaticos(
       )`,
     })
     .from(viaticos)
-    .innerJoin(contracts, eq(contracts.id, viaticos.contractId))
+    /*
+      LOS TRES `left` NO SON PRUDENCIA, SON EL MODELO.
+
+      El contrato era `inner` cuando era obligatorio. Desde la 0028 un viático
+      puede ser de un PROSPECTO, y con el `inner` esos desaparecían del listado
+      sin dejar rastro: ni error ni renglón, simplemente no salían. Es la peor
+      forma de fallar que hay, porque la pantalla se ve perfecta.
+
+      El prospecto va `left` por lo mismo desde el otro lado, y el aprobador
+      porque las filas anteriores a la 0028 no tienen ninguno.
+    */
+    .leftJoin(contracts, eq(contracts.id, viaticos.contractId))
+    .leftJoin(crmOrganizations, eq(crmOrganizations.id, viaticos.organizationId))
     .leftJoin(users, eq(users.id, viaticos.requestedById))
+    .leftJoin(aprobador, eq(aprobador.id, viaticos.approverId))
     .where(
       and(
         soloDe ? eq(viaticos.requestedById, soloDe) : undefined,
@@ -186,7 +226,12 @@ export async function getViatico(id: string, soloDe: string | null) {
       contractId: viaticos.contractId,
       contractNumber: contracts.number,
       contractAmountMxn: contracts.amountMxn,
+      organizationId: viaticos.organizationId,
+      prospecto: crmOrganizations.name,
+      dealId: viaticos.dealId,
+      negocio: crmDeals.title,
       requestedById: viaticos.requestedById,
+      approverId: viaticos.approverId,
       destination: viaticos.destination,
       purpose: viaticos.purpose,
       departsOn: viaticos.departsOn,
@@ -205,7 +250,13 @@ export async function getViatico(id: string, soloDe: string | null) {
       createdAt: viaticos.createdAt,
     })
     .from(viaticos)
-    .innerJoin(contracts, eq(contracts.id, viaticos.contractId))
+    // `left` los tres, y por lo mismo que en el listado: el asunto es de uno de
+    // los dos tipos, así que el `inner` al contrato devolvía `null` —no un
+    // viático de prospecto— y la pantalla enseñaba un 404 de un documento que
+    // sí existe.
+    .leftJoin(contracts, eq(contracts.id, viaticos.contractId))
+    .leftJoin(crmOrganizations, eq(crmOrganizations.id, viaticos.organizationId))
+    .leftJoin(crmDeals, eq(crmDeals.id, viaticos.dealId))
     .where(
       and(
         eq(viaticos.id, id),
@@ -229,9 +280,23 @@ export async function getViatico(id: string, soloDe: string | null) {
         ticketId: viaticoExpenses.ticketId,
         ticketReference: tickets.reference,
         ticketSubject: tickets.subject,
+        dealId: viaticoExpenses.dealId,
+        dealTitle: crmDeals.title,
+        reclassifiedById: viaticoExpenses.reclassifiedById,
+        reclassifiedAt: viaticoExpenses.reclassifiedAt,
       })
       .from(viaticoExpenses)
-      .innerJoin(tickets, eq(tickets.id, viaticoExpenses.ticketId))
+      /*
+        AQUÍ ESTABA EL `inner` MÁS CARO DE LOS TRES.
+
+        Un gasto comercial no tiene ticket, así que con el join interior no
+        aparecía en la pantalla —pero SÍ en la suma del cuadre, que se calcula
+        aparte—. El resultado habría sido una comprobación cuyos renglones no
+        suman el total que la propia pantalla muestra al lado, y ese es
+        exactamente el tipo de descuadre que nadie sabe explicar después.
+      */
+      .leftJoin(tickets, eq(tickets.id, viaticoExpenses.ticketId))
+      .leftJoin(crmDeals, eq(crmDeals.id, viaticoExpenses.dealId))
       .where(eq(viaticoExpenses.viaticoId, id))
       .orderBy(asc(viaticoExpenses.spentOn)),
     db
@@ -246,7 +311,7 @@ export async function getViatico(id: string, soloDe: string | null) {
       .innerJoin(equipmentModules, eq(equipmentModules.id, viaticoModules.moduleId))
       .innerJoin(equipment, eq(equipment.id, equipmentModules.equipmentId))
       .where(eq(viaticoModules.viaticoId, id)),
-    nombresDe([v.requestedById, v.approvedById, v.closedById]),
+    nombresDe([v.requestedById, v.approvedById, v.closedById, v.approverId]),
   ]);
 
   return {
@@ -256,6 +321,8 @@ export async function getViatico(id: string, soloDe: string | null) {
     solicitante: gente.get(v.requestedById) ?? null,
     autorizadoPor: v.approvedById ? (gente.get(v.approvedById) ?? null) : null,
     cerradoPor: v.closedById ? (gente.get(v.closedById) ?? null) : null,
+    /** A quién le toca firmar HOY, que no es lo mismo que quién firmó. */
+    aprobador: v.approverId ? (gente.get(v.approverId) ?? null) : null,
   };
 }
 
@@ -326,38 +393,156 @@ export async function contratosParaViatico() {
     .leftJoin(crmOrganizations, eq(crmOrganizations.clientId, contracts.clientId))
     .orderBy(desc(contracts.createdAt));
 
+  return filas.map((f) => ({
+    id: f.id,
+    number: f.number,
+    cliente: f.cliente,
+    endDate: f.endDate,
+    domicilio: armarDomicilio(f),
+  }));
+}
+
+/**
+ * PROSPECTOS PARA ELEGIR A CUÁL SE VIAJA, con el mismo domicilio que arriba.
+ *
+ * Se apoya en `ES_CLIENTE`, la misma regla que reparte las dos pantallas de
+ * Ventas y Clientes, negada. Que sea la misma expresión y no una copia es lo que
+ * garantiza que ninguna empresa quede fuera de las dos listas ni salga en las
+ * dos: el día que cambie qué cuenta como cliente, cambia aquí también.
+ *
+ * El domicilio se arma exactamente igual que en `contratosParaViatico`, y por la
+ * misma razón —que nadie teclee a mano una ciudad que el sistema ya tiene—. Se
+ * comparte el armador en vez de repetirlo: dos copias de esta lógica darían dos
+ * formatos de destino y ningún informe los agruparía.
+ */
+export async function prospectosParaViatico() {
+  const db = await tenantDb();
+  const { ES_CLIENTE } = await import("@/lib/data/crm");
+  const filas = await db
+    .select({
+      id: crmOrganizations.id,
+      name: crmOrganizations.name,
+      street: crmOrganizations.street,
+      extNumber: crmOrganizations.extNumber,
+      neighborhood: crmOrganizations.neighborhood,
+      municipality: crmOrganizations.municipality,
+      state: crmOrganizations.state,
+      postalCode: crmOrganizations.postalCode,
+      addressReference: crmOrganizations.addressReference,
+      address: crmOrganizations.address,
+    })
+    .from(crmOrganizations)
+    .where(sql`not ${ES_CLIENTE}`)
+    .orderBy(asc(crmOrganizations.name));
+
+  return filas.map((f) => ({
+    id: f.id,
+    name: f.name,
+    domicilio: armarDomicilio(f),
+  }));
+}
+
+/**
+ * Los negocios abiertos de un prospecto, para colgarle el viaje a uno.
+ *
+ * Solo los ABIERTOS: cargarle el costo de un viaje a una oportunidad que ya se
+ * ganó o se perdió cambia un número que alguien ya informó. Si de verdad el
+ * viaje fue por una oportunidad cerrada, va como gasto comercial, que es lo que
+ * de hecho fue.
+ */
+export async function negociosDelProspecto(organizationId: string) {
+  const db = await tenantDb();
+  return db
+    .select({
+      id: crmDeals.id,
+      reference: crmDeals.reference,
+      title: crmDeals.title,
+    })
+    .from(crmDeals)
+    .where(
+      and(eq(crmDeals.organizationId, organizationId), eq(crmDeals.status, "open")),
+    )
+    .orderBy(desc(crmDeals.createdAt));
+}
+
+/**
+ * Los negocios abiertos de VARIOS prospectos, en UNA consulta.
+ *
+ * Misma razón y misma forma que `modulosPorContrato`: el formulario los quiere
+ * cargados para llenar el selector sin ir a la red al cambiar de prospecto.
+ * Pedirlos uno por uno serían tantas consultas como prospectos tenga la empresa
+ * —ciento sesenta y uno hoy— para pintar una pantalla que se usa una vez.
+ */
+export async function negociosPorProspecto(
+  organizationIds: string[],
+): Promise<Map<string, Array<{ id: string; reference: string; title: string }>>> {
+  if (organizationIds.length === 0) return new Map();
+  const db = await tenantDb();
+  const filas = await db
+    .select({
+      organizationId: crmDeals.organizationId,
+      id: crmDeals.id,
+      reference: crmDeals.reference,
+      title: crmDeals.title,
+    })
+    .from(crmDeals)
+    .where(
+      and(
+        inArray(crmDeals.organizationId, organizationIds),
+        eq(crmDeals.status, "open"),
+      ),
+    )
+    .orderBy(desc(crmDeals.createdAt));
+
+  const out = new Map<string, Array<{ id: string; reference: string; title: string }>>();
+  for (const f of filas) {
+    if (!f.organizationId) continue;
+    const lista = out.get(f.organizationId) ?? [];
+    lista.push({ id: f.id, reference: f.reference, title: f.title });
+    out.set(f.organizationId, lista);
+  }
+  return out;
+}
+
+/**
+ * El domicilio en las tres piezas que usa el formulario.
+ *
+ * Sale de `contratosParaViatico`, donde estaba escrito a mano, en cuanto los
+ * prospectos necesitaron lo mismo. Ver allí por qué son tres y no una.
+ */
+function armarDomicilio(f: {
+  street: string | null;
+  extNumber: string | null;
+  neighborhood: string | null;
+  municipality: string | null;
+  state: string | null;
+  postalCode: string | null;
+  addressReference: string | null;
+  address: string | null;
+}) {
   const limpio = (v: string | null) => {
     const t = (v ?? "").trim();
     return t.length > 0 ? t : null;
   };
+  const municipio = limpio(f.municipality);
+  const estado = limpio(f.state);
+  const partes = [
+    [limpio(f.street), limpio(f.extNumber)].filter(Boolean).join(" ") || null,
+    limpio(f.neighborhood),
+    limpio(f.postalCode) ? `C.P. ${limpio(f.postalCode)}` : null,
+    municipio,
+    estado,
+  ].filter(Boolean);
 
-  return filas.map((f) => {
-    const municipio = limpio(f.municipality);
-    const estado = limpio(f.state);
-    const partes = [
-      [limpio(f.street), limpio(f.extNumber)].filter(Boolean).join(" ") || null,
-      limpio(f.neighborhood),
-      limpio(f.postalCode) ? `C.P. ${limpio(f.postalCode)}` : null,
-      municipio,
-      estado,
-    ].filter(Boolean);
-
-    return {
-      id: f.id,
-      number: f.number,
-      cliente: f.cliente,
-      endDate: f.endDate,
-      domicilio: {
-        // Solo con los DOS. «Monterrey» sin estado no distingue entre el de
-        // Nuevo León y cualquier homónimo, y un destino ambiguo en un viático
-        // acaba siendo un vuelo a la ciudad equivocada.
-        sugerencia: municipio && estado ? `${municipio}, ${estado}` : null,
-        completo: partes.length > 0 ? partes.join(" · ") : null,
-        crudo: partes.length === 0 ? limpio(f.address) : null,
-        seña: limpio(f.addressReference),
-      },
-    };
-  });
+  return {
+    // Solo con los DOS. «Monterrey» sin estado no distingue entre el de Nuevo
+    // León y cualquier homónimo, y un destino ambiguo en un viático acaba
+    // siendo un vuelo a la ciudad equivocada.
+    sugerencia: municipio && estado ? `${municipio}, ${estado}` : null,
+    completo: partes.length > 0 ? partes.join(" · ") : null,
+    crudo: partes.length === 0 ? limpio(f.address) : null,
+    seña: limpio(f.addressReference),
+  };
 }
 
 export type ModuloDelContrato = {
@@ -527,7 +712,99 @@ export async function viaticosPorTicket(
       ),
     )
     .groupBy(viaticoExpenses.ticketId);
-  return new Map(filas.map((f) => [f.ticketId, Number(f.total)]));
+  // El `inArray` de arriba ya deja fuera los gastos sin ticket —los comerciales,
+  // desde la 0028—, así que aquí no queda ninguno nulo. El filtro está para
+  // decírselo al compilador, que solo ve una columna nulable.
+  return new Map(
+    filas
+      .filter((f): f is typeof f & { ticketId: string } => f.ticketId !== null)
+      .map((f) => [f.ticketId, Number(f.total)]),
+  );
+}
+
+/**
+ * COSTO DE VIAJE DE UN NEGOCIO: lo que llevamos gastado en cerrarlo.
+ *
+ * Suma los gastos que quien firmó cargó a esa oportunidad, y solo de viáticos
+ * cerrados —misma disciplina que `viaticosPorTicket`, y por la misma razón: un
+ * anticipo todavía no es un costo—.
+ *
+ * Se pregunta por el GASTO y no por el viático: un viaje de prospección puede
+ * cargarle una comida a la oportunidad y dejar el hotel como gasto comercial, y
+ * lo que la ficha del negocio tiene que enseñar es lo primero. Sumar el viático
+ * entero le cargaría al negocio el viaje completo, que es justo la mentira que
+ * el reparto por renglón vino a evitar.
+ */
+export async function viaticosPorNegocio(
+  dealIds: string[],
+  conexion?: DbOrTx,
+): Promise<Map<string, number>> {
+  if (dealIds.length === 0) return new Map();
+  const db = conexion ?? (await tenantDb());
+  const filas = await db
+    .select({
+      dealId: viaticoExpenses.dealId,
+      total: sql<number>`coalesce(sum(${viaticoExpenses.amountMxn}), 0)::float8`,
+    })
+    .from(viaticoExpenses)
+    .innerJoin(viaticos, eq(viaticos.id, viaticoExpenses.viaticoId))
+    .where(and(inArray(viaticoExpenses.dealId, dealIds), eq(viaticos.status, "cerrado")))
+    .groupBy(viaticoExpenses.dealId);
+  return new Map(
+    filas
+      .filter((f): f is typeof f & { dealId: string } => f.dealId !== null)
+      .map((f) => [f.dealId, Number(f.total)]),
+  );
+}
+
+/**
+ * Costo de viaje de un PROSPECTO: todo lo que se gastó yendo a verlo.
+ *
+ * A diferencia del negocio, aquí sí se suma el viático entero —incluido lo
+ * comercial suelto—, porque la pregunta es otra: cuánto llevamos invertido en
+ * esta empresa, sin importar a qué oportunidad se le apuntó cada cena.
+ */
+export async function viaticosDelProspecto(
+  organizationId: string,
+  conexion?: DbOrTx,
+) {
+  const db = conexion ?? (await tenantDb());
+  const [[total], porCategoria] = await Promise.all([
+    db
+      .select({
+        n: sql<number>`count(distinct ${viaticos.id})::int`,
+        total: sql<number>`coalesce(sum(${viaticoExpenses.amountMxn}), 0)::float8`,
+      })
+      .from(viaticoExpenses)
+      .innerJoin(viaticos, eq(viaticos.id, viaticoExpenses.viaticoId))
+      .where(
+        and(
+          eq(viaticos.organizationId, organizationId),
+          eq(viaticos.status, "cerrado"),
+        ),
+      ),
+    db
+      .select({
+        k: viaticoExpenses.category,
+        total: sql<number>`coalesce(sum(${viaticoExpenses.amountMxn}), 0)::float8`,
+      })
+      .from(viaticoExpenses)
+      .innerJoin(viaticos, eq(viaticos.id, viaticoExpenses.viaticoId))
+      .where(
+        and(
+          eq(viaticos.organizationId, organizationId),
+          eq(viaticos.status, "cerrado"),
+        ),
+      )
+      .groupBy(viaticoExpenses.category)
+      .orderBy(desc(sql`sum(${viaticoExpenses.amountMxn})`)),
+  ]);
+
+  return {
+    viajes: total?.n ?? 0,
+    costo: Number(total?.total ?? 0),
+    porCategoria: porCategoria.map((c) => ({ k: c.k, total: Number(c.total) })),
+  };
 }
 
 /**
@@ -536,8 +813,12 @@ export async function viaticosPorTicket(
  * Se pregunta por contrato y no sumando los tickets porque son dos preguntas
  * distintas: esto incluye TODOS los gastos del viático, y la suma por ticket
  * solo cubriría los que se cargaron a un ticket que además siga existiendo.
- * Hoy dan lo mismo —el ticket es obligatorio en cada gasto— y conviene que la
- * cifra del contrato no dependa de que eso siga siendo cierto.
+ *
+ * Dejaron de dar lo mismo en la 0028, y por eso estaba bien escrito así: el
+ * ticket ya no es obligatorio en cada gasto. Un viático DE CONTRATO sigue
+ * exigiéndolo —lo hace cumplir `destinoValido()`—, así que esta cifra no cambia
+ * hoy; el día que se admita un gasto suelto en un viaje de servicio, esta la
+ * cuenta y la suma por ticket no, que es la diferencia que se quería conservar.
  */
 export async function viaticosDelContrato(contractId: string, conexion?: DbOrTx) {
   const db = conexion ?? (await tenantDb());

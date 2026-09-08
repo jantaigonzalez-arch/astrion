@@ -28,6 +28,11 @@
  *
  *   4 · EL REPARTO DE PERMISOS del rol nuevo, módulo por módulo.
  *
+ *   5 · LO QUE TRAJO LA 0028: que el asunto sea uno de dos y nunca ninguno,
+ *       que un gasto no pueda ir a un ticket y a un negocio a la vez, y que un
+ *       aprobador NOMBRADO sea el único que puede tocar el documento — ni el
+ *       que lo pidió ni otro administrador que pase por ahí.
+ *
  * TODO CORRE DENTRO DE UNA TRANSACCIÓN QUE SE DESHACE. La base local es una
  * copia de producción con clientes reales: este probe no puede dejar un viático
  * inventado colgando de un contrato de verdad.
@@ -42,6 +47,16 @@ const { sql } = await import("drizzle-orm");
 const { computeProfit } = await import("./src/lib/profit.ts");
 const { cuadre, saldoEnPalabras } = await import("./src/lib/viaticos.ts");
 const { nivelEfectivo } = await import("./src/lib/permisos.ts");
+/*
+  El dominio, importado de verdad y no reimplementado.
+
+  `reclassifyExpense` es la única transición que se puede ejercitar desde aquí:
+  las demás leen `memberships` con `listTenantMembers()`, que necesita el
+  contexto de una petición y en un script no existe. Esta no lo necesita —recibe
+  `puedeAdministrar` ya resuelto—, así que se prueba el guardia REAL y no una
+  copia suya, que es la que se quedaría vieja.
+*/
+const { reclassifyExpense } = await import("./src/lib/domain/viaticos.ts");
 
 const db = tenantDbFor("tenant_evoelution");
 let fallos = 0;
@@ -278,6 +293,216 @@ await db
       `dio ${e7}`,
     );
     await tx.execute(sql`rollback to savepoint s1`);
+
+    /* ══════════ 5 · Lo que trajo la 0028 ══════════ */
+
+    /*
+      LAS DOS EMPRESAS Y SUS NEGOCIOS SE CREAN AQUÍ, no se buscan.
+
+      La siembra sintética no genera negocios —avisa «el embudo no tiene
+      etapas» y los omite—, así que buscarlos habría dejado esta mitad del probe
+      sin correr en el CI: verde por no haber probado nada, que es justamente lo
+      que este archivo existe para evitar.
+
+      Crearlos también es lo correcto por sí mismo: lo que se comprueba es un
+      cruce ENTRE dos empresas distintas, y depender de que el padrón traiga dos
+      con oportunidad abierta es depender de un dato que nadie sostiene.
+
+      ── TODO LO QUE HAGA FALTA DESPUÉS SE CREA ANTES DEL SAVEPOINT ──────────
+
+      Cada aserción de restricción termina con `rollback to savepoint s28`,
+      porque una violación de CHECK aborta la transacción entera y sin volver al
+      savepoint no se puede seguir. El precio es que TODO lo creado después del
+      savepoint desaparece en el primer rechazo. Costó dos «Failed query» que no
+      nombraban la causa —el insert válido fallaba porque su organización ya no
+      existía—, así que el orden es: primero lo que tiene que sobrevivir,
+      después el savepoint, y al final lo que se espera que falle.
+    */
+    const [{ id: pipelineId }] = (await tx.execute(sql`
+      insert into crm_pipelines (name) values ('PROBE embudo')
+      returning id::text as id`)) as any;
+    const [{ id: stageId }] = (await tx.execute(sql`
+      insert into crm_stages (pipeline_id, name) values (${pipelineId}::uuid, 'PROBE etapa')
+      returning id::text as id`)) as any;
+
+    const crearOrgConNegocio = async (n: string) => {
+      const [{ id: org }] = (await tx.execute(sql`
+        insert into crm_organizations (name) values (${`PROBE org ${n}`})
+        returning id::text as id`)) as any;
+      const [{ id: deal }] = (await tx.execute(sql`
+        insert into crm_deals (reference, title, pipeline_id, stage_id, organization_id)
+        values (${`PROBE-D-${n}`}, ${`PROBE negocio ${n}`}, ${pipelineId}::uuid,
+                ${stageId}::uuid, ${org}::uuid)
+        returning id::text as id`)) as any;
+      return { org: org as string, deal: deal as string };
+    };
+
+    const A = await crearOrgConNegocio("A");
+    const B = await crearOrgConNegocio("B");
+    ok("se crearon dos empresas con negocio para probar", A.org !== B.org);
+
+    /* Otra persona, para las pruebas de firma cruzada. */
+    const [{ id: otro }] = (await tx.execute(sql`
+      select id::text as id from public.users where id <> ${userId}::uuid limit 1`)) as any;
+    ok("hay una segunda persona con la que probar la firma", Boolean(otro));
+
+    console.log("\nEL ASUNTO ES UNO DE DOS, Y LA BASE LO EXIGE");
+
+    /* El que sí vale: viaje a prospecto, con su negocio y su aprobador. */
+    const [vProsp] = (await tx.execute(sql`
+      insert into viaticos (reference, organization_id, deal_id, requested_by_id,
+                            approver_id, destination, purpose, departs_on, returns_on,
+                            estimated_mxn, status)
+      values ('PROBE-28-OK', ${A.org}::uuid, ${A.deal}::uuid, ${userId}::uuid,
+              ${userId}::uuid, 'PROBE', 'PROBE', current_date, current_date + 1,
+              5000, 'en_revision')
+      returning id::text as id`)) as any;
+    ok("un viaje a prospecto con negocio SÍ entra", Boolean(vProsp?.id));
+
+    /*
+      El gasto comercial suelto: sin ticket y sin negocio. Es el caso que la
+      0028 vino a permitir, así que tiene que entrar sin protestar — y es el
+      renglón sobre el que se prueba después quién puede moverlo.
+    */
+    const [gCom] = (await tx.execute(sql`
+      insert into viatico_expenses (viatico_id, category, description, amount_mxn, spent_on)
+      values (${vProsp.id}::uuid, 'comida', 'comida de prospección', 800, current_date)
+      returning id::text as id`)) as any;
+    ok("un gasto comercial SIN ticket ni negocio sí entra", Boolean(gCom?.id));
+
+    await tx.execute(sql`savepoint s28`);
+
+    const a1 = await debeFallar(
+      tx,
+      sql`insert into viaticos (reference, requested_by_id, destination, purpose,
+                                departs_on, returns_on, estimated_mxn)
+          values ('PROBE-28-A', ${userId}::uuid, 'X', 'X',
+                  current_date, current_date, 5000)`,
+    );
+    ok("un viático SIN asunto se rechaza", a1 === "23514", `dio ${a1}`);
+    await tx.execute(sql`rollback to savepoint s28`);
+
+    const a2 = await debeFallar(
+      tx,
+      sql`insert into viaticos (reference, contract_id, organization_id, requested_by_id,
+                                destination, purpose, departs_on, returns_on, estimated_mxn)
+          values ('PROBE-28-B', ${contractId}::uuid, ${A.org}::uuid, ${userId}::uuid,
+                  'X', 'X', current_date, current_date, 5000)`,
+    );
+    ok("un viático con LOS DOS asuntos se rechaza", a2 === "23514", `dio ${a2}`);
+    await tx.execute(sql`rollback to savepoint s28`);
+
+    // El negocio cuelga del prospecto, no del contrato: sin esto se podría
+    // guardar un viático de contrato con una oportunidad pegada, y nadie sabría
+    // qué significa esa combinación.
+    const a3 = await debeFallar(
+      tx,
+      sql`insert into viaticos (reference, contract_id, deal_id, requested_by_id,
+                                destination, purpose, departs_on, returns_on, estimated_mxn)
+          values ('PROBE-28-C', ${contractId}::uuid, ${A.deal}::uuid, ${userId}::uuid,
+                  'X', 'X', current_date, current_date, 5000)`,
+    );
+    ok("un negocio colgado de un CONTRATO se rechaza", a3 === "23514", `dio ${a3}`);
+    await tx.execute(sql`rollback to savepoint s28`);
+
+    console.log("\nEL GASTO VA A UN SITIO, A OTRO O A NINGUNO");
+
+    const g1 = await debeFallar(
+      tx,
+      sql`insert into viatico_expenses (viatico_id, ticket_id, deal_id, category,
+                                        description, amount_mxn, spent_on)
+          values (${vProsp.id}::uuid, ${ticketId}::uuid, ${A.deal}::uuid, 'comida',
+                  'a dos sitios', 100, current_date)`,
+    );
+    ok("un gasto con ticket Y negocio se rechaza", g1 === "23514", `dio ${g1}`);
+    await tx.execute(sql`rollback to savepoint s28`);
+
+    console.log("\nSOLO FIRMA QUIEN TIENE EL VIÁTICO A SU NOMBRE");
+
+    /*
+      De aquí en adelante se llama al DOMINIO, no a la base.
+
+      Sus resultados son datos —`{ ok, reason }`— y no excepciones, así que
+      ninguno aborta la transacción y no hace falta volver al savepoint entre
+      uno y otro. Que se pueda encadenar así es consecuencia de esa decisión de
+      diseño, no casualidad.
+    */
+    const rOtro = await reclassifyExpense(tx, {
+      expenseId: gCom.id,
+      actorId: otro,
+      puedeAdministrar: true,
+      destino: { tipo: "negocio", dealId: A.deal },
+    });
+    ok(
+      "otro administrador NO puede firmar lo que no está a su nombre",
+      !rOtro.ok && rOtro.reason.includes("otra persona"),
+      rOtro.ok ? "lo dejó pasar" : rOtro.reason,
+    );
+
+    // El viático está a nombre de quien lo pidió —se puede, la base no lo
+    // impide— y aun así no puede firmarlo. Es la regla que sostiene el módulo:
+    // tener el documento a tu nombre no te convierte en quien lo revisa.
+    const rMio = await reclassifyExpense(tx, {
+      expenseId: gCom.id,
+      actorId: userId,
+      puedeAdministrar: true,
+      destino: { tipo: "negocio", dealId: A.deal },
+    });
+    ok(
+      "y quien lo pidió tampoco, aunque lo tenga a su nombre",
+      !rMio.ok && rMio.reason.includes("pediste tú"),
+      rMio.ok ? "lo dejó pasar" : rMio.reason,
+    );
+
+    /* Ahora con un aprobador que NO es el solicitante: tiene que poder. */
+    await tx.execute(sql`
+      update viaticos set approver_id = ${otro}::uuid where id = ${vProsp.id}::uuid`);
+
+    const rCruzado = await reclassifyExpense(tx, {
+      expenseId: gCom.id,
+      actorId: otro,
+      puedeAdministrar: true,
+      // El negocio es de OTRA empresa: cargarle la cena de una a la oportunidad
+      // de otra es lo que el informe comercial daría por bueno sin esto.
+      destino: { tipo: "negocio", dealId: B.deal },
+    });
+    ok(
+      "un negocio de OTRA empresa se rechaza",
+      !rCruzado.ok && rCruzado.reason.includes("no es de la empresa"),
+      rCruzado.ok ? "lo dejó pasar" : rCruzado.reason,
+    );
+
+    const rOk = await reclassifyExpense(tx, {
+      expenseId: gCom.id,
+      actorId: otro,
+      puedeAdministrar: true,
+      destino: { tipo: "negocio", dealId: A.deal },
+    });
+    ok("el aprobador nombrado SÍ mueve el gasto", rOk.ok, rOk.ok ? "" : rOk.reason);
+
+    const [gDespues] = (await tx.execute(sql`
+      select deal_id::text as deal, reclassified_by_id::text as quien
+        from viatico_expenses where id = ${gCom.id}::uuid`)) as any;
+    ok("quedó cargado al negocio", gDespues.deal === A.deal, `dio ${gDespues.deal}`);
+    // El rastro es media razón de que la columna exista: sin él, meses después
+    // nadie puede decir quién decidió que esa cena fuera del negocio.
+    ok("y queda escrito quién lo movió", gDespues.quien === otro, `dio ${gDespues.quien}`);
+
+    /* Cerrado ya no se toca: el costo entró en la utilidad. */
+    await tx.execute(sql`
+      update viaticos set status = 'cerrado' where id = ${vProsp.id}::uuid`);
+    const rCerrado = await reclassifyExpense(tx, {
+      expenseId: gCom.id,
+      actorId: otro,
+      puedeAdministrar: true,
+      destino: { tipo: "comercial" },
+    });
+    ok(
+      "un viático cerrado ya no se reclasifica",
+      !rCerrado.ok && rCerrado.reason.includes("cerrado"),
+      rCerrado.ok ? "lo dejó pasar" : rCerrado.reason,
+    );
+
 
     // DESHACER: nada de esto queda. Ver la cabecera.
     throw new Error("__rollback__");

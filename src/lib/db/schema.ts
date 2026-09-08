@@ -527,6 +527,23 @@ export const settings = pgTable("settings", {
    * fila en vez de la copia estampada.
    */
   usdRate: numeric("usd_rate", { precision: 12, scale: 4 }),
+
+  /**
+   * ¿Se pagan viajes a quien todavía no es cliente?
+   *
+   * Es una decisión de la empresa y no una función del programa: hay quien
+   * manda al ingeniero a ver una planta antes de venderle nada y hay quien no.
+   * Apagado de fábrica, porque encenderlo por omisión le cambiaría la práctica
+   * a cualquiera que actualice sin haberlo pedido —le aparecería una opción
+   * nueva en el formulario de todo su equipo— y el módulo de viáticos existe
+   * justamente para controlar ese gasto.
+   *
+   * QUIÉN puede usarlo no se decide aquí: sale de la hoja de permisos que ya
+   * existe por persona. Este interruptor solo dice si la empresa lo permite.
+   * Ver `lib/permisos.ts` y `domain/viaticos.ts`.
+   */
+  viaticosProspectos: boolean("viaticos_prospectos").notNull().default(false),
+
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -1638,7 +1655,7 @@ export const requisitions = pgTable(
     /** Folio legible: EVO-R-000123. La R lo distingue de la orden (C). */
     reference: varchar("reference", { length: 30 }).notNull().unique(),
     /** El pedido que la originó. Nulo = reposición de existencias. */
-    dealId: uuid("deal_id").references((): AnyPgColumn => crmDeals.id, {
+    dealId: uuid("deal_id").references(() => crmDeals.id, {
       onDelete: "set null",
     }),
     title: varchar("title", { length: 240 }).notNull(),
@@ -2908,10 +2925,63 @@ export const viaticos = pgTable(
     /** Folio legible: EVO-V-000123. La V no la usa ningún otro documento. */
     reference: varchar("reference", { length: 30 }).notNull().unique(),
 
-    /** A qué contrato se le carga. Ver la nota de arriba. */
-    contractId: uuid("contract_id")
-      .notNull()
-      .references(() => contracts.id, { onDelete: "restrict" }),
+    /**
+     * A qué contrato se le carga. Ver la nota de arriba.
+     *
+     * NULO cuando el viaje es a un PROSPECTO, que todavía no tiene contrato. Es
+     * una de las dos llaves de asunto y un CHECK exige que vaya exactamente
+     * una: ver `organizationId` y la migración 0028.
+     */
+    contractId: uuid("contract_id").references(() => contracts.id, {
+      onDelete: "restrict",
+    }),
+
+    /**
+     * A qué PROSPECTO se viaja, cuando no hay contrato.
+     *
+     * La otra mitad del asunto. Se viaja a ver a una planta que aún no ha
+     * comprado nada, y ese gasto existía igual: antes se metía en el contrato de
+     * otro cliente —falseando su rentabilidad— o no se pedía por el sistema.
+     *
+     * `restrict` por lo mismo que el contrato: borrar la ficha de una empresa a
+     * la que se le viajó dejaría un gasto sin destinatario.
+     */
+    organizationId: uuid("organization_id").references(() => crmOrganizations.id, {
+      onDelete: "restrict",
+    }),
+
+    /**
+     * La oportunidad concreta, si la hay. OPCIONAL, y solo con prospecto.
+     *
+     * Se prospecta antes de que haya negocio abierto: obligar a crear uno para
+     * poder pedir el viaje produciría oportunidades inventadas de una línea.
+     * Cuando sí existe, el costo del viaje se puede leer por negocio, que es la
+     * pregunta que hace Ventas —«¿cuánto llevamos gastado en cerrar esto?»—.
+     *
+     * `set null` y no `restrict`: la oportunidad es una etiqueta de gestión que
+     * se borra sin drama, y el viaje sigue siendo de esa empresa.
+     */
+    dealId: uuid("deal_id").references(() => crmDeals.id, {
+      onDelete: "set null",
+    }),
+
+    /**
+     * A QUIÉN SE LE MANDA A FIRMAR. Nulo = a quien lo vea.
+     *
+     * Antes la solicitud se anunciaba a todo el que pudiera administrar
+     * viáticos y la firmaba el primero que la mirara. Con dos personas funciona;
+     * con seis, cada una supone que la verá otra. Ahora quien pide elige, y solo
+     * esa persona firma —autorizar, rechazar, devolver y cerrar—.
+     *
+     * Nulable a propósito: nulo es el comportamiento viejo, que es lo que deja
+     * seguir su curso a las filas anteriores a la 0028 sin inventarles un
+     * aprobador retroactivo. Para los nuevos lo exige `domain/viaticos.ts`, que
+     * es donde puede exigirse: comprobar que el elegido pueda administrar
+     * viáticos obliga a leer `memberships`, que vive en otro esquema.
+     */
+    approverId: uuid("approver_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
 
     /**
      * Quién viaja. `restrict` y no `set null`: un viático sin solicitante es un
@@ -2985,6 +3055,20 @@ export const viaticos = pgTable(
     index("viaticos_solicitante_idx").on(t.requestedById, t.createdAt),
     /** El costo de viaje de un contrato: lo lee la utilidad. */
     index("viaticos_contrato_idx").on(t.contractId),
+    /** Su contraparte: el costo de viaje de un prospecto. */
+    index("viaticos_organizacion_idx").on(t.organizationId),
+    /**
+     * «Lo que espera MI firma».
+     *
+     * Mismo diseño que el índice del listado y por la misma lección de 0027:
+     * lleva el `created_at desc, id desc` del ORDER BY y no solo el filtro, así
+     * que la bandeja se llena recorriendo el índice.
+     */
+    index("viaticos_aprobador_idx").on(
+      t.approverId,
+      desc(t.createdAt),
+      desc(t.id),
+    ),
   ],
 );
 
@@ -3048,10 +3132,36 @@ export const viaticoExpenses = pgTable(
       .notNull()
       .references((): AnyPgColumn => viaticos.id, { onDelete: "cascade" }),
 
-    /** A qué servicio pertenece este gasto. Ver la nota de arriba. */
-    ticketId: uuid("ticket_id")
-      .notNull()
-      .references(() => tickets.id, { onDelete: "restrict" }),
+    /**
+     * A qué servicio pertenece este gasto. Ver la nota de arriba.
+     *
+     * NULO en un viaje a prospecto, donde no hay servicio al que cargarlo. Ver
+     * `dealId`: entre los dos definen los tres destinos posibles de un gasto.
+     */
+    ticketId: uuid("ticket_id").references(() => tickets.id, {
+      onDelete: "restrict",
+    }),
+
+    /**
+     * LOS TRES DESTINOS DE UN GASTO, y quién los decide.
+     *
+     *   ticketId → entra en la utilidad de ese servicio (lo de siempre)
+     *   dealId   → es costo de esa oportunidad
+     *   ninguno  → GASTO COMERCIAL SUELTO
+     *
+     * Un CHECK admite como mucho uno. «Ninguno» es un destino legítimo —la
+     * mayoría de las comidas de un viaje de prospección no son de una
+     * oportunidad concreta, son del viaje— y por eso aquí no se exige
+     * exactamente uno, a diferencia del asunto de la cabecera.
+     *
+     * El gasto comercial suelto NO entra en la utilidad de ningún ticket ni de
+     * ningún contrato, porque no tiene dónde entrar; sale en su propio informe.
+     * Repartirlo entre contratos volvería a falsear justo lo que este módulo
+     * vino a arreglar.
+     */
+    dealId: uuid("deal_id").references(() => crmDeals.id, {
+      onDelete: "set null",
+    }),
 
     category: viaticoCategoria("category").notNull(),
     /**
@@ -3071,13 +3181,43 @@ export const viaticoExpenses = pgTable(
     /** El ticket de compra escaneado. Nulo = sin comprobante, y se marca. */
     receiptPath: text("receipt_path"),
 
+    /**
+     * QUIEN CAPTURA PROPONE, QUIEN FIRMA DISPONE.
+     *
+     * El ingeniero carga el gasto con el destino que le parece; el aprobador lo
+     * reclasifica mientras el documento está `en_revision`, antes de dar el
+     * visto bueno. Aquí queda el rastro de esa decisión.
+     *
+     * No basta con `closed_by_id` del viático: un documento devuelto se revisa
+     * dos veces, a veces por personas distintas, y la pregunta que se hace
+     * meses después no es quién cerró el viático sino quién decidió que ESTA
+     * cena fuera costo de aquel negocio.
+     */
+    reclassifiedById: uuid("reclassified_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    reclassifiedAt: timestamp("reclassified_at", { withTimezone: true }),
+
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     /** Los gastos de un viático, como los pinta la pantalla. */
     index("viatico_expenses_viatico_idx").on(t.viaticoId, t.spentOn),
-    /** Lo que este servicio costó en viaje. Lo lee la utilidad del ticket. */
-    index("viatico_expenses_ticket_idx").on(t.ticketId),
+    /**
+     * Lo que este servicio costó en viaje. Lo lee la utilidad del ticket.
+     *
+     * PARCIAL desde 0028: con `ticket_id` nulable, el gasto comercial —que es
+     * la mayoría en un viaje de prospección— dejaría en el índice entradas que
+     * ninguna consulta puede usar. La única pregunta que se le hace es «los
+     * gastos de estos tickets», y esa pregunta ya implica NOT NULL.
+     */
+    index("viatico_expenses_ticket_idx")
+      .on(t.ticketId)
+      .where(sql`${t.ticketId} is not null`),
+    /** Lo mismo para el negocio, desde el primer día. */
+    index("viatico_expenses_negocio_idx")
+      .on(t.dealId)
+      .where(sql`${t.dealId} is not null`),
   ],
 );
 
@@ -3085,6 +3225,19 @@ export const viaticosRelations = relations(viaticos, ({ one, many }) => ({
   contract: one(contracts, {
     fields: [viaticos.contractId],
     references: [contracts.id],
+  }),
+  organization: one(crmOrganizations, {
+    fields: [viaticos.organizationId],
+    references: [crmOrganizations.id],
+  }),
+  deal: one(crmDeals, {
+    fields: [viaticos.dealId],
+    references: [crmDeals.id],
+  }),
+  approver: one(users, {
+    fields: [viaticos.approverId],
+    references: [users.id],
+    relationName: "viatico_aprobador",
   }),
   requestedBy: one(users, {
     fields: [viaticos.requestedById],
@@ -3124,5 +3277,14 @@ export const viaticoExpensesRelations = relations(viaticoExpenses, ({ one }) => 
   ticket: one(tickets, {
     fields: [viaticoExpenses.ticketId],
     references: [tickets.id],
+  }),
+  deal: one(crmDeals, {
+    fields: [viaticoExpenses.dealId],
+    references: [crmDeals.id],
+  }),
+  reclassifiedBy: one(users, {
+    fields: [viaticoExpenses.reclassifiedById],
+    references: [users.id],
+    relationName: "gasto_reclasifica",
   }),
 }));

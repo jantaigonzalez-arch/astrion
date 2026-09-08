@@ -44,6 +44,8 @@ import {
   ActivityToggle,
   NoteForm,
 } from "@/components/portal/crm/deal-panels";
+import { CostoDeViaje } from "@/components/portal/viaticos/costo-de-viaje";
+import { viaticosDelProspecto } from "@/lib/data/viaticos";
 
 export default async function OrganizationDetailPage({
   params,
@@ -74,6 +76,18 @@ export default async function OrganizationDetailPage({
   */
   const kind = await kindDeOrganizacion(org.id);
   const esCliente = kind === "client";
+
+  /*
+    LO QUE SE HA GASTADO EN IR A VER A ESTA EMPRESA.
+
+    Se pide para las dos mitades —cliente y prospecto— y no solo para los
+    prospectos: una empresa que hoy es cliente tuvo antes viajes de prospección
+    colgados de esta misma ficha, y esconderlos al ganarla haría desaparecer lo
+    que costó ganarla justo en el momento en que la pregunta empieza a tener
+    respuesta. Es la misma ficha en dos momentos, como dice el encabezado de
+    Prospectos.
+  */
+  const viajes = await viaticosDelProspecto(org.id);
 
   const openDeals = org.deals.filter((d) => d.status === "open");
   const openValue = openDeals.reduce((a, d) => a + Number(d.valueMxn ?? 0), 0);
@@ -333,6 +347,21 @@ export default async function OrganizationDetailPage({
               </Button>
             </Card>
           )}
+
+          {/*
+            Solo cuando hay viajes cerrados. Una tarjeta en cero en las ciento
+            sesenta y una fichas —a la mayoría no se viaja nunca— sería ruido
+            permanente para servir a unas pocas.
+          */}
+          {viajes.viajes > 0 ? (
+            <CostoDeViaje
+              viajes={viajes.viajes}
+              costo={viajes.costo}
+              porCategoria={viajes.porCategoria}
+              titulo="Costo de visitarlos"
+              pieVacio=""
+            />
+          ) : null}
 
           {/* Actividades */}
           <Card className="p-5">

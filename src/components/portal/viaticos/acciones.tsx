@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState } from "react";
-import { Check, Loader2, Send, ThumbsUp, Undo2, X } from "lucide-react";
+import { useActionState, useState } from "react";
+import { Check, Loader2, Send, ThumbsUp, Undo2, UserRoundCog, X } from "lucide-react";
 import {
   autorizarViaticoAction,
   cerrarViaticoAction,
@@ -9,6 +9,8 @@ import {
   enviarViaticoAction,
   mandarARevisionAction,
   quitarGastoAction as quitarGastoActionRef,
+  reasignarViaticoAction as reasignarViaticoActionRef,
+  reclasificarGastoAction as reclasificarGastoActionRef,
   rechazarViaticoAction,
   type ViaticoState,
 } from "@/lib/actions/viaticos";
@@ -264,6 +266,172 @@ export function QuitarGasto({ gastoId }: { gastoId: string }) {
       >
         {pending ? <Loader2 className="size-3.5 animate-spin" /> : <X className="size-3.5" />}
       </button>
+    </form>
+  );
+}
+
+/**
+ * MANDARLE EL VIÁTICO A OTRA PERSONA PARA QUE LO FIRME.
+ *
+ * Desde la 0028 el viático va a nombre de alguien y solo esa persona firma. Eso
+ * arregla el documento que nadie mira porque cada uno supone que lo mirará
+ * otro, y crea un problema nuevo: si quien tiene que firmar está de vacaciones,
+ * el viático se queda parado y nadie más puede tocarlo.
+ *
+ * Esta es la salida, y es deliberadamente un GESTO APARTE y no un botón más
+ * entre las firmas. Reasignar no es una decisión sobre el viaje —autorizar,
+ * rechazar, cerrar—: es una decisión sobre quién lo mira, y mezclarla con las
+ * otras haría que se pulsara por descuido buscando «Autorizar».
+ *
+ * Empieza plegado por la misma razón: en el caso normal no hace falta, y un
+ * desplegable de personas siempre visible invita a cambiar de firmante como si
+ * fuera parte del trámite.
+ */
+export function ReasignarViatico({
+  id,
+  actual,
+  aprobadores,
+}: {
+  id: string;
+  actual: string | null;
+  aprobadores: Array<{ id: string; name: string | null; role: string }>;
+}) {
+  const [state, action, pending] = useActionState(reasignarViaticoActionRef, initial);
+  const [abierto, setAbierto] = useState(false);
+
+  // Los que ya pueden recibirlo: todos menos quien lo tiene. Ofrecer al actual
+  // sería ofrecer una operación que el dominio rechaza con «ya está a nombre de
+  // esa persona», y el error saldría después de dos clics.
+  const posibles = aprobadores.filter((a) => a.id !== actual);
+  if (posibles.length === 0) return null;
+
+  if (!abierto) {
+    return (
+      <button
+        type="button"
+        onClick={() => setAbierto(true)}
+        className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:underline"
+      >
+        <UserRoundCog className="size-3.5" />
+        Que lo firme otra persona
+      </button>
+    );
+  }
+
+  return (
+    <form action={action} className="mt-3 grid gap-2 border-t border-border pt-3">
+      <input type="hidden" name="id" value={id} />
+      <Label htmlFor="reasignar-a" className="text-xs">
+        ¿Quién lo firma?
+      </Label>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          id="reasignar-a"
+          name="approverId"
+          required
+          className="h-9 flex-1 rounded-lg border border-input bg-background px-3 text-sm"
+        >
+          {posibles.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name ?? "Sin nombre"}
+            </option>
+          ))}
+        </select>
+        <Button type="submit" size="sm" disabled={pending}>
+          {pending ? <Loader2 className="size-4 animate-spin" /> : null}
+          Reasignar
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={() => setAbierto(false)}
+        >
+          Cancelar
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Le llega el aviso y pasa a ser quien puede firmarlo.
+      </p>
+      <Aviso state={state} />
+    </form>
+  );
+}
+
+/**
+ * MOVER UN GASTO DE DESTINO AL REVISARLO.
+ *
+ * Quien capturó propuso; quien firma decide. El ingeniero marca la cena como
+ * gasto del viaje y quien revisa ve que sí era de la oportunidad que se está
+ * negociando — o al revés. Sin esto, la única forma de corregirlo sería
+ * devolver la comprobación entera por un renglón.
+ *
+ * Estado propio por renglón, igual que `QuitarGasto` y por el mismo motivo:
+ * compartirlo dejaría toda la tabla en «cargando» al mover uno solo.
+ *
+ * Solo aparece en `en_revision` y en viáticos de prospecto; la página decide
+ * eso y aquí no se vuelve a preguntar. El dominio lo comprueba de todas formas.
+ */
+export function ReclasificarGasto({
+  gastoId,
+  negocios,
+  actual,
+  dealActual,
+}: {
+  gastoId: string;
+  negocios: Array<{ id: string; reference: string; title: string }>;
+  actual: "negocio" | "comercial";
+  dealActual: string | null;
+}) {
+  const [state, action, pending] = useActionState(reclasificarGastoActionRef, initial);
+  const [destino, setDestino] = useState(actual);
+
+  return (
+    <form action={action} className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      <input type="hidden" name="gastoId" value={gastoId} />
+      <input type="hidden" name="destino" value={destino} />
+      <select
+        aria-label="Mover este gasto"
+        className="h-7 rounded border border-input bg-background px-1.5 text-xs"
+        value={destino}
+        onChange={(e) => setDestino(e.target.value as "negocio" | "comercial")}
+      >
+        <option value="comercial">Gasto comercial</option>
+        {negocios.length > 0 ? <option value="negocio">A un negocio</option> : null}
+      </select>
+
+      {destino === "negocio" ? (
+        <select
+          name="dealId"
+          required
+          defaultValue={dealActual ?? ""}
+          aria-label="A qué negocio"
+          className="h-7 rounded border border-input bg-background px-1.5 text-xs"
+        >
+          {/*
+            Sin opción vacía: si se eligió «a un negocio», hay que decir cuál.
+            Un vacío aquí llegaría al servidor como un error de validación por
+            algo que la pantalla podía impedir.
+          */}
+          {negocios.map((n) => (
+            <option key={n.id} value={n.id}>
+              {n.title}
+            </option>
+          ))}
+        </select>
+      ) : null}
+
+      <button
+        type="submit"
+        disabled={pending}
+        className="rounded border border-input px-1.5 py-0.5 text-xs hover:bg-muted disabled:opacity-50"
+        title={state.error ?? "Guardar el destino de este gasto"}
+      >
+        {pending ? <Loader2 className="inline size-3 animate-spin" /> : "Mover"}
+      </button>
+      {state.error ? (
+        <span className="text-xs text-destructive">{state.error}</span>
+      ) : null}
     </form>
   );
 }

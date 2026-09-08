@@ -19,17 +19,26 @@ const selectCls =
   "flex h-10 w-full rounded-lg border border-input bg-background px-3.5 text-sm shadow-sm focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40";
 
 export type TicketOpcion = { id: string; reference: string; subject: string };
+export type NegocioOpcion = { id: string; reference: string; title: string };
 
 /**
  * Capturar un gasto del viaje.
  *
- * ── EL TICKET NO ES OPCIONAL Y ESTÁ ARRIBA ─────────────────────────────────
+ * ── EL DESTINO ESTÁ ARRIBA, Y NO ES SIEMPRE UN TICKET ──────────────────────
  *
  * Es el primer campo porque es el que decide a dónde va el costo, y el que más
  * fácil se contesta mal si se pregunta al final —cuando ya se está pensando en
- * el importe—. Los tickets que ofrece son SOLO los de los equipos de este
- * contrato: cargar un gasto a un ticket de otro contrato le sumaría costo a uno
- * y se lo quitaría al que de verdad lo generó.
+ * el importe—.
+ *
+ * En un viático DE CONTRATO la pregunta es a qué ticket, y los que ofrece son
+ * SOLO los de los equipos de ese contrato: cargar un gasto a un ticket de otro
+ * contrato le sumaría costo a uno y se lo quitaría al que de verdad lo generó.
+ *
+ * En uno DE PROSPECTO no hay tickets, así que la pregunta cambia: al negocio o
+ * a nada. Y «a nada» se elige explícitamente —no se deja el campo vacío—
+ * porque un vacío no distingue «es gasto del viaje» de «se me olvidó», y esa es
+ * justo la diferencia que quien revisa mira. Además puede cambiarlo al firmar:
+ * ver `reclassifyExpense` en `domain/viaticos.ts`.
  *
  * ── «OTROS» PIDE EXPLICACIÓN EN CUANTO SE ELIGE ────────────────────────────
  *
@@ -38,11 +47,29 @@ export type TicketOpcion = { id: string; reference: string; subject: string };
  * propósito: aquí para que se entienda, en la acción para que no se salte por
  * otro camino, y en la base para que no dependa de ninguna de las dos.
  */
-export function GastoForm({ viaticoId, tickets }: { viaticoId: string; tickets: TicketOpcion[] }) {
+export function GastoForm({
+  viaticoId,
+  tickets,
+  negocios,
+  esProspecto,
+}: {
+  viaticoId: string;
+  tickets: TicketOpcion[];
+  negocios: NegocioOpcion[];
+  /** El viático es de un prospecto: no hay tickets, hay negocio o nada. */
+  esProspecto: boolean;
+}) {
   const [state, action, pending] = useActionState(agregarGastoAction, initial);
   const [categoria, setCategoria] = useState<ViaticoCategoria>("hotel");
+  const [destino, setDestino] = useState<"negocio" | "comercial">(
+    // Se abre en «gasto del viaje» y no en «negocio»: en un viaje de
+    // prospección la mayoría de los renglones son del viaje, y el valor por
+    // omisión tiene que ser el que se elige más veces. Quien firma lo mueve si
+    // hace falta.
+    "comercial",
+  );
 
-  if (tickets.length === 0) {
+  if (!esProspecto && tickets.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
         Este contrato todavía no tiene tickets de servicio. Levanta el ticket del
@@ -55,25 +82,74 @@ export function GastoForm({ viaticoId, tickets }: { viaticoId: string; tickets: 
     <form action={action} className="grid gap-4">
       <input type="hidden" name="viaticoId" value={viaticoId} />
 
-      <div>
-        <Label htmlFor="ticketId">Ticket de servicio</Label>
-        {/*
-          Los tickets de un contrato pueden ser decenas, y el folio no dice nada
-          por sí solo: el asunto va de segundo renglón para poder reconocer el
-          servicio al que pertenece cada comida.
-        */}
-        <Selector
-          id="ticketId"
-          name="ticketId"
-          required
-          placeholder="¿A qué servicio pertenece este gasto?"
-          opciones={tickets.map((t) => ({
-            value: t.id,
-            label: t.reference,
-            detalle: t.subject,
-          }))}
-        />
-      </div>
+      {esProspecto ? (
+        <div>
+          <input type="hidden" name="destino" value={destino} />
+          <Label htmlFor="destinoGasto">¿A qué se carga?</Label>
+          <select
+            id="destinoGasto"
+            className={selectCls}
+            value={destino}
+            onChange={(e) => setDestino(e.target.value as "negocio" | "comercial")}
+          >
+            <option value="comercial">Gasto comercial del viaje</option>
+            {/*
+              La opción de negocio desaparece cuando no hay ninguno abierto, en
+              vez de quedarse vacía: un desplegable que se abre sin opciones
+              parece un fallo de carga y manda a buscar dónde está el error.
+            */}
+            {negocios.length > 0 ? (
+              <option value="negocio">Un negocio concreto</option>
+            ) : null}
+          </select>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            {destino === "comercial"
+              ? "No entra en la utilidad de ningún contrato ni ticket: es costo de prospección."
+              : "El costo se podrá leer en la ficha de esa oportunidad."}
+          </p>
+        </div>
+      ) : (
+        <input type="hidden" name="destino" value="ticket" />
+      )}
+
+      {esProspecto ? (
+        destino === "negocio" ? (
+          <div>
+            <Label htmlFor="dealId">Negocio</Label>
+            <Selector
+              id="dealId"
+              name="dealId"
+              required
+              placeholder="¿Por qué oportunidad fue este gasto?"
+              opciones={negocios.map((n) => ({
+                value: n.id,
+                label: n.title,
+                detalle: n.reference,
+              }))}
+            />
+          </div>
+        ) : null
+      ) : (
+        <div>
+          <Label htmlFor="ticketId">Ticket de servicio</Label>
+          {/*
+            Los tickets de un contrato pueden ser decenas, y el folio no dice
+            nada por sí solo: el asunto va de segundo renglón para poder
+            reconocer el servicio al que pertenece cada comida.
+          */}
+          <Selector
+            id="ticketId"
+            name="ticketId"
+            required
+            placeholder="¿A qué servicio pertenece este gasto?"
+            opciones={tickets.map((t) => ({
+              value: t.id,
+              label: t.reference,
+              detalle: t.subject,
+            }))}
+          />
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>

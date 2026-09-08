@@ -12,11 +12,15 @@ import {
   cancelViatico,
   closeViatico,
   createViatico,
+  reassignViatico,
+  reclassifyExpense,
   rejectViatico,
   removeExpense,
   reportViatico,
   returnViatico,
   submitViatico,
+  type AsuntoViatico,
+  type DestinoGasto,
 } from "@/lib/domain/viaticos";
 
 /**
@@ -65,6 +69,73 @@ async function quien() {
   return session?.user?.id ?? null;
 }
 
+/**
+ * Lo que devuelven los dos lectores de abajo.
+ *
+ * `{ error }` o `{ valor }`, nunca los dos: es la forma que ya usa el dominio
+ * con `{ ok, reason }`, y aquí sirve para lo mismo —quien llama pregunta si hay
+ * error y no tiene que acordarse de comprobar un nulo—.
+ */
+type Leido<T> = { valor: T } | { error: string };
+
+/**
+ * EL ASUNTO DEL VIÁTICO, tal como llega del formulario.
+ *
+ * Aquí solo se sanea la forma; que la empresa permita viajar a prospectos y que
+ * quien pide pueda hacerlo lo decide `domain/viaticos.ts`. Es la separación de
+ * siempre: la acción no toma decisiones de negocio, porque una decisión tomada
+ * aquí no vale para el script que escriba alguien en marzo.
+ */
+function asuntoDelFormulario(formData: FormData): Leido<AsuntoViatico> {
+  const tipo = String(formData.get("asunto") ?? "contrato");
+
+  if (tipo === "prospecto") {
+    const organizationId = uuid.safeParse(formData.get("organizationId"));
+    if (!organizationId.success) return { error: "Elige un prospecto." };
+    // El negocio es opcional: se prospecta antes de que haya oportunidad
+    // abierta. Un uuid inválido se trata como «ninguno» y no como error —el
+    // selector trae la opción vacía, y esa es la que manda el navegador—.
+    const dealId = uuid.safeParse(formData.get("dealId"));
+    return {
+      valor: {
+        tipo: "prospecto",
+        organizationId: organizationId.data,
+        dealId: dealId.success ? dealId.data : null,
+      },
+    };
+  }
+
+  const contractId = uuid.safeParse(formData.get("contractId"));
+  if (!contractId.success) return { error: "Elige un contrato." };
+  return { valor: { tipo: "contrato", contractId: contractId.data } };
+}
+
+/**
+ * A DÓNDE VA EL GASTO: ticket, negocio o ninguno de los dos.
+ *
+ * «Ninguno» es una respuesta y no una omisión, así que se escribe: el
+ * formulario manda `destino=comercial` en vez de dejar el campo vacío. Un campo
+ * vacío no distingue «es gasto del viaje» de «se me olvidó elegir», y esa
+ * diferencia es justo la que quien revisa necesita ver.
+ */
+function destinoDelFormulario(formData: FormData): Leido<DestinoGasto> {
+  const tipo = String(formData.get("destino") ?? "ticket");
+
+  if (tipo === "comercial") return { valor: { tipo: "comercial" } };
+
+  if (tipo === "negocio") {
+    const dealId = uuid.safeParse(formData.get("dealId"));
+    if (!dealId.success) return { error: "Elige el negocio al que se carga el gasto." };
+    return { valor: { tipo: "negocio", dealId: dealId.data } };
+  }
+
+  const ticketId = uuid.safeParse(formData.get("ticketId"));
+  if (!ticketId.success) {
+    return { error: "Elige a qué ticket de servicio pertenece el gasto." };
+  }
+  return { valor: { tipo: "ticket", ticketId: ticketId.data } };
+}
+
 /* ───────────────────────── Alta y envío ───────────────────────── */
 
 export async function crearViaticoAction(
@@ -77,8 +148,13 @@ export async function crearViaticoAction(
     return { ok: false, error: "No tienes permiso para pedir viáticos." };
   }
 
-  const contractId = uuid.safeParse(formData.get("contractId"));
-  if (!contractId.success) return { ok: false, error: "Elige un contrato." };
+  const asunto = asuntoDelFormulario(formData);
+  if ("error" in asunto) return { ok: false, error: asunto.error };
+
+  const approverId = uuid.safeParse(formData.get("approverId"));
+  if (!approverId.success) {
+    return { ok: false, error: "Elige a quién le mandas el viático a firmar." };
+  }
 
   const destination = String(formData.get("destination") ?? "").trim();
   const purpose = String(formData.get("purpose") ?? "").trim();
@@ -104,8 +180,9 @@ export async function crearViaticoAction(
     const db = await tenantDb();
     const res = await db.transaction((tx) =>
       createViatico(tx, {
-        contractId: contractId.data,
+        asunto: asunto.valor,
         requestedById: userId,
+        approverId: approverId.data,
         destination,
         purpose,
         departsOn: departsOn.data,
@@ -216,11 +293,10 @@ export async function agregarGastoAction(
   }
 
   const viaticoId = uuid.safeParse(formData.get("viaticoId"));
-  const ticketId = uuid.safeParse(formData.get("ticketId"));
   if (!viaticoId.success) return { ok: false, error: "Viático inválido." };
-  if (!ticketId.success) {
-    return { ok: false, error: "Elige a qué ticket de servicio pertenece el gasto." };
-  }
+
+  const destino = destinoDelFormulario(formData);
+  if ("error" in destino) return { ok: false, error: destino.error };
 
   const category = z.enum(VIATICO_CATEGORIAS).safeParse(formData.get("category"));
   if (!category.success) return { ok: false, error: "Elige una categoría." };
@@ -252,7 +328,7 @@ export async function agregarGastoAction(
       tx,
       {
         viaticoId: viaticoId.data,
-        ticketId: ticketId.data,
+        destino: destino.valor,
         category: category.data,
         otherLabel: String(formData.get("otherLabel") ?? ""),
         description,
@@ -359,6 +435,77 @@ export async function devolverViaticoAction(
   if (!res.ok) return { ok: false, error: res.reason };
   revalidateTenant();
   return { ok: true, message: "Devuelto para corregir." };
+}
+
+/**
+ * Mandarle el viático a otra persona para que lo firme.
+ *
+ * Pide `administrar` como cualquier otra decisión de firma. No pide ser el
+ * aprobador actual, y ese es el caso que resuelve: el aprobador actual no está.
+ */
+export async function reasignarViaticoAction(
+  _prev: ViaticoState,
+  formData: FormData,
+): Promise<ViaticoState> {
+  const userId = await quien();
+  if (!userId) return { ok: false, error: "No hay sesión." };
+  const id = uuid.safeParse(formData.get("id"));
+  if (!id.success) return { ok: false, error: "Viático inválido." };
+
+  const approverId = uuid.safeParse(formData.get("approverId"));
+  if (!approverId.success) return { ok: false, error: "Elige a quién se lo pasas." };
+
+  const puede = await puedeEn("viaticos", "administrar");
+
+  const db = await tenantDb();
+  const res = await db.transaction((tx) =>
+    reassignViatico(tx, {
+      id: id.data,
+      actorId: userId,
+      puedeAdministrar: puede,
+      approverId: approverId.data,
+    }),
+  );
+  if (!res.ok) return { ok: false, error: res.reason };
+  revalidateTenant();
+  return { ok: true, message: "Reasignado. Le llegó el aviso." };
+}
+
+/**
+ * Mover un gasto de destino mientras se revisa la comprobación.
+ *
+ * Es la decisión de quien firma —a qué se carga esta cena—, así que exige
+ * `administrar` igual que autorizar o cerrar. El resto de las condiciones
+ * (estado del viático, que el negocio sea del prospecto) las pone el dominio.
+ */
+export async function reclasificarGastoAction(
+  _prev: ViaticoState,
+  formData: FormData,
+): Promise<ViaticoState> {
+  const userId = await quien();
+  if (!userId) return { ok: false, error: "No hay sesión." };
+  if (!(await puedeEn("viaticos", "administrar"))) {
+    return { ok: false, error: "No tienes permiso para reclasificar gastos." };
+  }
+
+  const gastoId = uuid.safeParse(formData.get("gastoId"));
+  if (!gastoId.success) return { ok: false, error: "Gasto inválido." };
+
+  const destino = destinoDelFormulario(formData);
+  if ("error" in destino) return { ok: false, error: destino.error };
+
+  const db = await tenantDb();
+  const res = await db.transaction((tx) =>
+    reclassifyExpense(tx, {
+      expenseId: gastoId.data,
+      actorId: userId,
+      puedeAdministrar: true,
+      destino: destino.valor,
+    }),
+  );
+  if (!res.ok) return { ok: false, error: res.reason };
+  revalidateTenant();
+  return { ok: true, message: "Gasto reclasificado." };
 }
 
 export async function cancelarViaticoAction(
