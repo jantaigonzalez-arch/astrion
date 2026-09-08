@@ -52,12 +52,20 @@ describe("el registro cubre todos los probes", () => {
     expect(repetidos, `\nEn más de una lista: ${repetidos.join(", ")}\n`).toEqual([]);
   });
 
-  it("el registro no nombra probes que ya no existen", () => {
+  it("el registro no nombra probes del CI que ya no existen", () => {
+    /*
+      SOLO sobre UNITARIAS e INTEGRACION, y no sobre las cinco listas.
+
+      Las otras tres nombran archivos que siguen en `.gitignore` a propósito, así
+      que en un clon de CI no existen: comprobarlos allí daba treinta y tres
+      «fantasmas» que no eran tales, sino justo lo que se decidió no publicar.
+      Aquí solo tiene sentido vigilar los que el repositorio SÍ debe tener.
+    */
     const existen = new Set(todosLosProbes());
-    const fantasmas = [...CLASIFICADOS].filter((f) => !existen.has(f));
+    const fantasmas = [...UNITARIAS, ...INTEGRACION].filter((f) => !existen.has(f));
     expect(
       fantasmas,
-      `\nEl registro nombra archivos que no están en el repo: ${fantasmas.join(", ")}\n`,
+      `\nEl registro los declara para el CI y no están en el repo: ${fantasmas.join(", ")}\n`,
     ).toEqual([]);
   });
 

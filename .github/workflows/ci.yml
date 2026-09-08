@@ -33,6 +33,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # El historial COMPLETO. Por omisión Actions trae un solo commit, y
+          # `probe-revision` compara cada guardia de permisos contra cómo estaba
+          # antes leyendo un commit concreto con `git show`. Sin historial eso es
+          # un `status: 128` de git que no menciona la palabra «profundidad» por
+          # ningún lado.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v5
         with:
