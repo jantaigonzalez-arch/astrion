@@ -78,6 +78,45 @@ probe*.mts
 .probe/
 scripts/_dash.ts
 
+# ── Y LOS QUE SÍ ENTRAN ──────────────────────────────────────────────────────
+#
+# De las dos razones de arriba, la primera dejó de aplicar: la integración corre
+# contra una base que `scripts/base-de-pruebas.sh` siembra con diez años de
+# historia, así que estos ya no dependen del volumen de la base de nadie.
+#
+# La segunda sigue en pie y por eso esto es una lista y no un `!probe*.mts`:
+# `scripts/_stub-*.ts` y `tsconfig.probe.json` SIGUEN FUERA, y con ellos queda
+# fuera todo probe que los use. Ninguno de los de abajo los toca — usan
+# `tsconfig.check.json` o `tsconfig.scripts.json`, que ya estaban versionados—,
+# de modo que el sustituto de la sesión y del contexto de inquilino continúa
+# sin estar al alcance de un import despistado.
+#
+# Estos veinte son los que sostienen el CI. Si añadís uno a `UNITARIAS` o a
+# `INTEGRACION` en `pruebas/registro.ts`, tiene que entrar también aquí: hay una
+# prueba en `pruebas/cobertura.test.ts` que lo exige, porque un probe que el
+# flujo necesita y el repositorio no tiene es un CI que se cae sin decir por qué
+# —y así se cayó la primera vez—.
+!probe-avisos.mts
+!probe-beta.mts
+!probe-borrar-modelos.mts
+!probe-campana.mts
+!probe-e2e.mts
+!probe-equipos.mts
+!probe-formularios.mts
+!probe-payables.mts
+!probe-permisos-db.mts
+!probe-permisos.mts
+!probe-revision.mts
+!probe-rutas.mts
+!probe-selector.mts
+!probe-series.mts
+!probe-sla.mts
+!probe-suscripcion.mts
+!probe-tablas.mts
+!probe-unapply.mts
+!probe-viaticos.mts
+!scripts/_probe-budget.ts
+
 # Volcados de la sincronización prod → local. Son la base de producción entera:
 # nombres de clientes, importes de contratos, la bitácora. Nunca al repositorio.
 .sync/

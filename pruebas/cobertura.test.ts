@@ -15,7 +15,8 @@
  * en `registro.ts`, y a cambio ninguno vuelve a quedarse fuera en silencio.
  */
 import { describe, it, expect } from "vitest";
-import { todosLosProbes, invocacion } from "./probes";
+import { execFileSync } from "node:child_process";
+import { todosLosProbes, invocacion, RAIZ } from "./probes";
 import {
   CLASIFICADOS,
   UNITARIAS,
@@ -57,6 +58,40 @@ describe("el registro cubre todos los probes", () => {
     expect(
       fantasmas,
       `\nEl registro nombra archivos que no están en el repo: ${fantasmas.join(", ")}\n`,
+    ).toEqual([]);
+  });
+
+  it("los probes que necesita el CI están versionados", () => {
+    /*
+      LA PRUEBA QUE FALTABA LA PRIMERA VEZ.
+
+      Los probes están en `.gitignore` a propósito, y el flujo de Actions no lo
+      sabía: `npm ci`, tipos y estilo pasaron, y las pruebas reventaron con
+      «ENOENT: probe-suscripcion.mts» porque en el repositorio remoto no había
+      un solo probe que ejecutar. El fallo no se parecía a la causa.
+
+      Ahora, un probe en UNITARIAS o INTEGRACION que no esté en git rompe aquí
+      —en tu máquina, antes del push— y con un mensaje que dice qué hacer.
+    */
+    const necesarios = [...UNITARIAS, ...INTEGRACION];
+    const fuera = necesarios.filter((f) => {
+      try {
+        execFileSync("git", ["ls-files", "--error-unmatch", f], {
+          cwd: RAIZ,
+          stdio: ["ignore", "ignore", "ignore"],
+        });
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    expect(
+      fuera,
+      fuera.length
+        ? `\nEstos probes los necesita el CI y NO están en el repositorio:\n  ${fuera.join("\n  ")}\n\n` +
+            "Agregá una excepción por cada uno en .gitignore (`!nombre.mts`) y " +
+            "hacé `git add`. Sin eso, Actions falla con ENOENT y el motivo no se ve.\n"
+        : undefined,
     ).toEqual([]);
   });
 

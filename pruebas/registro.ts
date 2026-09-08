@@ -59,7 +59,6 @@ export const INTEGRACION = [
   "probe-unapply.mts",
   "probe-viaticos.mts",
   "scripts/_probe-budget.ts",
-  "scripts/_probe-clientes.ts",
 ] as const;
 
 /**
@@ -89,6 +88,11 @@ export const SOLO_LOCAL: Record<string, string> = {
   "scripts/_probe-perf.ts":
     "Mide tiempos contra el volumen real. Un umbral de rendimiento en un " +
     "ejecutor compartido de CI es una prueba que falla los martes.",
+  "scripts/_probe-clientes.ts":
+    "Importa `scripts/_stub-*.ts`, que sustituyen la sesión y el contexto de " +
+    "inquilino. Esos stubs se quedan fuera del repositorio a propósito —nadie " +
+    "debería poder importarlos por accidente desde la aplicación— y sin ellos " +
+    "este probe no arranca, así que se queda fuera del CI con ellos.",
 };
 
 /**
