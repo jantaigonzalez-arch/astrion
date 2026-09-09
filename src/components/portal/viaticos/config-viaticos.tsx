@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { mxnViatico } from "@/lib/viaticos";
+import { ROLE_LABELS } from "@/lib/roles";
 
 const initial: ConfigState = { ok: false };
 
@@ -31,59 +32,84 @@ function Aviso({ state }: { state: ConfigState }) {
 /* ─────────────────── ¿Se viaja a quien no es cliente? ─────────────────── */
 
 /**
- * El interruptor de prospectos, mudado desde «Marca y tarifas».
+ * QUÉ ROLES PUEDEN VIAJAR A UN PROSPECTO.
  *
- * Nació allá y por lo tanto lo guardaba `configuracion: administrar`, que es
- * justo lo que el rol General NO tiene: el único rol que existe para administrar
- * el gasto no podía ver la política de gasto. Aquí lo manda
- * `viaticos: administrar`.
+ * Era un interruptor de sí o no, y encenderlo no bastaba: había que entrar
+ * además en la hoja de permisos de cada persona a darle acceso a Ventas. La
+ * propia tarjeta tenía que confesarlo con un aviso —«falta darle acceso a
+ * Ventas a quien vaya a pedirlos»—, que es la señal de que la regla estaba en
+ * dos sitios. Ahora es una sola lista.
+ *
+ * SIN NINGÚN ROL MARCADO, nadie puede: la lista vacía ES el apagado, así que no
+ * hay un interruptor aparte que pueda contradecirla.
+ *
+ * `client` queda fuera de las opciones y no por descuido: el cliente no entra
+ * al portal interno, así que ofrecerlo sería ofrecer una casilla que no puede
+ * cambiar nada.
  */
-export function ProspectosCard({ activo }: { activo: boolean }) {
+const ROLES_QUE_VIAJAN = ["owner", "admin", "general", "agent", "sales"] as const;
+const ROL_LABEL: Record<string, string> = ROLE_LABELS;
+
+export function ProspectosCard({ roles }: { roles: string[] }) {
   const [state, action, pending] = useActionState(guardarViaticosProspectos, initial);
-  const [marcado, setMarcado] = useState(activo);
+  const [marcados, setMarcados] = useState<string[]>(roles);
+
+  const alternar = (rol: string) =>
+    setMarcados((prev) =>
+      prev.includes(rol) ? prev.filter((r) => r !== rol) : [...prev, rol],
+    );
+
+  // Comparación por conjunto: marcar y desmarcar el mismo rol no debe dejar el
+  // botón activo, y el orden en que se pulsan no significa nada.
+  const cambiado =
+    marcados.length !== roles.length || marcados.some((r) => !roles.includes(r));
 
   return (
     <Card className="p-5">
       <h2 className="font-semibold">Viajes a prospectos</h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        Si tu equipo visita empresas que todavía no te han comprado, enciéndelo
-        para poder registrar esos viajes.
+        Si tu equipo visita empresas que todavía no te han comprado, marca qué
+        roles pueden pedir esos viajes. Sin ninguno marcado, nadie puede.
       </p>
 
       <form action={action} className="mt-4 grid gap-3">
-        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3.5 hover:bg-muted/50">
-          <input
-            type="checkbox"
-            name="viaticosProspectos"
-            checked={marcado}
-            onChange={(e) => setMarcado(e.target.checked)}
-            className="mt-0.5 size-4 rounded border-input"
-          />
-          <span className="text-sm">
-            <span className="block font-medium">
-              Se pueden pedir viáticos para prospectos
-            </span>
-            <span className="mt-0.5 block text-muted-foreground">
-              Su gasto no entra en la utilidad de ningún contrato —no hay
-              contrato—: queda como costo comercial, y quien autoriza puede
-              cargarlo a una oportunidad al revisar la comprobación.
-            </span>
-          </span>
-        </label>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {ROLES_QUE_VIAJAN.map((rol) => (
+            <label
+              key={rol}
+              className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-border p-3 text-sm hover:bg-muted/50"
+            >
+              <input
+                type="checkbox"
+                name="roles"
+                value={rol}
+                checked={marcados.includes(rol)}
+                onChange={() => alternar(rol)}
+                className="size-4 rounded border-input"
+              />
+              {ROL_LABEL[rol] ?? rol}
+            </label>
+          ))}
+        </div>
 
-        {marcado ? (
-          <p className="rounded-lg bg-secondary/50 px-3 py-2.5 text-sm text-muted-foreground">
-            Falta darle acceso a <span className="font-medium">Ventas</span> a
-            quien vaya a pedirlos, en Usuarios → su hoja de permisos. Con{" "}
-            <span className="font-medium">Ver</span> pide el viaje; con{" "}
-            <span className="font-medium">Ver y editar</span>, además da de alta
-            el prospecto desde el formulario.
-          </p>
-        ) : null}
+        <p className="rounded-lg bg-secondary/50 px-3 py-2.5 text-xs text-muted-foreground">
+          Su gasto no entra en la utilidad de ningún contrato —no hay contrato—:
+          queda como costo comercial, y quien autoriza puede cargarlo a una
+          oportunidad al revisar la comprobación.
+          {marcados.length > 0 ? (
+            <>
+              {" "}
+              Quien esté marcado verá los nombres de los prospectos al pedir el
+              viaje. <span className="font-medium">Dar de alta uno nuevo</span>{" "}
+              sigue pidiendo permiso de edición en Ventas: eso ya no es pedir un
+              viaje, es escribir en el padrón comercial.
+            </>
+          ) : null}
+        </p>
 
         <div className="flex items-center justify-end gap-3">
           <Aviso state={state} />
-          <Button type="submit" disabled={pending || marcado === activo}>
+          <Button type="submit" disabled={pending || !cambiado}>
             {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
             Guardar
           </Button>

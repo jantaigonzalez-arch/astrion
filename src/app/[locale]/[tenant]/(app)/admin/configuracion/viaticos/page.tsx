@@ -45,7 +45,7 @@ export default async function ConfigViaticosPage({
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <RubrosCard rubros={rubros} />
-      <ProspectosCard activo={ajustes.viaticosProspectos} />
+      <ProspectosCard roles={ajustes.viaticosProspectosRoles} />
     </div>
   );
 }

@@ -1,0 +1,59 @@
+-- QUIÉN PUEDE VIAJAR A UN PROSPECTO SE ELIGE POR ROL, EN UNA SOLA CASILLA.
+--
+-- La 0028 lo dejó en dos condiciones: un interruptor de empresa y, por persona,
+-- acceso al módulo de Ventas. Sobre el papel era elegante —reutilizaba el
+-- permiso que ya existía en vez de inventar uno— y en la práctica obligaba a
+-- entrar en la hoja de permisos de cada vendedor, uno por uno, después de haber
+-- encendido el interruptor. La propia pantalla lo confesaba con un aviso:
+-- «falta darle acceso a Ventas a quien vaya a pedirlos».
+--
+-- Dos reglas para una decisión es una regla de más. Ahora hay una lista de
+-- roles y nada más: los que estén pueden, los que no, no.
+--
+-- ---------------------------------------------------------------------------
+-- LA LISTA VACÍA ES EL APAGADO
+--
+-- Y por eso desaparece el booleano en vez de convivir con ella. Dos columnas
+-- que contestan la misma pregunta acaban contestándola distinto —«está
+-- encendido pero ningún rol puede», «ningún rol puede pero está encendido»— y
+-- entonces ninguna pantalla sabe cuál mandar. Sin roles marcados, la pestaña de
+-- prospectos no aparece en el formulario: es exactamente lo que hacía el
+-- interruptor en `false`.
+--
+-- El valor por omisión es `[]`, así que nadie estrena nada al actualizar. Quien
+-- ya lo tenía encendido vuelve a marcar los roles una vez; son cuatro casillas
+-- y a cambio no vuelve a tocar la hoja de permisos de nadie por este motivo.
+--
+-- ---------------------------------------------------------------------------
+-- POR ROL, AUNQUE EL RESTO DEL SISTEMA VAYA POR CAPACIDAD
+--
+-- `lib/permisos.ts` tiene escrito, con razón, que filtrar por la etiqueta del
+-- rol en vez de por lo que la persona PUEDE es lo que hizo que la barra lateral
+-- y el guardia discreparan. Esto no lo contradice, y conviene decir por qué:
+--
+--   · aquello decide ACCESO —quién entra a una pantalla, quién firma— y ahí la
+--     etiqueta miente en cuanto alguien usa los ajustes por persona;
+--   · esto decide una POLÍTICA DE GASTO: a qué puestos les paga la empresa un
+--     viaje a alguien que todavía no le ha comprado nada. La pregunta del
+--     negocio ES por puesto, y responderla con una capacidad obligaba a
+--     traducirla dos veces.
+--
+-- Lo que se pierde es la excepción por persona: al vendedor concreto al que se
+-- le quisiera dar y a su compañero no. Hoy eso se resuelve con el rol, y si
+-- algún día hace falta la excepción, esta lista es el sitio donde añadirla.
+--
+-- ---------------------------------------------------------------------------
+-- Y UNA CONSECUENCIA QUE NO SE ESCONDE
+--
+-- Quien esté en la lista verá los nombres de los prospectos en el selector del
+-- formulario, tenga o no acceso al módulo de Ventas. Es lo que significa
+-- decir «este rol puede pedir viajes a prospectos»: para pedirlo hay que poder
+-- elegir a cuál. Dar de alta uno nuevo sigue exigiendo `ventas: editar`, porque
+-- eso ya no es pedir un viaje: es escribir en el padrón comercial.
+--
+-- ---------------------------------------------------------------------------
+-- ESCRITA A MANO. Ver la regla 4 de AGENTS.md — vale para las dos carpetas.
+
+ALTER TABLE "settings" ADD COLUMN "viaticos_prospectos_roles" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+
+ALTER TABLE "settings" DROP COLUMN "viaticos_prospectos";

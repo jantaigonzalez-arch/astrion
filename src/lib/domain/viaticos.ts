@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import type { DbOrTx } from "@/lib/db";
 import { crmDeals, viaticoExpenses, viaticoRubros, viaticos } from "@/lib/db/schema";
 import { listTenantMembers } from "@/lib/data/people";
+import type { MembershipRole } from "@/lib/db/platform";
 import { getSettings } from "@/lib/data/settings";
 import { ajustesGuardados, alcanza, nivelEfectivo, type Nivel } from "@/lib/permisos";
 import { nextViaticoReference } from "@/lib/domain/references";
@@ -49,11 +50,14 @@ import { diasDeViaje, type ViaticoEstado } from "@/lib/viaticos";
  * la pantalla, porque una regla escrita en la pantalla se salta por cualquier
  * otro camino que escriba en la tabla:
  *
- *   · que la EMPRESA lo permita (`settings.viaticosProspectos`), que es una
- *     política de gasto y no una función del programa;
- *   · que QUIEN PIDE tenga acceso a Ventas, aunque sea de solo lectura. No hace
- *     falta un permiso nuevo: si alguien no puede ni ver la cartera de
- *     prospectos, tampoco tiene por qué poder mandarse de viaje a uno.
+ *   · que el ROL de quien pide esté en `settings.viaticosProspectosRoles`.
+ *
+ * Era una condición más —acceso al módulo de Ventas por persona— y se quitó en
+ * la 0033: dos reglas para una decisión obligaban a entrar en la hoja de
+ * permisos de cada vendedor después de encender el interruptor, y la pantalla
+ * tenía que confesarlo con un aviso. Va por rol y no por capacidad, al revés
+ * que casi todo aquí, porque no decide acceso sino una política de gasto: a qué
+ * puestos les paga la empresa un viaje a quien no le ha comprado nada.
  *
  * ── LOS RESULTADOS SON DATOS, NO EXCEPCIONES ───────────────────────────────
  *
@@ -132,6 +136,12 @@ export async function aprobadoresPosibles(
  * de la respuesta y no un efecto secundario: nombrar aprobador a quien ya no
  * trabaja aquí deja el viático esperando una firma que no va a llegar.
  */
+/** El rol de una persona en esta empresa, o `null` si ya no pertenece. */
+async function rolDe(userId: string): Promise<MembershipRole | null> {
+  const gente = await listTenantMembers();
+  return gente.find((p) => p.id === userId)?.role ?? null;
+}
+
 async function nivelDe(userId: string, modulo: "viaticos" | "ventas"): Promise<Nivel | null> {
   const gente = await listTenantMembers();
   const m = gente.find((p) => p.id === userId);
@@ -256,13 +266,15 @@ export type NuevoViatico = {
  * `firmaValida()`: quien llama solo tiene que preguntar si hay veto.
  */
 async function vetoProspecto(tx: DbOrTx, requestedById: string): Promise<string | null> {
-  const ajustes = await getSettings(tx);
-  if (!ajustes.viaticosProspectos) {
-    return "Esta empresa no tiene habilitados los viáticos a prospectos. Se enciende en Configuración.";
+  const { viaticosProspectosRoles: permitidos } = await getSettings(tx);
+  if (permitidos.length === 0) {
+    return "Esta empresa no tiene habilitados los viáticos a prospectos. Se configura en Configuración → Viáticos.";
   }
-  const nivel = await nivelDe(requestedById, "ventas");
-  if (!nivel || !alcanza(nivel, "ver")) {
-    return "Para pedir un viaje a un prospecto hace falta acceso a Ventas. Pídelo en tu hoja de permisos.";
+
+  const rol = await rolDe(requestedById);
+  if (!rol) return "Ya no perteneces a esta empresa.";
+  if (!permitidos.includes(rol)) {
+    return "Tu rol no puede pedir viajes a prospectos. Quien administre viáticos decide qué roles pueden, en Configuración → Viáticos.";
   }
   return null;
 }

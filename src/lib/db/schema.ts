@@ -545,20 +545,25 @@ export const settings = pgTable("settings", {
   usdRate: numeric("usd_rate", { precision: 12, scale: 4 }),
 
   /**
-   * ¿Se pagan viajes a quien todavía no es cliente?
+   * QUÉ ROLES pueden pedir un viaje a quien todavía no es cliente.
    *
-   * Es una decisión de la empresa y no una función del programa: hay quien
-   * manda al ingeniero a ver una planta antes de venderle nada y hay quien no.
-   * Apagado de fábrica, porque encenderlo por omisión le cambiaría la práctica
-   * a cualquiera que actualice sin haberlo pedido —le aparecería una opción
-   * nueva en el formulario de todo su equipo— y el módulo de viáticos existe
-   * justamente para controlar ese gasto.
+   * Era un booleano de empresa más, por persona, acceso al módulo de Ventas.
+   * Dos reglas para una decisión: encender el interruptor no bastaba y había
+   * que entrar en la hoja de permisos de cada vendedor, cosa que la propia
+   * pantalla tenía que confesar con un aviso.
    *
-   * QUIÉN puede usarlo no se decide aquí: sale de la hoja de permisos que ya
-   * existe por persona. Este interruptor solo dice si la empresa lo permite.
-   * Ver `lib/permisos.ts` y `domain/viaticos.ts`.
+   * LISTA VACÍA = APAGADO, y por eso el booleano desapareció en vez de convivir
+   * con esto: dos columnas que contestan la misma pregunta acaban
+   * contradiciéndose.
+   *
+   * Va por ROL y no por capacidad —al revés que casi todo aquí— porque no
+   * decide acceso sino una política de gasto: a qué puestos les paga la empresa
+   * un viaje a alguien que no le ha comprado nada. La pregunta del negocio es
+   * por puesto. Ver la migración 0033.
    */
-  viaticosProspectos: boolean("viaticos_prospectos").notNull().default(false),
+  viaticosProspectosRoles: jsonb("viaticos_prospectos_roles")
+    .notNull()
+    .default([]),
 
 
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

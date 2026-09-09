@@ -232,6 +232,13 @@
       "when": 1788925277587,
       "tag": "0032_indices_de_llaves",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1788927618400,
+      "tag": "0033_prospectos_por_rol",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,7 @@
 import { setRequestLocale } from "next-intl/server";
 import { Plane } from "lucide-react";
 import { redirectInTenant } from "@/lib/nav-server";
-import { puedeEn } from "@/lib/tenancy/context";
+import { currentRole, puedeEn } from "@/lib/tenancy/context";
 import {
   contratosParaViatico,
   modulosPorContrato,
@@ -46,12 +46,21 @@ export default async function NuevoViaticoPage({
     revienta al enviar; si el dominio se fiara de la pantalla, bastaría un
     `curl` para saltársela.
   */
-  const [ajustes, puedeVerVentas, puedeCrearProspectos] = await Promise.all([
+  const [ajustes, rol, puedeCrearProspectos] = await Promise.all([
     getSettings(),
-    puedeEn("ventas", "ver"),
+    currentRole(),
     puedeEn("ventas", "editar"),
   ]);
-  const permiteProspectos = ajustes.viaticosProspectos && puedeVerVentas;
+  /*
+    UNA SOLA CONDICIÓN: que el rol de quien mira esté en la lista.
+
+    Eran dos —el interruptor de empresa y acceso a Ventas por persona— y la
+    segunda obligaba a tocar la hoja de permisos de cada vendedor. Ver la 0033.
+
+    Dar de alta un prospecto SÍ sigue pidiendo `ventas: editar`: eso ya no es
+    pedir un viaje, es escribir en el padrón comercial.
+  */
+  const permiteProspectos = Boolean(rol && ajustes.viaticosProspectosRoles.includes(rol));
 
   const contratos = await contratosParaViatico();
   /*

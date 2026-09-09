@@ -5,6 +5,7 @@ import { and, eq, ne, sql } from "drizzle-orm";
 import { puedeEn, tenantDb } from "@/lib/tenancy/context";
 import { revalidateTenant } from "@/lib/revalidate";
 import { settings, viaticoExpenses, viaticoRubros } from "@/lib/db/schema";
+import { membershipRole, type MembershipRole } from "@/lib/db/platform";
 
 /**
  * CONFIGURACIÓN DE VIÁTICOS: la política de gasto de la empresa.
@@ -79,21 +80,41 @@ export async function guardarViaticosProspectos(
     return { ok: false, error: "No tienes permiso para configurar viáticos." };
   }
 
-  // `=== "on"` y no «viene o no viene»: una casilla sin marcar no se envía, así
-  // que lo que decide es lo que el formulario DICE, no lo que le falta.
-  const viaticosProspectos = String(formData.get("viaticosProspectos") ?? "") === "on";
+  /*
+    LO QUE LLEGA MARCADO, Y NADA MÁS.
+
+    `getAll` devuelve solo las casillas marcadas —las vacías no se envían—, así
+    que desmarcar todas manda una lista vacía y eso APAGA la función. Es
+    deliberado: la lista vacía es el apagado, y no hay un interruptor aparte que
+    pueda contradecirla.
+
+    Se filtra contra el enum en vez de confiar: lo que llega de un formulario es
+    texto, y un rol inventado guardado en `jsonb` no falla al escribir — falla
+    meses después, al leerlo.
+  */
+  const viaticosProspectosRoles = formData
+    .getAll("roles")
+    .map(String)
+    .filter((r): r is MembershipRole =>
+      membershipRole.enumValues.includes(r as MembershipRole),
+    );
 
   try {
     const db = await tenantDb();
     await db
       .insert(settings)
-      .values({ id: "global", viaticosProspectos })
+      .values({ id: "global", viaticosProspectosRoles })
       .onConflictDoUpdate({
         target: settings.id,
-        set: { viaticosProspectos, updatedAt: new Date() },
+        set: { viaticosProspectosRoles, updatedAt: new Date() },
       });
     revalidateTenant();
-    return { ok: true, message: "Guardado." };
+    return {
+      ok: true,
+      message: viaticosProspectosRoles.length
+        ? "Guardado."
+        : "Guardado. Sin roles marcados, nadie puede pedir viajes a prospectos.",
+    };
   } catch (e) {
     console.error("[viaticos-config] prospectos", e);
     return { ok: false, error: "No se pudo guardar." };
