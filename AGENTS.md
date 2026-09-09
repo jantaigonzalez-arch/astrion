@@ -31,9 +31,17 @@ nombre no distingue nada; lo que distingue es el host.
 4. **Ninguna migración ni importación llega a producción sin haber corrido
    antes contra una copia sincronizada.** `npm run sync:prod` trae producción
    a local y aplica encima las migraciones pendientes: es el mismo ensayo que
-   hará el servidor. Las de inquilino (`drizzle-tenant/`) se escriben **a
-   mano**: `drizzle-kit generate` con esa configuración produce una migración
-   rota — ver el comentario en `drizzle.tenant.config.ts`.
+   hará el servidor. **Las DOS carpetas de migraciones se escriben a mano** y
+   `drizzle-kit generate` no sirve en ninguna de las dos:
+   - `drizzle-tenant/` — ver el comentario en `drizzle.tenant.config.ts`.
+   - `drizzle/` (plataforma) — los snapshots de `drizzle/meta/` saltan del 0022
+     al 0029 porque 0023–0028 se escribieron a mano sin actualizarlos, así que
+     `generate` compara contra un esquema de hace seis migraciones y produce
+     una que las REHACE todas (`CREATE TABLE platform_users`, `DROP COLUMN
+     platform_role`…). Eso aborta el contenedor `migrate`, y como `web` solo
+     arranca con `service_completed_successfully`, **el sitio no vuelve a
+     levantar**. Si algún día se quiere recuperar `generate`, primero hay que
+     reconstruir el snapshot contra la base real y comprobar que cuadra.
 5. **`--wipe`, `drop`, `delete` y `--force` no se corren en producción de
    primera intención.** Proponelos con lo que borran a la vista.
 6. **La sincronización va en un solo sentido: prod → local.** No existe la

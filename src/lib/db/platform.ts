@@ -216,6 +216,50 @@ export const tenants = pgTable(
      */
     folioPrefix: varchar("folio_prefix", { length: 8 }),
 
+    /* --- EL MEMBRETE DE LOS DOCUMENTOS QUE VE EL CLIENTE ---
+     *
+     * El reporte de servicio tenía a Evoelution ESCRITA A MANO: el logo era un
+     * `<svg>` en el código, el nombre y el lema eran texto literal, y el pie
+     * llevaba su calle, su teléfono y su correo. En un producto de una sola
+     * empresa eso pasa por detalle; en uno multiempresa significa que cualquier
+     * otro inquilino le entregaba a SU cliente un documento firmado con la
+     * marca y los datos de contacto de Evoelution. Es el mismo error que ya
+     * había corregido el logo de la barra lateral y el prefijo de folio, una
+     * capa más abajo.
+     *
+     * ── POR QUÉ UN LOGO APARTE Y NO EL DE LA MARCA ─────────────────────────
+     *
+     * Porque son dos sitios con exigencias opuestas. El de `logoUrl` vive en la
+     * barra lateral —fondo oscuro, poco espacio, suele ser cuadrado o un
+     * monograma— y el del documento va impreso en papel blanco, donde ese mismo
+     * archivo puede salir invisible o pixelado. Obligar a que sea el mismo
+     * archivo es obligar a elegir cuál de los dos se ve mal.
+     *
+     * Nulo NO es un hueco: significa «usa el de la marca». La cascada completa
+     * es logo de documento → logo de marca → monograma, y así una empresa que
+     * no quiera distinguirlos no tiene que hacer nada.
+     */
+    documentLogoUrl: text("document_logo_url"),
+
+    /** Una línea bajo el nombre: a qué se dedica. Nulo = no se imprime. */
+    tagline: varchar("tagline", { length: 120 }),
+
+    /*
+      EL PIE DEL DOCUMENTO. Los tres nulables, y los tres se OMITEN si faltan.
+      No se inventa nada ni se hereda de nadie: imprimir la dirección de otra
+      empresa porque esta no la cargó es exactamente el fallo que se está
+      arreglando, y una línea de menos se nota, mientras que una línea ajena
+      pasa desapercibida hasta que el cliente la lee.
+
+      `contactEmail` NO es `mailFrom`: aquel es por dónde SALEN los avisos —una
+      cuenta técnica, a veces `no-reply@`— y este es a dónde el cliente escribe
+      cuando lee el reporte. Confundirlos manda respuestas a un buzón que nadie
+      abre.
+    */
+    contactAddress: varchar("contact_address", { length: 200 }),
+    contactPhone: varchar("contact_phone", { length: 40 }),
+    contactEmail: varchar("contact_email", { length: 160 }),
+
     /* --- Desde qué dirección avisa esta empresa ---
      *
      * Vive en el plano de control y no en los `settings` de su esquema por lo

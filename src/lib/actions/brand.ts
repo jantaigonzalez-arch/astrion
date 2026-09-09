@@ -87,3 +87,75 @@ export async function updateTenantBrand(
     return { ok: false, error: e instanceof Error ? e.message : "Error del servidor." };
   }
 }
+
+/**
+ * EL MEMBRETE DE LOS DOCUMENTOS: lo que se imprime y se le entrega al cliente.
+ *
+ * Acción aparte de `updateTenantBrand` y no un campo más en ella, por la misma
+ * razón por la que el logo es otro: son dos decisiones distintas que se toman
+ * en momentos distintos. La marca se ajusta al montar la empresa y se mira en
+ * pantalla; esto se ajusta cuando alguien imprime el primer reporte y descubre
+ * que el pie no dice sus datos. Mezclarlas obligaría a volver a subir el logo
+ * de la barra lateral cada vez que se corrige un teléfono.
+ *
+ * Los campos vacíos se guardan como NULL y la pantalla del reporte los omite.
+ * No se inventa nada: ver la migración 0029.
+ */
+export async function updateDocumentBranding(
+  _prev: BrandState,
+  formData: FormData,
+): Promise<BrandState> {
+  if (!(await puedeEn("configuracion", "administrar"))) {
+    return { ok: false, error: "Solo un administrador cambia el membrete." };
+  }
+
+  // De la URL, no del formulario. Misma cautela que arriba: esto escribe en el
+  // plano de control, y aceptar un slug del cliente dejaría que el
+  // administrador de una empresa cambiara el membrete de otra.
+  const ctx = await requireTenant();
+
+  /** Vacío = NULL, no cadena vacía: la pantalla decide con `si hay dato`. */
+  const texto = (campo: string, tope: number) => {
+    const v = String(formData.get(campo) ?? "").trim().slice(0, tope);
+    return v || null;
+  };
+
+  const quitar = formData.get("removeDocumentLogo") === "1";
+
+  try {
+    let documentLogoUrl: string | null | undefined;
+    if (quitar) {
+      documentLogoUrl = null;
+    } else {
+      // Igual que en la marca: sin archivo adjunto se deja el que había, para
+      // que corregir un teléfono no borre el logo.
+      const saved = await saveImage(formData.get("documentLogo"), "brand");
+      if (saved) documentLogoUrl = saved;
+    }
+
+    await getDb()
+      .update(tenants)
+      .set({
+        tagline: texto("tagline", 120),
+        contactAddress: texto("contactAddress", 200),
+        contactPhone: texto("contactPhone", 40),
+        contactEmail: texto("contactEmail", 160),
+        ...(documentLogoUrl !== undefined ? { documentLogoUrl } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(tenants.id, ctx.tenantId));
+
+    // El membrete viaja en la misma fila cacheada que la marca, así que se
+    // invalida la misma etiqueta. Sin esto, quien acaba de corregir su
+    // dirección seguiría imprimiendo la vieja hasta una hora después.
+    updateTag(brandTag(ctx.slug));
+    revalidateTenant();
+    return {
+      ok: true,
+      message: quitar ? "Logo del documento quitado." : "Membrete actualizado.",
+    };
+  } catch (e) {
+    console.error("[brand] membrete error:", e);
+    return { ok: false, error: e instanceof Error ? e.message : "Error del servidor." };
+  }
+}

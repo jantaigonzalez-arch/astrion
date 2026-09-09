@@ -33,7 +33,10 @@ export function SettingsForm({
               placeholder="Ej. 450.00"
             />
             <p className="mt-1 text-xs text-muted-foreground">
-              Lo que le cuesta a Evoelution una hora de técnico.
+              {/* «a tu empresa» y no «a Evoelution»: esta pantalla la abre el
+                  administrador de cualquier inquilino. Mismo error que el
+                  membrete del reporte, una escala más chica. */}
+              Lo que le cuesta a tu empresa una hora de técnico.
             </p>
           </div>
           <div>

@@ -284,6 +284,20 @@ export function getTenantBrand(slug: string) {
           brandName: tenants.brandName,
           logoUrl: tenants.logoUrl,
           folioPrefix: tenants.folioPrefix,
+          /*
+            EL MEMBRETE VIAJA EN LA MISMA FILA, y no en una consulta aparte.
+
+            Es la misma fila de `tenants`, el mismo caché y la misma etiqueta de
+            invalidación: pedirlo por separado serían dos consultas y dos cachés
+            que pueden discrepar —el logo nuevo con el pie viejo— sin que nadie
+            entienda por qué. El layout no lo usa y no le cuesta nada llevarlo:
+            son cinco columnas de texto en una fila que ya se está leyendo.
+          */
+          documentLogoUrl: tenants.documentLogoUrl,
+          tagline: tenants.tagline,
+          contactAddress: tenants.contactAddress,
+          contactPhone: tenants.contactPhone,
+          contactEmail: tenants.contactEmail,
         })
         .from(tenants)
         .where(eq(tenants.slug, slug))
