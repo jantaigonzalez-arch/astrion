@@ -506,6 +506,6 @@ export async function capacidadDePlataforma(): Promise<CapacidadPlataforma> {
       mb: Math.round(Number(t.mb) * 10) / 10,
     })),
     fueraDeAlcance:
-      "CPU, memoria y disco del servidor no aparecen: la aplicación corre en un contenedor y desde ahí solo puede ver el suyo, no el del anfitrión. Medirlos de verdad pide métricas del sistema.",
+      "CPU y memoria del servidor no aparecen: `/proc` está acotado por cgroups, así que desde el contenedor solo se ve lo suyo y medirlas de verdad pide métricas del sistema. El DISCO sí se mide —los volúmenes montados viven en el anfitrión— y está abajo; se dio por imposible junto con las otras dos y no lo era.",
   };
 }

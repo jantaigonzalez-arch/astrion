@@ -162,3 +162,56 @@ export async function pesoDelLago(tope = 20_000): Promise<PesoDelLago> {
   await caminar(LAKE_DIR);
   return { bytes, archivos, parcial };
 }
+
+/**
+ * EL DISCO DE VERDAD, visto desde dentro del contenedor.
+ *
+ * ── POR QUÉ ESTO SÍ SE PUEDE Y YO DIJE QUE NO ─────────────────────────────
+ *
+ * Se dio por imposible: «la aplicación corre en un contenedor y desde ahí solo
+ * ve el suyo». Es cierto para CPU y memoria —`/proc` está acotado por cgroups—
+ * y FALSO para el disco: los volúmenes montados viven en el sistema de archivos
+ * del anfitrión, así que `statfs` sobre uno devuelve el tamaño y el hueco
+ * REALES de esa partición. Comprobado contra `df` en el servidor: 74,8 GB de
+ * 74,8 y 42,5 libres de 43.
+ *
+ * La lección es la de siempre en este repositorio: se comprobó ejecutando, no
+ * razonando. El razonamiento era plausible y costaba un tablero incompleto.
+ *
+ * ── SOBRE `LAKE_DIR` Y NO SOBRE `/` ───────────────────────────────────────
+ *
+ * Porque es lo que está montado, y porque es la partición que importa: ahí
+ * viven el volumen de Postgres, el lago y los comprobantes subidos. Si algún
+ * día se separan en discos distintos, esta cifra dejará de ser la única que
+ * hace falta — y entonces se notará, porque el número dejará de cuadrar con lo
+ * que crece.
+ */
+export type EspacioEnDisco = {
+  totalBytes: number;
+  libresBytes: number;
+  /** Falso cuando no hay volumen montado —desarrollo—: mide el disco local. */
+  desdeElVolumen: boolean;
+};
+
+export async function espacioEnDisco(): Promise<EspacioEnDisco | null> {
+  const { statfs } = await import("node:fs/promises");
+  for (const [ruta, delVolumen] of [
+    [LAKE_DIR, true],
+    [process.cwd(), false],
+  ] as const) {
+    try {
+      const s = await statfs(ruta);
+      return {
+        totalBytes: s.blocks * s.bsize,
+        // `bavail` y no `bfree`: hay bloques reservados para root que una
+        // aplicación no puede usar, y contarlos prometería un hueco que no
+        // existe justo cuando el disco se está llenando.
+        libresBytes: s.bavail * s.bsize,
+        desdeElVolumen: delVolumen,
+      };
+    } catch {
+      /* se prueba la siguiente */
+    }
+  }
+  return null;
+}

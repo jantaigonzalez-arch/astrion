@@ -1,7 +1,8 @@
 import { setRequestLocale } from "next-intl/server";
 import { Brain, Gauge, HardDrive, Info } from "lucide-react";
 import { capacidadDePlataforma } from "@/lib/data/platform";
-import { pesoDelLago } from "@/lib/analytics/lake";
+import { espacioEnDisco, pesoDelLago } from "@/lib/analytics/lake";
+import { MargenDeDisco } from "@/components/console/margen-de-disco";
 import { Card } from "@/components/ui/card";
 import { OccupancyBars, CountBars } from "@/components/portal/charts";
 
@@ -54,7 +55,11 @@ export default async function CapacidadPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  const [cap, lago] = await Promise.all([capacidadDePlataforma(), pesoDelLago()]);
+  const [cap, lago, disco] = await Promise.all([
+    capacidadDePlataforma(),
+    pesoDelLago(),
+    espacioEnDisco(),
+  ]);
   const totalMb = cap.porInquilino.reduce((a, t) => a + t.mb, 0);
   const lagoMb = Math.round((lago.bytes / 1048576) * 10) / 10;
 
@@ -108,6 +113,25 @@ export default async function CapacidadPage({
           emptyText="Ninguna empresa aprovisionada todavía."
         />
       </Card>
+
+      {/*
+        EL MARGEN, que es la pregunta que de verdad se hace quien abre esto:
+        no «cuánto ocupa cada uno» sino «cuándo tengo que comprar otro
+        servidor». Va después del peso porque se apoya en él.
+
+        Si no hay disco medible —no debería pasar, pero `statfs` puede fallar—
+        la tarjeta no se dibuja en vez de enseñar ceros: un margen de cero se
+        lee como «no cabe nadie más», que es lo contrario de la verdad.
+      */}
+      {disco ? (
+        <MargenDeDisco
+          totalBytes={disco.totalBytes}
+          libresBytes={disco.libresBytes}
+          desdeElVolumen={disco.desdeElVolumen}
+          datosMb={totalMb + lagoMb}
+          empresas={cap.porInquilino.length}
+        />
+      ) : null}
 
       {/*
         LA CAPA DE INTELIGENCIA, QUE FALTABA.
