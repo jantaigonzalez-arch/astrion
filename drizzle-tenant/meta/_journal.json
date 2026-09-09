@@ -225,6 +225,13 @@
       "when": 1788921408752,
       "tag": "0031_bloqueo_por_rubro",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1788925277587,
+      "tag": "0032_indices_de_llaves",
+      "breakpoints": true
     }
   ]
 }

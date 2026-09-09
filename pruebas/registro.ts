@@ -88,6 +88,10 @@ export const SOLO_LOCAL: Record<string, string> = {
   "scripts/_probe-perf.ts":
     "Mide tiempos contra el volumen real. Un umbral de rendimiento en un " +
     "ejecutor compartido de CI es una prueba que falla los martes.",
+  "scripts/_probe-rendimiento.ts":
+    "El informe de rendimiento del repositorio: milisegundos por consulta " +
+    "contra la base sembrada. Mide, no comprueba — no tiene nada que poner " +
+    "rojo, y un umbral aquí fallaría los martes igual que el anterior.",
 };
 
 /**

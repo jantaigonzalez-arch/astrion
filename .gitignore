@@ -115,6 +115,18 @@ scripts/_dash.ts
 !probe-tablas.mts
 !probe-unapply.mts
 !probe-viaticos.mts
+
+# ── Y UNO DE `scripts/`, POR UNA RAZÓN DISTINTA ────────────────────────────
+#
+# `_probe-rendimiento` no entra al CI —mide, no comprueba, y un umbral en un
+# ejecutor compartido falla los martes— pero SÍ tiene que estar en el
+# repositorio: el skill `.claude/skills/rendimiento` le dice a cualquiera que lo
+# corra, y un skill que apunta a un archivo que el clon no trae es peor que no
+# tener skill.
+#
+# Sigue necesitando `tsconfig.probe.json` y los stubs, que continúan fuera. Esa
+# es la decisión pendiente que ya nombra `pruebas/registro.ts`, no una nueva.
+!scripts/_probe-rendimiento.ts
 !scripts/_probe-budget.ts
 
 # Y con ellos, el módulo vacío al que `tsconfig.check.json` manda `server-only`.

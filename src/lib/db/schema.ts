@@ -252,6 +252,14 @@ export const tickets = pgTable("tickets", {
   index("tickets_created_at_idx").on(t.createdAt),
   // Historial de un equipo del laboratorio.
   index("tickets_equipment_idx").on(t.equipmentId),
+  /*
+    LA LLAVE DEL MÓDULO, INDEXADA POR LO QUE CUESTA NO HACERLO.
+
+    Postgres no indexa una llave foránea por su cuenta, así que sin esto borrar
+    UN módulo de equipo recorría los 14 151 tickets para validar la restricción.
+    Medido en la 0032, junto con las tres de `ticket_comments`: 25,6 ms → 3,8 ms.
+  */
+  index("tickets_modulo_idx").on(t.moduleId),
 ]);
 
 export const ticketComments = pgTable("ticket_comments", {
@@ -283,6 +291,14 @@ export const ticketComments = pgTable("ticket_comments", {
   // Bitácora de un ticket en orden cronológico: la consulta más frecuente
   // del portal. Sin este índice cada apertura de ticket escanea la tabla.
   index("ticket_comments_ticket_idx").on(t.ticketId, t.createdAt),
+  /*
+    Las tres llaves al equipo instalado. No las lee ninguna pantalla: existen
+    porque el borrado del PADRE las recorre para validar la restricción, y esta
+    es la tabla más grande del esquema —19 073 filas—. Ver la 0032.
+  */
+  index("ticket_comments_equipo_idx").on(t.equipmentId),
+  index("ticket_comments_modulo_idx").on(t.moduleId),
+  index("ticket_comments_submodulo_idx").on(t.submoduleId),
 ]);
 
 /* ------------------------- Leads (contacto) ------------------------- */
