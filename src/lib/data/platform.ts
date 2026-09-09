@@ -424,6 +424,8 @@ export type CapacidadPlataforma = {
   porInquilino: Array<{ etiqueta: string; mb: number }>;
   /** Lo que la base NO puede saber, dicho en la pantalla. */
   fueraDeAlcance: string;
+  /** La suma de los cupos vendidos, para poder ver la sobreventa. */
+  cupoTotalMb: number;
 };
 
 /**
@@ -471,8 +473,10 @@ export async function capacidadDePlataforma(): Promise<CapacidadPlataforma> {
   `)) as unknown as Array<{ esquema: string; mb: number }>;
 
   const [inquilinos] = (await db.execute(sql`
-    select count(*)::int as n from tenants
-  `)) as unknown as Array<{ n: number }>;
+    select count(*)::int as n,
+           coalesce(sum(storage_quota_mb), 0)::int as cupo_total
+      from tenants
+  `)) as unknown as Array<{ n: number; cupo_total: number }>;
 
   const maxConn = Number(ajustes?.max_conexiones ?? 0);
   const enUso = Number(ajustes?.en_uso ?? 0);
@@ -505,6 +509,7 @@ export async function capacidadDePlataforma(): Promise<CapacidadPlataforma> {
       etiqueta: t.esquema.replace(/^tenant_/, ""),
       mb: Math.round(Number(t.mb) * 10) / 10,
     })),
+    cupoTotalMb: Number(inquilinos?.cupo_total ?? 0),
     fueraDeAlcance:
       "CPU y memoria del servidor no aparecen: `/proc` está acotado por cgroups, así que desde el contenedor solo se ve lo suyo y medirlas de verdad pide métricas del sistema. El DISCO sí se mide —los volúmenes montados viven en el anfitrión— y está abajo; se dio por imposible junto con las otras dos y no lo era.",
   };

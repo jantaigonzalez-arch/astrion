@@ -130,6 +130,7 @@ export default async function CapacidadPage({
           desdeElVolumen={disco.desdeElVolumen}
           datosMb={totalMb + lagoMb}
           empresas={cap.porInquilino.length}
+          cupoTotalMb={cap.cupoTotalMb}
         />
       ) : null}
 

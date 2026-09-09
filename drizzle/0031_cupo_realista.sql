@@ -1,0 +1,54 @@
+-- EL CUPO ERA MAYOR QUE EL DISCO, Y ASÍ NO PROTEGE DE NADA.
+--
+-- La 0030 puso 100 GB por empresa razonando desde el precio: a los precios de
+-- almacenamiento de Hetzner, cien gigas cuestan alrededor del 1,6 % de una
+-- suscripción de 320 USD. El cálculo era correcto y la conclusión, inservible,
+-- porque no miró la máquina: **el servidor tiene UN disco de 76 GB**, sin
+-- volúmenes adicionales, con 43 libres.
+--
+-- O sea que el cupo prometía a UNA sola empresa más espacio del que existe. Con
+-- veinte clientes serían dos terabytes prometidos sobre cuarenta y tres gigas.
+--
+-- Y lo peor no es la promesa: es que un cupo por encima del disco NO SE DISPARA
+-- NUNCA. El disco se llena primero, la aplicación deja de escribir para todos a
+-- la vez, y el control que la 0030 vino a instalar no habría bloqueado ni una
+-- subida. Un límite que no puede alcanzarse es un límite decorativo.
+--
+-- ---------------------------------------------------------------------------
+-- 5 GB, Y DE DÓNDE SALE
+--
+-- Del disco hacia abajo, que es el único orden que no miente:
+--
+--   · 43 GB libres hoy, y unos 55 tras liberar el caché de compilación de
+--     Docker, que ocupa 22 y de los que 12 se reclaman con un comando;
+--   · de eso hay que dejar sitio para respaldos, imágenes y crecimiento del
+--     sistema: llamemos treinta gigas repartibles;
+--   · el techo de empresas TRABAJANDO a la vez es 20, así que treinta entre
+--     veinte son 1,5 GB. Cinco es holgado contra ese reparto porque no todas
+--     llegan al tope a la vez, y sigue cubriendo entre dos y tres años de
+--     adjuntos de un cliente activo —unos 2 GB al año, medido sobre su ritmo
+--     de tickets—.
+--
+-- Cinco gigas es un cupo que SE PUEDE CUMPLIR. Cien era una cifra de folleto.
+--
+-- ---------------------------------------------------------------------------
+-- CÓMO SE SUBE, CUANDO TOQUE
+--
+-- No tocando esta columna a ciegas: añadiendo disco primero. Un volumen de
+-- Hetzner cuesta del orden de 0,05 USD por giga al mes, así que quinientos
+-- gigas son unos 25 USD y dan para cincuenta clientes a diez gigas cada uno —
+-- veinticinco dólares de disco contra dieciséis mil de suscripciones.
+--
+-- El día que se añada, se sube el cupo de las empresas que lo necesiten. La
+-- columna es por empresa justamente para eso: un cliente grande no debería
+-- esperar un despliegue, pero tampoco recibir espacio que el servidor no tiene.
+--
+-- ---------------------------------------------------------------------------
+-- ESCRITA A MANO. Ver la regla 4 de AGENTS.md — vale para las dos carpetas.
+
+ALTER TABLE "tenants" ALTER COLUMN "storage_quota_mb" SET DEFAULT 5120;--> statement-breakpoint
+
+-- Las filas que ya nacieron con el cupo de folleto vuelven al realista. Solo
+-- las que lo tengan EXACTAMENTE en 102400: si alguien ya lo ajustó a mano, esa
+-- decisión es más reciente que esta migración y no se pisa.
+UPDATE "tenants" SET "storage_quota_mb" = 5120 WHERE "storage_quota_mb" = 102400;

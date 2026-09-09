@@ -224,10 +224,15 @@ export const tenants = pgTable(
      * el primer aviso habría sido la aplicación dejando de escribir para TODOS
      * los inquilinos a la vez.
      *
-     * 100 GB de fábrica, y sale de una medición: la base de datos de una
-     * empresa pesa megas —despreciable—, y lo que llena son los adjuntos, unos
-     * 2 GB al año en un cliente activo. Cien es diez veces eso y cuesta
-     * alrededor del 1,6 % de la suscripción. Ver la migración.
+     * 5 GB de fábrica, y el número salió mal la primera vez: la 0030 puso 100
+     * razonando desde el PRECIO —cien gigas cuestan el 1,6 % de la suscripción—
+     * sin mirar la máquina. El servidor tiene un disco de 76 GB con 43 libres,
+     * así que el cupo prometía a una sola empresa más espacio del que existe.
+     *
+     * Y un cupo por encima del disco no se dispara NUNCA: el disco se llena
+     * primero y el control no bloquea ni una subida. La 0031 lo baja a lo que
+     * el servidor puede cumplir, que además cubre dos o tres años de adjuntos
+     * de un cliente activo. Se sube cuando se añada disco, no antes.
      *
      * Por empresa y no como constante del código: es una decisión comercial, y
      * subírsela a un cliente grande no debería necesitar un despliegue.

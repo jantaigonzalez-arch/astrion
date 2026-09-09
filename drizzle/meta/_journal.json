@@ -218,6 +218,13 @@
       "when": 1788986263584,
       "tag": "0030_cupo_de_almacenamiento",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788986879724,
+      "tag": "0031_cupo_realista",
+      "breakpoints": true
     }
   ]
 }
