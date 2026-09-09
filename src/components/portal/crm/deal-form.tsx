@@ -302,7 +302,7 @@ export function DealForm({
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
-          <Label htmlFor="valueMxn">Valor (MXN)</Label>
+          <Label htmlFor="valueMxn">Valor sin IVA (MXN)</Label>
           <Input
             id="valueMxn"
             name="valueMxn"
@@ -312,7 +312,7 @@ export function DealForm({
           />
         </div>
         <div>
-          <Label htmlFor="valueUsd">Valor (USD)</Label>
+          <Label htmlFor="valueUsd">Valor sin IVA (USD)</Label>
           <Input
             id="valueUsd"
             name="valueUsd"

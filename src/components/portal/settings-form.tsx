@@ -24,7 +24,7 @@ export function SettingsForm({
       <form action={action} className="grid gap-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <Label htmlFor="cost">Costo por hora (interno)</Label>
+            <Label htmlFor="cost">Costo por hora, sin IVA (interno)</Label>
             <Input
               id="cost"
               name="laborCostPerHour"
@@ -40,7 +40,7 @@ export function SettingsForm({
             </p>
           </div>
           <div>
-            <Label htmlFor="rate">Tarifa por hora (cobrada)</Label>
+            <Label htmlFor="rate">Tarifa por hora, sin IVA (cobrada)</Label>
             <Input
               id="rate"
               name="laborRatePerHour"

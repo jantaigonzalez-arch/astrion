@@ -344,6 +344,69 @@ await db
     ok("y con la nota puesta entra", conNota.ok, conNota.ok ? "" : conNota.reason);
     await tx.execute(sql`rollback to savepoint s1`);
 
+    /*
+      EL BLOQUEO ES UNA OPCIÓN DE LA EMPRESA, Y SE PRUEBA EN LOS DOS MODOS.
+
+      Un interruptor que solo se prueba encendido no demuestra nada: lo que hay
+      que sostener es que APAGADO deja pasar —que es lo de fábrica y lo que
+      viven hoy los usuarios— y ENCENDIDO rechaza. Con una sola de las dos
+      mitades, cambiar el valor por omisión pasaría inadvertido.
+
+      El tope se mide como el aviso: suma del rubro en el viaje contra
+      presupuesto × días. Aquí son 2 días × 1 000 = 2 000, y se intenta 2 500.
+    */
+    console.log("\nEL TOPE BLOQUEA SOLO SI LA EMPRESA LO PIDE");
+    await tx.execute(sql`update viatico_rubros set daily_budget_mxn = 1000 where key = 'hotel'`);
+    const vTope = await nuevo("autorizado", "PROBE-TOPE");
+    await tx.execute(sql`
+      update viaticos set departs_on = current_date, returns_on = current_date + 1
+       where id = ${vTope}::uuid`);
+
+    const gasto = {
+      viaticoId: vTope,
+      destino: { tipo: "ticket" as const, ticketId },
+      rubroId: rHotel,
+      description: "hotel caro",
+      amountMxn: 2500,
+      spentOn: hoy,
+    };
+
+    await tx.execute(sql`
+      insert into settings (id, viaticos_bloquea_exceso) values ('global', false)
+      on conflict (id) do update set viaticos_bloquea_exceso = false`);
+    const suelto = await addExpense(tx, gasto, userId);
+    ok(
+      "apagado: pasarse del tope SÍ se puede guardar",
+      suelto.ok,
+      suelto.ok ? "" : suelto.reason,
+    );
+    await tx.execute(sql`delete from viatico_expenses where viatico_id = ${vTope}::uuid`);
+
+    await tx.execute(sql`
+      insert into settings (id, viaticos_bloquea_exceso) values ('global', true)
+      on conflict (id) do update set viaticos_bloquea_exceso = true`);
+    const frenado = await addExpense(tx, gasto, userId);
+    ok(
+      "encendido: el mismo gasto se rechaza",
+      !frenado.ok && frenado.reason.includes("tope"),
+      frenado.ok ? "lo dejó pasar" : frenado.reason,
+    );
+
+    // Y por debajo del tope entra igual: un bloqueo que rechaza todo no es un
+    // bloqueo, es una avería.
+    const cabe = await addExpense(tx, { ...gasto, amountMxn: 1800 }, userId);
+    ok("encendido: por debajo del tope entra", cabe.ok, cabe.ok ? "" : cabe.reason);
+
+    // La suma es lo que manda, no el gasto suelto: 1 800 + 500 pasa de 2 000.
+    const acumula = await addExpense(tx, { ...gasto, amountMxn: 500 }, userId);
+    ok(
+      "encendido: bloquea por la SUMA del rubro, no por el gasto suelto",
+      !acumula.ok,
+      acumula.ok ? "lo dejó pasar" : acumula.reason,
+    );
+
+    await tx.execute(sql`rollback to savepoint s1`);
+
     const vId2 = await nuevo("autorizado", "PROBE-V-1");
     const e4 = await debeFallar(
       tx,

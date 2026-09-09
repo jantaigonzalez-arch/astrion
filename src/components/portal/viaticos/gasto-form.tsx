@@ -237,7 +237,7 @@ export function GastoForm({
           <Input id="spentOn" name="spentOn" type="date" required />
         </div>
         <div>
-          <Label htmlFor="amountMxn">Importe (MXN)</Label>
+          <Label htmlFor="amountMxn">Importe total del recibo (MXN)</Label>
           <Input
             id="amountMxn"
             name="amountMxn"

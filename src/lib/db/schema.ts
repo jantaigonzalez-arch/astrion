@@ -544,6 +544,23 @@ export const settings = pgTable("settings", {
    */
   viaticosProspectos: boolean("viaticos_prospectos").notNull().default(false),
 
+  /**
+   * ¿Pasarse del presupuesto de un rubro IMPIDE guardar el gasto?
+   *
+   * `false` —de fábrica— es avisar y marcar: el gasto entra y sale señalado
+   * para quien firma. El argumento es que bloquear no hace que el gasto no
+   * ocurra, sino que se registre en otro rubro, y ahí se pierde el análisis.
+   *
+   * `true` es para las empresas donde el tope es un tope. Que sea una opción y
+   * no una postura del código es la misma lección que dejó el enum de
+   * categorías: elegir por la empresa algo que es suyo.
+   *
+   * Lo hace cumplir `addExpense` con la MISMA cuenta que pinta el aviso —suma
+   * del rubro en el viaje contra presupuesto × días—, porque dos medidas
+   * distintas darían gastos que la pantalla deja pasar y el servidor rechaza.
+   */
+  viaticosBloqueaExceso: boolean("viaticos_bloquea_exceso").notNull().default(false),
+
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -3227,6 +3244,33 @@ export const viaticoExpenses = pgTable(
     note: varchar("note", { length: 120 }),
 
     description: varchar("description", { length: 300 }).notNull(),
+
+    /**
+     * EL TOTAL DEL RECIBO, **CON IVA**. Y es la excepción de la casa.
+     *
+     * En el resto del sistema el dinero va NETO —costo de refacción, precio de
+     * venta, tarifa por hora, monto de contrato, valor de un negocio— porque el
+     * IVA no es costo ni ingreso: se traslada y se acredita, y mezclarlo
+     * distorsiona el margen.
+     *
+     * Aquí no se puede. Lo que se captura es lo que el ingeniero PAGÓ y lo que
+     * se le va a REEMBOLSAR, y eso es el total. Pedirle el subtotal sería
+     * pedirle que desglose recibos que muchas veces no vienen desglosados —un
+     * taxi, una comida— y que además a veces no llevan IVA acreditable en
+     * absoluto: en ese caso el bruto SÍ es el costo.
+     *
+     * Por eso el presupuesto del rubro y el anticipo autorizado van también en
+     * bruto: se comparan contra esto, y comparar neto contra bruto marcaría en
+     * rojo un 16 % de más en cada viaje.
+     *
+     * ── LO QUE ESTO CUESTA HOY, DICHO EN VOZ ALTA ─────────────────────────
+     *
+     * El costo de viaje entra a la utilidad del ticket EN BRUTO, así que un
+     * viaje con factura infla el costo hasta un 16 %. No se arregla dividiendo
+     * —los gastos sin comprobante fiscal no llevan IVA que quitar— sino con un
+     * `tax_total` por gasto, cuando llegue la capa de impuestos. Está aquí para
+     * que quien lea un margen sepa qué está leyendo, y no para justificarlo.
+     */
     amountMxn: numeric("amount_mxn", { precision: 12, scale: 2 }).notNull(),
     spentOn: date("spent_on").notNull(),
 

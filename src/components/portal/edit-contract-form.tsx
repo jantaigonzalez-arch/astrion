@@ -83,7 +83,7 @@ export function EditContractForm({
 
           <div className="grid gap-4 sm:grid-cols-3">
             <div>
-              <Label htmlFor="amountMxn">Costo (MXN)</Label>
+              <Label htmlFor="amountMxn">Costo sin IVA (MXN)</Label>
               <Input
                 id="amountMxn"
                 name="amountMxn"
@@ -92,7 +92,7 @@ export function EditContractForm({
               />
             </div>
             <div>
-              <Label htmlFor="amountUsd">Costo (USD)</Label>
+              <Label htmlFor="amountUsd">Costo sin IVA (USD)</Label>
               <Input
                 id="amountUsd"
                 name="amountUsd"

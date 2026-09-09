@@ -1,0 +1,34 @@
+-- QUE PASARSE DEL PRESUPUESTO BLOQUEE O NO, LO DECIDE LA EMPRESA.
+--
+-- La 0029 dejó una sola respuesta escrita en el código: el gasto se registra
+-- igual y sale marcado para quien firma. El argumento era —y sigue siendo—
+-- bueno: bloquear no hace que el gasto no ocurra, hace que se registre en otro
+-- rubro, y ahí se pierde el análisis que el catálogo vino a permitir.
+--
+-- Pero es un argumento, no un hecho, y hay empresas donde el tope es un tope:
+-- si el ingeniero no puede pasarse, no se pasa, y punto. Elegir por ellas desde
+-- el código es exactamente lo mismo que hacía el enum de categorías antes de la
+-- 0029.
+--
+-- ---------------------------------------------------------------------------
+-- APAGADO DE FÁBRICA, COMO TODO LO QUE CAMBIA UNA PRÁCTICA
+--
+-- `false` = lo de hoy: avisa y marca. Encenderlo es una decisión que alguien
+-- toma mirando la pantalla, no algo que le aparezca a una empresa por haber
+-- actualizado. Es el mismo criterio que `viaticos_prospectos`.
+--
+-- ---------------------------------------------------------------------------
+-- SE COMPARA IGUAL QUE LA MARCA, Y ESO NO ES UN DETALLE
+--
+-- El bloqueo usa EXACTAMENTE la misma cuenta que el aviso: la suma del rubro en
+-- todo el viaje contra presupuesto × días. Si midieran distinto —el aviso por
+-- totales y el bloqueo por gasto suelto— habría gastos que la pantalla deja
+-- pasar y el servidor rechaza, o al revés, y nadie podría explicar cuál manda.
+--
+-- Un rubro SIN tope no bloquea nunca, por lo mismo que no se marca: nulo es «no
+-- lo hemos definido», no «no se paga».
+--
+-- ---------------------------------------------------------------------------
+-- ESCRITA A MANO. Ver la regla 4 de AGENTS.md — vale para las dos carpetas.
+
+ALTER TABLE "settings" ADD COLUMN "viaticos_bloquea_exceso" boolean DEFAULT false NOT NULL;

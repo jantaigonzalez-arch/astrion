@@ -71,11 +71,11 @@ export function AddPartForm() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div>
-          <Label htmlFor="p-mxn">Costo actual (MXN)</Label>
+          <Label htmlFor="p-mxn">Costo actual sin IVA (MXN)</Label>
           <Input id="p-mxn" name="costMxn" inputMode="decimal" placeholder="3450.00" />
         </div>
         <div>
-          <Label htmlFor="p-usd">Costo actual (USD)</Label>
+          <Label htmlFor="p-usd">Costo actual sin IVA (USD)</Label>
           <Input id="p-usd" name="costUsd" inputMode="decimal" placeholder="182.00" />
         </div>
         <div>
@@ -86,11 +86,11 @@ export function AddPartForm() {
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <Label htmlFor="p-pmxn">Precio de venta (MXN)</Label>
+          <Label htmlFor="p-pmxn">Precio de venta sin IVA (MXN)</Label>
           <Input id="p-pmxn" name="priceMxn" inputMode="decimal" placeholder="5002.50" />
         </div>
         <div>
-          <Label htmlFor="p-pusd">Precio de venta (USD)</Label>
+          <Label htmlFor="p-pusd">Precio de venta sin IVA (USD)</Label>
           <Input id="p-pusd" name="priceUsd" inputMode="decimal" placeholder="263.90" />
         </div>
       </div>

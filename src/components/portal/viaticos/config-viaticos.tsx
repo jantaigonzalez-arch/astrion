@@ -6,6 +6,7 @@ import {
   borrarRubroAction,
   crearRubroAction,
   guardarRubroAction,
+  guardarBloqueoExceso,
   guardarViaticosProspectos,
   type ConfigState,
 } from "@/lib/actions/viaticos-config";
@@ -175,7 +176,7 @@ function RubroRow({ rubro }: { rubro: RubroFila }) {
             onChange={(e) => setBudget(e.target.value)}
             aria-label="Presupuesto por día"
           />
-          <span className="text-xs text-muted-foreground">MXN por día</span>
+          <span className="text-xs text-muted-foreground">MXN por día, con IVA</span>
         </div>
 
         <div className="flex items-start gap-1">
@@ -215,7 +216,69 @@ function RubroRow({ rubro }: { rubro: RubroFila }) {
   );
 }
 
-export function RubrosCard({ rubros }: { rubros: RubroFila[] }) {
+/**
+ * El interruptor del bloqueo. Vive DENTRO de la tarjeta de rubros, no aparte:
+ * lo que decide solo tiene sentido junto a los topes que hace cumplir, y en su
+ * propia tarjeta habría que repetir la mitad de la explicación.
+ */
+function BloqueoExcesoForm({ activo }: { activo: boolean }) {
+  const [state, action, pending] = useActionState(guardarBloqueoExceso, initial);
+  const [marcado, setMarcado] = useState(activo);
+
+  return (
+    <form action={action} className="mt-2 rounded-lg bg-secondary/50 px-3 py-2.5">
+      <label className="flex cursor-pointer items-start gap-2.5 text-xs">
+        <input
+          type="checkbox"
+          name="viaticosBloqueaExceso"
+          checked={marcado}
+          onChange={(e) => setMarcado(e.target.checked)}
+          className="mt-0.5 size-3.5 rounded border-input"
+        />
+        <span className="text-muted-foreground">
+          <span className="block font-medium text-foreground">
+            Impedir que se capture un gasto por encima del tope
+          </span>
+          {marcado ? (
+            <>
+              El ingeniero <span className="font-medium">no podrá guardar</span>{" "}
+              un gasto que deje su rubro por encima del presupuesto del viaje.
+              Tendrá que pedir que se lo amplíen.
+            </>
+          ) : (
+            <>
+              Apagado: el gasto se registra igual y sale{" "}
+              <span className="font-medium">marcado</span> en la comprobación,
+              con cuánto se pasó, para que decida quien firma. Bloquear no evita
+              el gasto — evita que se registre donde le toca.
+            </>
+          )}
+          <span className="mt-0.5 block">
+            Un rubro <span className="font-medium">sin tope</span> nunca se marca
+            ni se bloquea.
+          </span>
+        </span>
+      </label>
+      {marcado !== activo || state.ok || state.error ? (
+        <div className="mt-2 flex items-center justify-end gap-3">
+          <Aviso state={state} />
+          <Button type="submit" size="sm" disabled={pending || marcado === activo}>
+            {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+            Guardar
+          </Button>
+        </div>
+      ) : null}
+    </form>
+  );
+}
+
+export function RubrosCard({
+  rubros,
+  bloqueaExceso,
+}: {
+  rubros: RubroFila[];
+  bloqueaExceso: boolean;
+}) {
   const [state, action, pending] = useActionState(crearRubroAction, initial);
   const [abierto, setAbierto] = useState(false);
 
@@ -235,18 +298,16 @@ export function RubrosCard({ rubros }: { rubros: RubroFila[] }) {
       </p>
 
       {/*
-        LO QUE PASA AL PASARSE, DICHO AQUÍ Y NO EN LA DOCUMENTACIÓN.
+        LO QUE PASA AL PASARSE ES UNA DECISIÓN, NO UN PÁRRAFO.
 
-        Es la primera pregunta de quien teclea un número en esta pantalla, y si
-        no se contesta se contesta sola —y casi siempre mal, suponiendo que
-        bloquea—.
+        Aquí había un texto afirmando que pasarse no bloquea. Era la primera
+        pregunta de quien teclea un número en esta pantalla —y si no se contesta
+        se contesta sola, casi siempre mal—, pero contestarla desde el código era
+        elegir por la empresa: hay quien quiere que el tope sea un tope.
+
+        Ahora es el interruptor, en el mismo sitio donde estaba la respuesta.
       */}
-      <p className="mt-2 rounded-lg bg-secondary/50 px-3 py-2 text-xs text-muted-foreground">
-        Pasarse <span className="font-medium">no bloquea</span> la captura: el
-        gasto se registra y sale marcado en la comprobación, con cuánto se pasó,
-        para que decida quien firma. Un rubro{" "}
-        <span className="font-medium">sin tope</span> no se marca nunca.
-      </p>
+      <BloqueoExcesoForm activo={bloqueaExceso} />
 
       {sumaDiaria > 0 ? (
         <p className="mt-2 text-xs text-muted-foreground">
@@ -283,7 +344,7 @@ export function RubrosCard({ rubros }: { rubros: RubroFila[] }) {
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="rubro-budget" className="text-xs">
-                MXN por día
+                MXN por día, con IVA
               </Label>
               <Input
                 id="rubro-budget"

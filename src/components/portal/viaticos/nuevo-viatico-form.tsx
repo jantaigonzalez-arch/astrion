@@ -478,7 +478,7 @@ export function NuevoViaticoForm({
           <Input id="returnsOn" name="returnsOn" type="date" required />
         </div>
         <div>
-          <Label htmlFor="estimatedMxn">Estimado (MXN)</Label>
+          <Label htmlFor="estimatedMxn">Estimado con IVA (MXN)</Label>
           <Input
             id="estimatedMxn"
             name="estimatedMxn"

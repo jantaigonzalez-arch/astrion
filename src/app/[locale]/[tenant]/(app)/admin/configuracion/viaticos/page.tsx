@@ -44,7 +44,7 @@ export default async function ConfigViaticosPage({
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <RubrosCard rubros={rubros} />
+      <RubrosCard rubros={rubros} bloqueaExceso={ajustes.viaticosBloqueaExceso} />
       <ProspectosCard activo={ajustes.viaticosProspectos} />
     </div>
   );

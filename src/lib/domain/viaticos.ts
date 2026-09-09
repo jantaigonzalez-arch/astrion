@@ -7,7 +7,7 @@ import { getSettings } from "@/lib/data/settings";
 import { ajustesGuardados, alcanza, nivelEfectivo, type Nivel } from "@/lib/permisos";
 import { nextViaticoReference } from "@/lib/domain/references";
 import { crearAvisos } from "@/lib/notificaciones";
-import type { ViaticoEstado } from "@/lib/viaticos";
+import { diasDeViaje, type ViaticoEstado } from "@/lib/viaticos";
 
 /**
  * LAS TRANSICIONES DE UN VIÁTICO, con sus guardias.
@@ -178,6 +178,10 @@ async function cargar(tx: DbOrTx, id: string) {
       contractId: viaticos.contractId,
       organizationId: viaticos.organizationId,
       dealId: viaticos.dealId,
+      // Las fechas viajan porque el tope de un rubro es presupuesto × DÍAS: sin
+      // ellas no se puede saber contra qué se compara.
+      departsOn: viaticos.departsOn,
+      returnsOn: viaticos.returnsOn,
       estimatedMxn: viaticos.estimatedMxn,
       authorizedMxn: viaticos.authorizedMxn,
     })
@@ -840,6 +844,70 @@ async function destinoValido(
   return d ? null : "Ese negocio no es de la empresa a la que se viajó.";
 }
 
+/**
+ * ¿ESTE GASTO SE PASA DEL PRESUPUESTO, Y ESTA EMPRESA LO IMPIDE?
+ *
+ * Dos preguntas, y el orden importa: si la empresa no bloquea —que es lo de
+ * fábrica— no se consulta nada más. Pasarse sigue estando permitido y sale
+ * marcado en la comprobación, que es la respuesta por omisión desde la 0029.
+ *
+ * ── LA CUENTA ES LA MISMA QUE LA DEL AVISO, A PROPÓSITO ────────────────────
+ *
+ * Suma del rubro en TODO el viaje —lo ya capturado más este gasto— contra
+ * presupuesto × días. No el gasto suelto contra el tope diario: una factura de
+ * hotel por tres noches se rechazaría siendo correcta.
+ *
+ * Que las dos medidas coincidan es lo que impide el peor de los casos: una
+ * pantalla que enseña el gasto en verde y un servidor que lo rechaza, sin que
+ * nadie pueda decir cuál de los dos tiene razón. Por eso `consumoPorRubro` vive
+ * en `lib/viaticos.ts`, sin `server-only`, y lo usan los dos lados.
+ *
+ * Un rubro SIN tope no bloquea nunca: nulo es «no lo hemos definido».
+ */
+async function vetoPresupuesto(
+  tx: DbOrTx,
+  v: { id: string; departsOn: string; returnsOn: string },
+  gasto: { rubroId: string; amountMxn: number },
+): Promise<string | null> {
+  const ajustes = await getSettings(tx);
+  if (!ajustes.viaticosBloqueaExceso) return null;
+
+  const [r] = await tx
+    .select({
+      name: viaticoRubros.name,
+      dailyBudgetMxn: viaticoRubros.dailyBudgetMxn,
+    })
+    .from(viaticoRubros)
+    .where(eq(viaticoRubros.id, gasto.rubroId))
+    .limit(1);
+  if (!r?.dailyBudgetMxn) return null;
+
+  const [ya] = await tx
+    .select({ n: sql<number>`coalesce(sum(${viaticoExpenses.amountMxn}), 0)::float8` })
+    .from(viaticoExpenses)
+    .where(
+      and(
+        eq(viaticoExpenses.viaticoId, v.id),
+        eq(viaticoExpenses.rubroId, gasto.rubroId),
+      ),
+    );
+
+  const dias = diasDeViaje(v.departsOn, v.returnsOn);
+  const tope = Number(r.dailyBudgetMxn) * Math.max(1, dias);
+  const total = Number(ya?.n ?? 0) + gasto.amountMxn;
+  if (total <= tope) return null;
+
+  // El mensaje dice el tope, lo ya gastado y cuánto sobra: sin eso, quien
+  // captura solo sabe que no puede, y la salida que encuentra es cambiar el
+  // rubro — que es justo lo que arruina el análisis.
+  return (
+    `«${r.name}» tiene un tope de ${tope.toFixed(2)} para este viaje ` +
+    `(${Number(r.dailyBudgetMxn).toFixed(2)} × ${dias} día(s)). ` +
+    `Llevas ${Number(ya?.n ?? 0).toFixed(2)} y esto lo dejaría en ${total.toFixed(2)}. ` +
+    `Pídele a quien autoriza que amplíe el presupuesto o que lo revise.`
+  );
+}
+
 /** El destino, tal como se guarda en las dos columnas. */
 function columnasDeDestino(destino: DestinoGasto) {
   return {
@@ -880,6 +948,9 @@ export async function addExpense(
 
   const vetoDelRubro = await vetoRubro(tx, gasto.rubroId, gasto.note);
   if (vetoDelRubro) return { ok: false, reason: vetoDelRubro };
+
+  const vetoDelTope = await vetoPresupuesto(tx, v, gasto);
+  if (vetoDelTope) return { ok: false, reason: vetoDelTope };
 
   const vetoDestino = await destinoValido(tx, v, gasto.destino);
   if (vetoDestino) return { ok: false, reason: vetoDestino };

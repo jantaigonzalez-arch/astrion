@@ -211,6 +211,13 @@
       "when": 1788919517036,
       "tag": "0029_rubros_de_viatico",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1788920914326,
+      "tag": "0030_bloquear_exceso",
+      "breakpoints": true
     }
   ]
 }

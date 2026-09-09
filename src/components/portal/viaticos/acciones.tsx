@@ -104,7 +104,7 @@ export function AccionesViatico({
           <input type="hidden" name="id" value={id} />
           <p className="text-sm font-medium">Autorizar</p>
           <div>
-            <Label htmlFor="authorizedMxn">Monto que se autoriza (MXN)</Label>
+            <Label htmlFor="authorizedMxn">Monto que se autoriza, con IVA (MXN)</Label>
             {/*
               Viene relleno con lo que se pidió, y es editable: autorizar menos
               es una respuesta legítima y frecuente. Lo pedido queda guardado
