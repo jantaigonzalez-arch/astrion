@@ -58,8 +58,23 @@ export default async function OrganizationDetailPage({
   const org = await getOrganizationById(id);
   if (!org) notFound();
 
-  // Todo lo que ya existe en el portal para este laboratorio.
-  const portal = await getOrganizationPortalData(org.clientId);
+  /*
+    LAS TRES QUE DEPENDEN DE `org` VAN JUNTAS.
+
+    Iban en cascada —el portal, luego el tipo, luego los viajes— y ninguna
+    necesita el resultado de la anterior: solo el `org` que ya está arriba. En
+    serie son tres idas y vueltas a la base una detrás de otra; la última la
+    añadí yo al montar el costo de visitarlos, y la puse detrás sin mirar.
+
+    `Promise.all` no las hace más baratas, las hace simultáneas — que con dos
+    conexiones por empresa es además una manera de soltar antes la que se ocupa.
+  */
+  const [portal, kind, viajes] = await Promise.all([
+    // Todo lo que ya existe en el portal para este laboratorio.
+    getOrganizationPortalData(org.clientId),
+    kindDeOrganizacion(org.id),
+    viaticosDelProspecto(org.id),
+  ]);
 
   const intl = locale === "en" ? "en-US" : "es-MX";
   const fmtDateTime = (d: Date | string | null) =>
@@ -74,7 +89,6 @@ export default async function OrganizationDetailPage({
     prospecte a alguien que ya nos compra —y lo que explica por qué debajo
     aparecen unas cosas u otras—.
   */
-  const kind = await kindDeOrganizacion(org.id);
   const esCliente = kind === "client";
 
   /*
@@ -87,7 +101,6 @@ export default async function OrganizationDetailPage({
     respuesta. Es la misma ficha en dos momentos, como dice el encabezado de
     Prospectos.
   */
-  const viajes = await viaticosDelProspecto(org.id);
 
   const openDeals = org.deals.filter((d) => d.status === "open");
   const openValue = openDeals.reduce((a, d) => a + Number(d.valueMxn ?? 0), 0);
