@@ -100,3 +100,65 @@ export function absolute(relative: string): string {
 export async function consentingTenants(): Promise<LakeTenant[]> {
   return (await lakeTenants()).filter((t) => t.consents);
 }
+
+/**
+ * CUÁNTO PESA EL LAGO, para el tablero de capacidad.
+ *
+ * ── POR QUÉ ESTO NO ESTABA EN EL CÁLCULO DE CAPACIDAD ──────────────────────
+ *
+ * Porque hoy el lago está VACÍO —nadie ha corrido el extractor en producción— y
+ * un tablero que solo mira la base transaccional da una cifra tranquilizadora
+ * de un sistema al que le falta arrancar una capa entera. La cifra no estaba
+ * mal: estaba incompleta, que en un tablero de capacidad es lo mismo que estar
+ * mal.
+ *
+ * ── SE RECORRE EL DIRECTORIO, Y CON TOPE ──────────────────────────────────
+ *
+ * No hay índice de esto en ninguna parte: son ficheros. Se camina el árbol con
+ * un tope de archivos para que la pantalla no se quede colgada el día que el
+ * lago tenga cientos de miles de parquet — cuando eso pase, el número aproximado
+ * y un aviso valen más que una pantalla que no carga. `parcial` lo dice.
+ */
+export type PesoDelLago = {
+  bytes: number;
+  archivos: number;
+  /** Se alcanzó el tope y el número es un piso, no un total. */
+  parcial: boolean;
+};
+
+export async function pesoDelLago(tope = 20_000): Promise<PesoDelLago> {
+  const { stat, readdir } = await import("node:fs/promises");
+  let bytes = 0;
+  let archivos = 0;
+  let parcial = false;
+
+  async function caminar(dir: string): Promise<void> {
+    if (archivos >= tope) {
+      parcial = true;
+      return;
+    }
+    let entradas;
+    try {
+      entradas = await readdir(dir, { withFileTypes: true });
+    } catch {
+      // El volumen puede no estar montado —en desarrollo casi nunca lo está—.
+      // Devolver cero es correcto: no hay lago que medir.
+      return;
+    }
+    for (const e of entradas) {
+      if (archivos >= tope) {
+        parcial = true;
+        return;
+      }
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) await caminar(p);
+      else {
+        archivos++;
+        bytes += (await stat(p)).size;
+      }
+    }
+  }
+
+  await caminar(LAKE_DIR);
+  return { bytes, archivos, parcial };
+}

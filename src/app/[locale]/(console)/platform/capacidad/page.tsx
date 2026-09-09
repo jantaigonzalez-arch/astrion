@@ -1,6 +1,7 @@
 import { setRequestLocale } from "next-intl/server";
-import { Gauge, HardDrive, Info } from "lucide-react";
+import { Brain, Gauge, HardDrive, Info } from "lucide-react";
 import { capacidadDePlataforma } from "@/lib/data/platform";
+import { pesoDelLago } from "@/lib/analytics/lake";
 import { Card } from "@/components/ui/card";
 import { OccupancyBars, CountBars } from "@/components/portal/charts";
 
@@ -25,6 +26,20 @@ export const dynamic = "force-dynamic";
  * de visualización más común que hay, y el que hace que dos barras del mismo
  * largo signifiquen cosas distintas.
  *
+ * ── UNA CIFRA QUE HUBO QUE CORREGIR ────────────────────────────────────────
+ *
+ * El primer corte decía que un inquilino maduro ocupa «unos 30 MB, medido
+ * contra la base sembrada». El número era real y la conclusión, falsa: la
+ * siembra sintética genera 60 eventos de dominio para catorce mil tickets,
+ * mientras que el inquilino de verdad lleva 3 062 para seiscientos. La bitácora
+ * de auditoría es de SOLO AÑADIR por diseño —ni `--wipe` la toca— y ya es el
+ * 30 % del peso de la empresa real.
+ *
+ * Extrapolar desde la base sembrada habría triplicado a la baja la estimación
+ * de cuántos clientes caben. Por eso el gráfico enseña el peso MEDIDO de cada
+ * inquilino y no una proyección: la proyección estaba mal y el peso no puede
+ * estarlo.
+ *
  * ── LO QUE NO SALE, SALE DICHO ─────────────────────────────────────────────
  *
  * CPU, memoria y disco del anfitrión no están, y la pantalla lo explica en vez
@@ -39,8 +54,9 @@ export default async function CapacidadPage({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  const cap = await capacidadDePlataforma();
+  const [cap, lago] = await Promise.all([capacidadDePlataforma(), pesoDelLago()]);
   const totalMb = cap.porInquilino.reduce((a, t) => a + t.mb, 0);
+  const lagoMb = Math.round((lago.bytes / 1048576) * 10) / 10;
 
   return (
     <div className="space-y-6">
@@ -81,7 +97,7 @@ export default async function CapacidadPage({
         <p className="mb-4 mt-1 text-xs text-muted-foreground">
           {totalMb < 1
             ? "Todavía sin datos que pesar."
-            : `${totalMb.toFixed(1)} MB entre todas. Un inquilino con diez años de operación y catorce mil tickets ocupa unos 30 MB, medido contra la base sembrada de pruebas.`}
+            : `${totalMb.toFixed(1)} MB entre todas, bitácora de auditoría incluida — que en el inquilino real ya es el 30 % del peso y crece para siempre, porque es de solo añadir por diseño.`}
         </p>
         <CountBars
           rows={cap.porInquilino.map((t) => ({
@@ -91,6 +107,51 @@ export default async function CapacidadPage({
           }))}
           emptyText="Ninguna empresa aprovisionada todavía."
         />
+      </Card>
+
+      {/*
+        LA CAPA DE INTELIGENCIA, QUE FALTABA.
+
+        El primer corte de esta pantalla miraba solo el plano transaccional y
+        daba una cifra tranquilizadora de un sistema al que le falta arrancar una
+        capa entera: el lago está a cero porque nadie ha corrido el extractor en
+        producción, no porque no vaya a crecer. Un tablero de capacidad
+        incompleto es igual de engañoso que uno equivocado.
+
+        Va en su propia tarjeta y no como una barra más porque no tiene techo
+        conocido: el lago crece con cada extracción y su tamaño depende de cada
+        cuánto se extraiga, algo que todavía no se ha decidido. Poner una barra
+        contra un techo inventado sería fingir que la pregunta está contestada.
+      */}
+      <Card className="p-5">
+        <h2 className="flex items-center gap-2 font-semibold">
+          <Brain className="size-4 text-primary" />
+          Capa de inteligencia
+        </h2>
+        {lago.archivos === 0 ? (
+          <p className="mt-2 text-sm text-muted-foreground">
+            El lago está <span className="font-medium text-foreground">vacío</span>:
+            todavía no se ha extraído nada. Cuando el extractor corra, aquí crecerá
+            un parquet por inquilino y por corrida — y ese crecimiento{" "}
+            <span className="font-medium text-foreground">no está</span> en las
+            barras de arriba, que solo miden la base transaccional.
+          </p>
+        ) : (
+          <p className="mt-2 text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">
+              {lagoMb.toLocaleString("es-MX")} MB
+            </span>{" "}
+            en {lago.archivos.toLocaleString("es-MX")} archivo(s)
+            {lago.parcial ? " (contados hasta el tope; hay más)" : ""}. Crece con
+            cada extracción y no tiene techo configurado.
+          </p>
+        )}
+        <p className="mt-3 text-xs text-muted-foreground">
+          El entrenamiento corre en el mismo servidor que atiende a los clientes.
+          Con dos núcleos, un modelo entrenando mientras veinte empresas trabajan
+          no es la máquina ociosa que miden las barras de arriba — es el límite
+          que todavía no está medido.
+        </p>
       </Card>
 
       {/*
