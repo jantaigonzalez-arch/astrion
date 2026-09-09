@@ -6,7 +6,6 @@ import {
   borrarRubroAction,
   crearRubroAction,
   guardarRubroAction,
-  guardarBloqueoExceso,
   guardarViaticosProspectos,
   type ConfigState,
 } from "@/lib/actions/viaticos-config";
@@ -113,6 +112,7 @@ function RubroRow({ rubro }: { rubro: RubroFila }) {
     rubro.dailyBudgetMxn == null ? "" : String(rubro.dailyBudgetMxn),
   );
   const [nota, setNota] = useState(rubro.requiresNote);
+  const [bloquea, setBloquea] = useState(rubro.blocksOverBudget);
   const [activo, setActivo] = useState(rubro.active);
 
   return (
@@ -153,6 +153,24 @@ function RubroRow({ rubro }: { rubro: RubroFila }) {
               />
               Activo
             </label>
+            {/*
+              Solo tiene sentido con tope: sin presupuesto no hay contra qué
+              comparar, así que la casilla desaparece en vez de quedarse ahí sin
+              efecto. Una casilla que no hace nada es peor que ninguna — se
+              marca, no pasa nada, y se deja de confiar en la pantalla.
+            */}
+            {budget.trim() ? (
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  name="blocksOverBudget"
+                  checked={bloquea}
+                  onChange={(e) => setBloquea(e.target.checked)}
+                  className="size-3.5 rounded border-input"
+                />
+                No dejar pasarse
+              </label>
+            ) : null}
             {/*
               Los usos se enseñan siempre, no solo al intentar borrar: es lo que
               explica por qué un rubro no se puede quitar antes de que alguien
@@ -216,69 +234,7 @@ function RubroRow({ rubro }: { rubro: RubroFila }) {
   );
 }
 
-/**
- * El interruptor del bloqueo. Vive DENTRO de la tarjeta de rubros, no aparte:
- * lo que decide solo tiene sentido junto a los topes que hace cumplir, y en su
- * propia tarjeta habría que repetir la mitad de la explicación.
- */
-function BloqueoExcesoForm({ activo }: { activo: boolean }) {
-  const [state, action, pending] = useActionState(guardarBloqueoExceso, initial);
-  const [marcado, setMarcado] = useState(activo);
-
-  return (
-    <form action={action} className="mt-2 rounded-lg bg-secondary/50 px-3 py-2.5">
-      <label className="flex cursor-pointer items-start gap-2.5 text-xs">
-        <input
-          type="checkbox"
-          name="viaticosBloqueaExceso"
-          checked={marcado}
-          onChange={(e) => setMarcado(e.target.checked)}
-          className="mt-0.5 size-3.5 rounded border-input"
-        />
-        <span className="text-muted-foreground">
-          <span className="block font-medium text-foreground">
-            Impedir que se capture un gasto por encima del tope
-          </span>
-          {marcado ? (
-            <>
-              El ingeniero <span className="font-medium">no podrá guardar</span>{" "}
-              un gasto que deje su rubro por encima del presupuesto del viaje.
-              Tendrá que pedir que se lo amplíen.
-            </>
-          ) : (
-            <>
-              Apagado: el gasto se registra igual y sale{" "}
-              <span className="font-medium">marcado</span> en la comprobación,
-              con cuánto se pasó, para que decida quien firma. Bloquear no evita
-              el gasto — evita que se registre donde le toca.
-            </>
-          )}
-          <span className="mt-0.5 block">
-            Un rubro <span className="font-medium">sin tope</span> nunca se marca
-            ni se bloquea.
-          </span>
-        </span>
-      </label>
-      {marcado !== activo || state.ok || state.error ? (
-        <div className="mt-2 flex items-center justify-end gap-3">
-          <Aviso state={state} />
-          <Button type="submit" size="sm" disabled={pending || marcado === activo}>
-            {pending ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-            Guardar
-          </Button>
-        </div>
-      ) : null}
-    </form>
-  );
-}
-
-export function RubrosCard({
-  rubros,
-  bloqueaExceso,
-}: {
-  rubros: RubroFila[];
-  bloqueaExceso: boolean;
-}) {
+export function RubrosCard({ rubros }: { rubros: RubroFila[] }) {
   const [state, action, pending] = useActionState(crearRubroAction, initial);
   const [abierto, setAbierto] = useState(false);
 
@@ -298,16 +254,21 @@ export function RubrosCard({
       </p>
 
       {/*
-        LO QUE PASA AL PASARSE ES UNA DECISIÓN, NO UN PÁRRAFO.
+        LO QUE PASA AL PASARSE SE DECIDE EN CADA RENGLÓN, y aquí solo se explica.
 
-        Aquí había un texto afirmando que pasarse no bloquea. Era la primera
-        pregunta de quien teclea un número en esta pantalla —y si no se contesta
-        se contesta sola, casi siempre mal—, pero contestarla desde el código era
-        elegir por la empresa: hay quien quiere que el tope sea un tope.
-
-        Ahora es el interruptor, en el mismo sitio donde estaba la respuesta.
+        Primero fue un párrafo afirmando que nunca bloquea, después un
+        interruptor de toda la empresa, y ninguna de las dos servía: el hotel se
+        cotiza antes de viajar y su tope es un tope, la comida depende de dónde
+        se pare uno. La casilla vive en cada rubro; esto solo dice qué significa
+        marcarla, que es la primera pregunta de quien teclea un número aquí.
       */}
-      <BloqueoExcesoForm activo={bloqueaExceso} />
+      <p className="mt-2 rounded-lg bg-secondary/50 px-3 py-2 text-xs text-muted-foreground">
+        De fábrica, pasarse <span className="font-medium">no bloquea</span>: el
+        gasto se registra y sale marcado en la comprobación, con cuánto se pasó.
+        Marca <span className="font-medium">«No dejar pasarse»</span> en los
+        rubros donde el tope sea un tope de verdad. Un rubro{" "}
+        <span className="font-medium">sin tope</span> nunca se marca ni bloquea.
+      </p>
 
       {sumaDiaria > 0 ? (
         <p className="mt-2 text-xs text-muted-foreground">
@@ -362,6 +323,14 @@ export function RubrosCard({
               className="size-3.5 rounded border-input"
             />
             Pide especificar de qué se trata (como «Otros»)
+          </label>
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              name="blocksOverBudget"
+              className="size-3.5 rounded border-input"
+            />
+            No dejar pasarse del tope (si no, solo se marca)
           </label>
           <div className="flex items-center justify-end gap-3">
             <Aviso state={state} />

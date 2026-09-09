@@ -100,42 +100,6 @@ export async function guardarViaticosProspectos(
   }
 }
 
-/**
- * ¿Pasarse del presupuesto bloquea la captura?
- *
- * Acción aparte del interruptor de prospectos porque son dos políticas
- * distintas —a quién se viaja y cómo se controla el gasto— y guardar una no
- * puede depender de haber tocado la otra: con un solo formulario, una casilla
- * sin marcar llega como ausente y apagaría la que nadie quiso apagar.
- */
-export async function guardarBloqueoExceso(
-  _prev: ConfigState,
-  formData: FormData,
-): Promise<ConfigState> {
-  if (!(await puedeConfigurar())) {
-    return { ok: false, error: "No tienes permiso para configurar viáticos." };
-  }
-
-  const viaticosBloqueaExceso =
-    String(formData.get("viaticosBloqueaExceso") ?? "") === "on";
-
-  try {
-    const db = await tenantDb();
-    await db
-      .insert(settings)
-      .values({ id: "global", viaticosBloqueaExceso })
-      .onConflictDoUpdate({
-        target: settings.id,
-        set: { viaticosBloqueaExceso, updatedAt: new Date() },
-      });
-    revalidateTenant();
-    return { ok: true, message: "Guardado." };
-  } catch (e) {
-    console.error("[viaticos-config] bloqueo", e);
-    return { ok: false, error: "No se pudo guardar." };
-  }
-}
-
 /* ───────────────────────────── Rubros ───────────────────────────── */
 
 export async function crearRubroAction(
@@ -184,6 +148,7 @@ export async function crearRubroAction(
       name,
       dailyBudgetMxn: budget == null ? null : budget.toFixed(2),
       requiresNote: String(formData.get("requiresNote") ?? "") === "on",
+      blocksOverBudget: String(formData.get("blocksOverBudget") ?? "") === "on",
       position: n + 1,
     });
 
@@ -244,6 +209,7 @@ export async function guardarRubroAction(
         name,
         dailyBudgetMxn: budget == null ? null : budget.toFixed(2),
         requiresNote: String(formData.get("requiresNote") ?? "") === "on",
+        blocksOverBudget: String(formData.get("blocksOverBudget") ?? "") === "on",
         active: String(formData.get("active") ?? "") === "on",
       })
       .where(eq(viaticoRubros.id, id.data));

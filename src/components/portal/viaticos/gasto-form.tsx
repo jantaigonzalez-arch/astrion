@@ -197,12 +197,33 @@ export function GastoForm({
             del VIAJE —presupuesto × días— y no el diario, porque es contra ese
             número contra el que se compara lo que se capture.
           */}
+          {/*
+            EL TOPE Y QUÉ PASA AL PASARLO, ANTES DE TECLEAR EL IMPORTE.
+
+            Enterarse del tope cuando el servidor rechaza el gasto no evita
+            nada. Y desde la 0031 el «qué pasa» es de cada rubro, así que el
+            texto tiene que decir el de ESTE: con dos rubros que se comportan
+            distinto, una frase genérica miente en la mitad de los casos.
+          */}
           <p className="mt-1.5 text-xs text-muted-foreground">
-            {rubro?.dailyBudgetMxn != null
-              ? `Presupuesto: ${mxnViatico(rubro.dailyBudgetMxn)} por día · ${mxnViatico(
-                  rubro.dailyBudgetMxn * Math.max(1, dias),
-                )} en este viaje de ${dias} día(s). Pasarse no bloquea: se marca.`
-              : "Este rubro no tiene tope configurado."}
+            {rubro?.dailyBudgetMxn != null ? (
+              <>
+                Presupuesto: {mxnViatico(rubro.dailyBudgetMxn)} por día ·{" "}
+                <span className="font-medium">
+                  {mxnViatico(rubro.dailyBudgetMxn * Math.max(1, dias))}
+                </span>{" "}
+                en este viaje de {dias} día(s).{" "}
+                {rubro.blocksOverBudget ? (
+                  <span className="text-warning">
+                    No se puede guardar un gasto que lo rebase.
+                  </span>
+                ) : (
+                  "Pasarse no bloquea: se marca para quien firma."
+                )}
+              </>
+            ) : (
+              "Este rubro no tiene tope configurado."
+            )}
           </p>
         </div>
 

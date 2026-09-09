@@ -218,6 +218,13 @@
       "when": 1788920914326,
       "tag": "0030_bloquear_exceso",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788921408752,
+      "tag": "0031_bloqueo_por_rubro",
+      "breakpoints": true
     }
   ]
 }

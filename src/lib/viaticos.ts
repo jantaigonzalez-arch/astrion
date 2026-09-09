@@ -28,6 +28,8 @@ export type Rubro = {
   /** Autorizado por DÍA. `null` = sin tope. */
   dailyBudgetMxn: number | null;
   requiresNote: boolean;
+  /** ¿Pasarse impide guardar, o solo se marca? Decisión de cada rubro (0031). */
+  blocksOverBudget: boolean;
 };
 
 /**

@@ -544,22 +544,6 @@ export const settings = pgTable("settings", {
    */
   viaticosProspectos: boolean("viaticos_prospectos").notNull().default(false),
 
-  /**
-   * ¿Pasarse del presupuesto de un rubro IMPIDE guardar el gasto?
-   *
-   * `false` —de fábrica— es avisar y marcar: el gasto entra y sale señalado
-   * para quien firma. El argumento es que bloquear no hace que el gasto no
-   * ocurra, sino que se registre en otro rubro, y ahí se pierde el análisis.
-   *
-   * `true` es para las empresas donde el tope es un tope. Que sea una opción y
-   * no una postura del código es la misma lección que dejó el enum de
-   * categorías: elegir por la empresa algo que es suyo.
-   *
-   * Lo hace cumplir `addExpense` con la MISMA cuenta que pinta el aviso —suma
-   * del rubro en el viaje contra presupuesto × días—, porque dos medidas
-   * distintas darían gastos que la pantalla deja pasar y el servidor rechaza.
-   */
-  viaticosBloqueaExceso: boolean("viaticos_bloquea_exceso").notNull().default(false),
 
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -3168,6 +3152,21 @@ export const viaticoRubros = pgTable(
 
     /** Como el viejo `otros`: obliga a decir de qué se trata. */
     requiresNote: boolean("requires_note").notNull().default(false),
+
+    /**
+     * ¿El tope de ESTE rubro se hace cumplir, o solo se marca?
+     *
+     * Nació como un ajuste de toda la empresa (0030) y duró un día: una empresa
+     * no tiene una postura sobre pasarse, tiene una por concepto. El hotel se
+     * cotiza antes de viajar y su tope es un tope; la comida depende de dónde
+     * se pare uno y su tope es una guía. Con un interruptor único había que
+     * elegir a cuál de los dos tratar mal.
+     *
+     * Apagado de fábrica: avisar y marcar, que es como se comportaba todo hasta
+     * ahora. Un rubro sin `dailyBudgetMxn` no bloquea aunque esté encendido —no
+     * hay contra qué comparar—, igual que tampoco se marca.
+     */
+    blocksOverBudget: boolean("blocks_over_budget").notNull().default(false),
 
     /**
      * Se DESACTIVA, no se borra. Un rubro con gastos encima no se puede quitar

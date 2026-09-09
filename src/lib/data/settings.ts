@@ -23,8 +23,6 @@ export type AppSettings = {
    * omisión de una política de gasto tiene que ser el que no gasta.
    */
   viaticosProspectos: boolean;
-  /** ¿Pasarse del presupuesto de un rubro impide guardar el gasto? */
-  viaticosBloqueaExceso: boolean;
 };
 
 const DEFAULTS: AppSettings = {
@@ -32,7 +30,6 @@ const DEFAULTS: AppSettings = {
   laborRatePerHour: 0,
   usdRate: null,
   viaticosProspectos: false,
-  viaticosBloqueaExceso: false,
 };
 
 export async function getSettings(conexion?: DbOrTx): Promise<AppSettings> {
@@ -52,6 +49,5 @@ export async function getSettings(conexion?: DbOrTx): Promise<AppSettings> {
     laborRatePerHour: Number(row.laborRatePerHour ?? 0),
     usdRate: rate > 0 ? rate : null,
     viaticosProspectos: row.viaticosProspectos,
-    viaticosBloqueaExceso: row.viaticosBloqueaExceso,
   };
 }

@@ -847,9 +847,10 @@ async function destinoValido(
 /**
  * ¿ESTE GASTO SE PASA DEL PRESUPUESTO, Y ESTA EMPRESA LO IMPIDE?
  *
- * Dos preguntas, y el orden importa: si la empresa no bloquea —que es lo de
- * fábrica— no se consulta nada más. Pasarse sigue estando permitido y sale
- * marcado en la comprobación, que es la respuesta por omisión desde la 0029.
+ * Lo decide CADA RUBRO, no la empresa (0031): el hotel se cotiza antes de
+ * viajar y su tope es un tope; la comida depende de dónde se pare uno y su tope
+ * es una guía. Apagado —lo de fábrica— pasarse sigue permitido y sale marcado
+ * en la comprobación.
  *
  * ── LA CUENTA ES LA MISMA QUE LA DEL AVISO, A PROPÓSITO ────────────────────
  *
@@ -869,18 +870,19 @@ async function vetoPresupuesto(
   v: { id: string; departsOn: string; returnsOn: string },
   gasto: { rubroId: string; amountMxn: number },
 ): Promise<string | null> {
-  const ajustes = await getSettings(tx);
-  if (!ajustes.viaticosBloqueaExceso) return null;
-
   const [r] = await tx
     .select({
       name: viaticoRubros.name,
       dailyBudgetMxn: viaticoRubros.dailyBudgetMxn,
+      blocksOverBudget: viaticoRubros.blocksOverBudget,
     })
     .from(viaticoRubros)
     .where(eq(viaticoRubros.id, gasto.rubroId))
     .limit(1);
-  if (!r?.dailyBudgetMxn) return null;
+
+  // Sin bandera no se bloquea, y sin tope tampoco: un rubro sin presupuesto no
+  // tiene contra qué comparar, esté encendido o no.
+  if (!r?.blocksOverBudget || !r.dailyBudgetMxn) return null;
 
   const [ya] = await tx
     .select({ n: sql<number>`coalesce(sum(${viaticoExpenses.amountMxn}), 0)::float8` })

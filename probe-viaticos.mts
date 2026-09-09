@@ -345,7 +345,7 @@ await db
     await tx.execute(sql`rollback to savepoint s1`);
 
     /*
-      EL BLOQUEO ES UNA OPCIÓN DE LA EMPRESA, Y SE PRUEBA EN LOS DOS MODOS.
+      EL BLOQUEO ES UNA OPCIÓN DE CADA RUBRO, Y SE PRUEBA EN LOS DOS MODOS.
 
       Un interruptor que solo se prueba encendido no demuestra nada: lo que hay
       que sostener es que APAGADO deja pasar —que es lo de fábrica y lo que
@@ -355,7 +355,7 @@ await db
       El tope se mide como el aviso: suma del rubro en el viaje contra
       presupuesto × días. Aquí son 2 días × 1 000 = 2 000, y se intenta 2 500.
     */
-    console.log("\nEL TOPE BLOQUEA SOLO SI LA EMPRESA LO PIDE");
+    console.log("\nEL TOPE BLOQUEA SOLO SI EL RUBRO LO PIDE");
     await tx.execute(sql`update viatico_rubros set daily_budget_mxn = 1000 where key = 'hotel'`);
     const vTope = await nuevo("autorizado", "PROBE-TOPE");
     await tx.execute(sql`
@@ -371,9 +371,7 @@ await db
       spentOn: hoy,
     };
 
-    await tx.execute(sql`
-      insert into settings (id, viaticos_bloquea_exceso) values ('global', false)
-      on conflict (id) do update set viaticos_bloquea_exceso = false`);
+    await tx.execute(sql`update viatico_rubros set blocks_over_budget = false where key = 'hotel'`);
     const suelto = await addExpense(tx, gasto, userId);
     ok(
       "apagado: pasarse del tope SÍ se puede guardar",
@@ -382,9 +380,7 @@ await db
     );
     await tx.execute(sql`delete from viatico_expenses where viatico_id = ${vTope}::uuid`);
 
-    await tx.execute(sql`
-      insert into settings (id, viaticos_bloquea_exceso) values ('global', true)
-      on conflict (id) do update set viaticos_bloquea_exceso = true`);
+    await tx.execute(sql`update viatico_rubros set blocks_over_budget = true where key = 'hotel'`);
     const frenado = await addExpense(tx, gasto, userId);
     ok(
       "encendido: el mismo gasto se rechaza",
@@ -403,6 +399,26 @@ await db
       "encendido: bloquea por la SUMA del rubro, no por el gasto suelto",
       !acumula.ok,
       acumula.ok ? "lo dejó pasar" : acumula.reason,
+    );
+
+    /*
+      Y LO QUE HACE QUE VALGA LA PENA QUE SEA POR RUBRO: que uno bloquee no
+      arrastra al de al lado. Con Hotel cerrado a cal y canto, Comida —con tope
+      y sin bandera— tiene que seguir dejando pasar y limitarse a marcar.
+    */
+    await tx.execute(sql`
+      update viatico_rubros set daily_budget_mxn = 100, blocks_over_budget = false
+       where key = 'comida'`);
+    const rComida = await rubro("comida");
+    const otroRubro = await addExpense(
+      tx,
+      { ...gasto, rubroId: rComida, amountMxn: 5000, description: "comida cara" },
+      userId,
+    );
+    ok(
+      "un rubro que bloquea NO arrastra a los demás",
+      otroRubro.ok,
+      otroRubro.ok ? "" : otroRubro.reason,
     );
 
     await tx.execute(sql`rollback to savepoint s1`);

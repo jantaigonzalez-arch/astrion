@@ -353,6 +353,8 @@ export type RubroFila = {
   name: string;
   dailyBudgetMxn: number | null;
   requiresNote: boolean;
+  /** ¿Su tope se hace cumplir, o solo se marca? Ver la 0031. */
+  blocksOverBudget: boolean;
   active: boolean;
   position: number;
   /** Cuántos gastos lo usan. Es lo que decide si se puede borrar. */
@@ -382,6 +384,7 @@ export async function listRubros(
       name: viaticoRubros.name,
       dailyBudgetMxn: viaticoRubros.dailyBudgetMxn,
       requiresNote: viaticoRubros.requiresNote,
+      blocksOverBudget: viaticoRubros.blocksOverBudget,
       active: viaticoRubros.active,
       position: viaticoRubros.position,
       // Subconsulta correlacionada y no `left join` + `count`: con el join, un
