@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { puedeEn } from "@/lib/tenancy/context";
+import { redirectInTenant } from "@/lib/nav-server";
 import { ROLE_LABELS } from "@/lib/roles";
 
 const ROLE_STYLES: Record<string, string> = {
@@ -46,7 +47,24 @@ export default async function AdminUsersPage({
 }) {
   const { locale } = await params;
   setRequestLocale(locale);
+  /*
+    GUARDIA PROPIO, y esta pantalla no tenía ninguno.
+
+    `isAdmin` existía solo para decidir qué botones pintar; quien no podía estar
+    aquí lo paraba el layout del área, que exigía `configuracion: administrar`
+    para todo. Al abrirse el área a quien administra VIÁTICOS —para que General
+    llegue a su pestaña— ese listón dejó de proteger el PADRÓN DE USUARIOS, que
+    es de lo más sensible que hay aquí dentro: correos, roles y el enlace con la
+    organización de cada cuenta.
+
+    Se descubrió probándolo con una sesión de General de verdad, no leyendo el
+    archivo: `puedeEn` estaba escrito en esta página, así que a simple vista
+    parecía guardada. Calculaba un permiso y no lo hacía cumplir.
+  */
   const isAdmin = await puedeEn("configuracion", "administrar");
+  if (!isAdmin) {
+    await redirectInTenant("/dashboard", locale);
+  }
   const sp = await searchParams;
   const orden = parseOrden(sp, CAMPOS_ORDEN_MIEMBROS, ORDEN_MIEMBROS_DEFECTO);
   /*

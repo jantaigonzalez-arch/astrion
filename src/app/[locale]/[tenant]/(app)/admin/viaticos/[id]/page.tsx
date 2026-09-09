@@ -7,6 +7,7 @@ import { redirectInTenant } from "@/lib/nav-server";
 import { puedeEn } from "@/lib/tenancy/context";
 import {
   getViatico,
+  listRubros,
   negociosDelProspecto,
   ticketsDelContrato,
 } from "@/lib/data/viaticos";
@@ -21,9 +22,10 @@ import {
 } from "@/components/portal/viaticos/acciones";
 import { GastoForm } from "@/components/portal/viaticos/gasto-form";
 import {
-  CATEGORIA_LABELS,
   ESTADO_LABELS,
+  consumoPorRubro,
   cuadre,
+  diasDeViaje,
   estaCerrado,
   mxnViatico,
   saldoEnPalabras,
@@ -90,6 +92,22 @@ export default async function ViaticoPage({
     (v.status === "enviado" && puedoFirmar) ||
     (v.status === "autorizado" && soyElSolicitante) ||
     (v.status === "en_revision" && puedoFirmar);
+
+  /*
+    EL PRESUPUESTO POR RUBRO, y quién se pasó.
+
+    Los rubros se piden siempre —no solo al capturar— porque quien REVISA
+    necesita ver lo mismo que vio quien capturó: el tope contra el que se
+    compara cada renglón. Son unas pocas filas.
+  */
+  const rubros = await listRubros(false);
+  const dias = diasDeViaje(v.departsOn, v.returnsOn);
+  const consumo = consumoPorRubro(
+    v.gastos.map((g) => ({ rubroId: g.rubroId, amountMxn: g.amountMxn })),
+    rubros,
+    dias,
+  );
+  const excedidos = consumo.filter((c) => c.excedido);
 
   const gastado = v.gastos.reduce((a, g) => a + Number(g.amountMxn), 0);
   const c = cuadre(Number(v.authorizedMxn ?? 0), gastado);
@@ -413,12 +431,30 @@ export default async function ViaticoPage({
             <FileText className="size-4 text-primary" />
             Comprobación de gastos
           </h2>
-          {sinComprobante > 0 ? (
-            <span className="flex items-center gap-1.5 text-xs text-warning">
-              <AlertTriangle className="size-3.5" />
-              {sinComprobante} sin comprobante
-            </span>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-3">
+            {/*
+              LO QUE SE PASÓ DEL PRESUPUESTO, junto a lo que va sin comprobante.
+
+              Los dos contestan la misma pregunta de quien revisa —«¿hay algo
+              aquí que mirar con lupa?»— y por eso van en el mismo renglón, no
+              repartidos por la pantalla.
+
+              Se marca el RUBRO y no el gasto: el tope es del rubro en todo el
+              viaje, así que señalar un renglón suelto diría algo que no es.
+            */}
+            {excedidos.length > 0 ? (
+              <span className="flex items-center gap-1.5 text-xs text-destructive">
+                <AlertTriangle className="size-3.5" />
+                {excedidos.map((c) => `${c.nombre} +${mxnViatico(c.exceso)}`).join(" · ")}
+              </span>
+            ) : null}
+            {sinComprobante > 0 ? (
+              <span className="flex items-center gap-1.5 text-xs text-warning">
+                <AlertTriangle className="size-3.5" />
+                {sinComprobante} sin comprobante
+              </span>
+            ) : null}
+          </div>
         </div>
 
         {v.gastos.length === 0 ? (
@@ -431,7 +467,7 @@ export default async function ViaticoPage({
               <thead className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-4 py-2.5 font-medium">Fecha</th>
-                  <th className="px-4 py-2.5 font-medium">Categoría</th>
+                  <th className="px-4 py-2.5 font-medium">Rubro</th>
                   <th className="px-4 py-2.5 font-medium">Descripción</th>
                   {/*
                     «Se carga a» y no «Ticket»: desde la 0028 la columna
@@ -455,9 +491,9 @@ export default async function ViaticoPage({
                       {fecha(g.spentOn)}
                     </td>
                     <td className="px-4 py-2.5">
-                      {CATEGORIA_LABELS[g.category]}
-                      {g.otherLabel ? (
-                        <span className="text-muted-foreground"> · {g.otherLabel}</span>
+                      {g.rubro}
+                      {g.note ? (
+                        <span className="text-muted-foreground"> · {g.note}</span>
                       ) : null}
                     </td>
                     <td className="px-4 py-2.5">{g.description}</td>
@@ -555,6 +591,10 @@ export default async function ViaticoPage({
               tickets={tickets}
               negocios={negocios}
               esProspecto={Boolean(v.organizationId)}
+              // Solo los ACTIVOS al capturar: los retirados siguen arriba, en
+              // la tabla, sosteniendo el nombre de lo ya capturado.
+              rubros={rubros.filter((r) => r.active)}
+              dias={dias}
             />
           </div>
         ) : null}

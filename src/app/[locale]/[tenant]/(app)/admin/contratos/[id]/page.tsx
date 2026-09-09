@@ -25,7 +25,6 @@ import {
 import { getSettings } from "@/lib/data/settings";
 import { computeProfit, sumProfits, mxn } from "@/lib/profit";
 import { viaticosDelContrato, viaticosPorTicket } from "@/lib/data/viaticos";
-import { CATEGORIA_LABELS } from "@/lib/viaticos";
 import { contractInsights } from "@/lib/ml/insights";
 import { InsightStrip } from "@/components/portal/insight-strip";
 import { Card } from "@/components/ui/card";
@@ -440,7 +439,7 @@ export default async function ContractDetailPage({
                 key={c.k}
                 className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground"
               >
-                {CATEGORIA_LABELS[c.k]}{" "}
+                {c.k}{" "}
                 <span className="tabular-nums font-medium text-foreground">
                   {mxn(c.total)}
                 </span>

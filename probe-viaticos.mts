@@ -45,7 +45,8 @@ config({ path: ".env.local" });
 const { tenantDbFor } = await import("./src/lib/tenancy/context.ts");
 const { sql } = await import("drizzle-orm");
 const { computeProfit } = await import("./src/lib/profit.ts");
-const { cuadre, saldoEnPalabras } = await import("./src/lib/viaticos.ts");
+const { cuadre, saldoEnPalabras, consumoPorRubro, diasDeViaje, estimadoSugerido } =
+  await import("./src/lib/viaticos.ts");
 const { nivelEfectivo } = await import("./src/lib/permisos.ts");
 /*
   El dominio, importado de verdad y no reimplementado.
@@ -56,7 +57,8 @@ const { nivelEfectivo } = await import("./src/lib/permisos.ts");
   `puedeAdministrar` ya resuelto—, así que se prueba el guardia REAL y no una
   copia suya, que es la que se quedaría vieja.
 */
-const { reclassifyExpense } = await import("./src/lib/domain/viaticos.ts");
+const { reclassifyExpense, addExpense } = await import("./src/lib/domain/viaticos.ts");
+const hoy = new Date().toISOString().slice(0, 10);
 
 const db = tenantDbFor("tenant_evoelution");
 let fallos = 0;
@@ -162,6 +164,70 @@ ok("y el margen baja", conViaje.margin < sinViaje.margin);
 // sin viáticos tiene que dar lo mismo que antes.
 ok("omitirlo da cero y no cambia nada", sinViaje.viaticosCost === 0);
 
+console.log("\nEL PRESUPUESTO POR RUBRO");
+
+const RUBROS = [
+  { id: "r-hotel", name: "Hotel", dailyBudgetMxn: 1500, requiresNote: false },
+  { id: "r-comida", name: "Comida", dailyBudgetMxn: 500, requiresNote: false },
+  { id: "r-libre", name: "Sin tope", dailyBudgetMxn: null, requiresNote: false },
+];
+
+// Salir y volver el mismo día es UN día, no cero: con cero, el tope de todo
+// rubro sería cero y cada gasto de un viaje relámpago saldría en rojo.
+ok("ida y vuelta el mismo día cuenta como un día", diasDeViaje("2026-03-10", "2026-03-10") === 1);
+ok("tres días son tres, contando los dos extremos", diasDeViaje("2026-03-10", "2026-03-12") === 3);
+
+/*
+  LA PRUEBA QUE JUSTIFICA COMPARAR TOTALES Y NO GASTOS SUELTOS.
+
+  Una factura de hotel por tres noches es UN renglón de 4 200 que contra el tope
+  diario de 1 500 parecería casi el triple de lo autorizado. Contra el tope del
+  viaje —1 500 × 3 = 4 500— no se pasó de nada, que es la verdad.
+*/
+const tresNoches = consumoPorRubro(
+  [{ rubroId: "r-hotel", amountMxn: 4200 }],
+  RUBROS,
+  3,
+);
+ok(
+  "una factura de 3 noches NO se marca contra el tope del viaje",
+  tresNoches[0].tope === 4500 && !tresNoches[0].excedido,
+  `tope ${tresNoches[0].tope}, excedido ${tresNoches[0].excedido}`,
+);
+
+const pasado = consumoPorRubro(
+  [
+    { rubroId: "r-comida", amountMxn: 900 },
+    { rubroId: "r-comida", amountMxn: 400 },
+  ],
+  RUBROS,
+  2,
+);
+ok(
+  "la SUMA del rubro sí se marca, y dice cuánto",
+  pasado[0].excedido && pasado[0].exceso === 300,
+  `exceso ${pasado[0].exceso}`,
+);
+
+// Nulo es «no lo hemos definido», no «no se paga»: convertirlo en cero pondría
+// en rojo a toda empresa que no haya configurado nada todavía.
+const libre = consumoPorRubro([{ rubroId: "r-libre", amountMxn: 99999 }], RUBROS, 1);
+ok("un rubro SIN tope no se marca nunca", libre[0].tope === null && !libre[0].excedido);
+
+// El rubro desactivado —o borrado del catálogo de la prueba— no revienta el
+// cálculo: el histórico sigue sumando aunque el nombre ya no esté.
+const huerfano = consumoPorRubro([{ rubroId: "r-que-ya-no-existe", amountMxn: 100 }], RUBROS, 1);
+ok(
+  "un gasto de un rubro que ya no está sigue sumando",
+  huerfano[0].gastado === 100 && huerfano[0].tope === null,
+);
+
+ok(
+  "el estimado sugerido es la suma de los topes por los días",
+  estimadoSugerido(RUBROS, 2) === (1500 + 500) * 2,
+  `dio ${estimadoSugerido(RUBROS, 2)}`,
+);
+
 /* ═════════════════ Contra la base, y se deshace ═════════════════ */
 
 console.log("\nLO QUE LA BASE TIENE QUE RECHAZAR");
@@ -179,6 +245,24 @@ await db
     )) as any;
 
     ok("hay contrato, persona y ticket con los que probar", Boolean(contractId && userId && ticketId));
+
+    /*
+      LOS RUBROS DE FÁBRICA, por su clave.
+
+      Desde la 0029 el rubro es una fila y no un valor del enum, así que cada
+      `insert` necesita su uuid. Se resuelven por `key` —que es inmutable— y no
+      por nombre: el nombre lo puede haber cambiado la empresa, y una prueba que
+      dependa de eso se rompe el día que alguien escriba «Hospedaje».
+    */
+    const rubro = async (clave: string) => {
+      const [r] = (await tx.execute(
+        sql`select id::text as id from viatico_rubros where key = ${clave}`,
+      )) as any;
+      return r?.id as string;
+    };
+    const rHotel = await rubro("hotel");
+    const rOtros = await rubro("otros");
+    ok("los cinco rubros de fábrica están sembrados", Boolean(rHotel && rOtros));
 
     const nuevo = async (estado: string, ref: string) => {
       const [f] = (await tx.execute(sql`
@@ -214,19 +298,57 @@ await db
 
     const vId = await nuevo("autorizado", "PROBE-V-1");
 
-    const e3 = await debeFallar(
+    /*
+      LA REGLA DE LA NOTA YA NO LA GUARDA LA BASE, Y POR ESO SE PRUEBA AQUÍ.
+
+      Hasta la 0028 un CHECK exigía que la categoría `otros` llevara etiqueta.
+      Con el catálogo administrado la regla pasó a ser «los rubros marcados
+      `requiresNote`», que depende de otra tabla: un CHECK no puede leerla, así
+      que bajó a `addExpense`.
+
+      La migración dice que se perdió algo real —un `insert` a mano puede dejar
+      la nota vacía—, y esta prueba es lo que impide que se pierda también la
+      regla: se ejercita el dominio de verdad, no una copia suya.
+    */
+    const sinNota = await addExpense(
       tx,
-      sql`insert into viatico_expenses (viatico_id, ticket_id, category, description, amount_mxn, spent_on)
-          values (${vId}::uuid, ${ticketId}::uuid, 'otros', 'sin especificar', 100, current_date)`,
+      {
+        viaticoId: vId,
+        destino: { tipo: "ticket", ticketId },
+        rubroId: rOtros,
+        description: "sin especificar",
+        amountMxn: 100,
+        spentOn: hoy,
+      },
+      userId,
     );
-    ok("«otros» sin especificar se rechaza", e3 === "23514", `dio ${e3}`);
+    ok(
+      "un rubro que pide nota la exige, y ya no lo hace un CHECK",
+      !sinNota.ok && sinNota.reason.includes("especificar"),
+      sinNota.ok ? "lo dejó pasar" : sinNota.reason,
+    );
+
+    const conNota = await addExpense(
+      tx,
+      {
+        viaticoId: vId,
+        destino: { tipo: "ticket", ticketId },
+        rubroId: rOtros,
+        note: "envío de paquetería",
+        description: "con nota",
+        amountMxn: 100,
+        spentOn: hoy,
+      },
+      userId,
+    );
+    ok("y con la nota puesta entra", conNota.ok, conNota.ok ? "" : conNota.reason);
     await tx.execute(sql`rollback to savepoint s1`);
 
     const vId2 = await nuevo("autorizado", "PROBE-V-1");
     const e4 = await debeFallar(
       tx,
-      sql`insert into viatico_expenses (viatico_id, ticket_id, category, description, amount_mxn, spent_on)
-          values (${vId2}::uuid, ${ticketId}::uuid, 'hotel', 'importe cero', 0, current_date)`,
+      sql`insert into viatico_expenses (viatico_id, ticket_id, rubro_id, description, amount_mxn, spent_on)
+          values (${vId2}::uuid, ${ticketId}::uuid, ${rHotel}::uuid, 'importe cero', 0, current_date)`,
     );
     ok("un gasto en cero se rechaza", e4 === "23514", `dio ${e4}`);
     await tx.execute(sql`rollback to savepoint s1`);
@@ -262,8 +384,8 @@ await db
     for (const [i, e] of estados.entries()) {
       const id = await nuevo(e, `PROBE-EST-${i}`);
       await tx.execute(sql`
-        insert into viatico_expenses (viatico_id, ticket_id, category, description, amount_mxn, spent_on)
-        values (${id}::uuid, ${ticketId}::uuid, 'hotel', 'PROBE', 1000, current_date)`);
+        insert into viatico_expenses (viatico_id, ticket_id, rubro_id, description, amount_mxn, spent_on)
+        values (${id}::uuid, ${ticketId}::uuid, ${rHotel}::uuid, 'PROBE', 1000, current_date)`);
     }
 
     const [{ n: totalTodos }] = (await tx.execute(sql`
@@ -365,8 +487,8 @@ await db
       renglón sobre el que se prueba después quién puede moverlo.
     */
     const [gCom] = (await tx.execute(sql`
-      insert into viatico_expenses (viatico_id, category, description, amount_mxn, spent_on)
-      values (${vProsp.id}::uuid, 'comida', 'comida de prospección', 800, current_date)
+      insert into viatico_expenses (viatico_id, rubro_id, description, amount_mxn, spent_on)
+      values (${vProsp.id}::uuid, ${rHotel}::uuid, 'comida de prospección', 800, current_date)
       returning id::text as id`)) as any;
     ok("un gasto comercial SIN ticket ni negocio sí entra", Boolean(gCom?.id));
 
@@ -409,9 +531,9 @@ await db
 
     const g1 = await debeFallar(
       tx,
-      sql`insert into viatico_expenses (viatico_id, ticket_id, deal_id, category,
+      sql`insert into viatico_expenses (viatico_id, ticket_id, deal_id, rubro_id,
                                         description, amount_mxn, spent_on)
-          values (${vProsp.id}::uuid, ${ticketId}::uuid, ${A.deal}::uuid, 'comida',
+          values (${vProsp.id}::uuid, ${ticketId}::uuid, ${A.deal}::uuid, ${rHotel}::uuid,
                   'a dos sitios', 100, current_date)`,
     );
     ok("un gasto con ticket Y negocio se rechaza", g1 === "23514", `dio ${g1}`);

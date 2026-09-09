@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq, sql } from "drizzle-orm";
 import type { DbOrTx } from "@/lib/db";
-import { crmDeals, viaticoExpenses, viaticos } from "@/lib/db/schema";
+import { crmDeals, viaticoExpenses, viaticoRubros, viaticos } from "@/lib/db/schema";
 import { listTenantMembers } from "@/lib/data/people";
 import { getSettings } from "@/lib/data/settings";
 import { ajustesGuardados, alcanza, nivelEfectivo, type Nivel } from "@/lib/permisos";
@@ -747,13 +747,57 @@ export type DestinoGasto =
 export type NuevoGasto = {
   viaticoId: string;
   destino: DestinoGasto;
-  category: "hotel" | "transporte" | "comida" | "refacciones" | "otros";
-  otherLabel?: string | null;
+  /** Fila de `viatico_rubros`. Ya no es un enum del código: ver la 0029. */
+  rubroId: string;
+  note?: string | null;
   description: string;
   amountMxn: number;
   spentOn: string;
   receiptPath?: string | null;
 };
+
+/**
+ * ¿Existe el rubro, está vivo, y trae la nota que pide?
+ *
+ * ── ESTA COMPROBACIÓN REEMPLAZA A UN CHECK DE LA BASE ──────────────────────
+ *
+ * La 0026 exigía por CHECK que la categoría `otros` llevara etiqueta, y su
+ * comentario decía —con razón— que una validación que vive solo en la pantalla
+ * se salta desde cualquier otro camino. Desde la 0029 la regla es «los rubros
+ * marcados `requiresNote` exigen nota», y eso depende de otra tabla: un CHECK
+ * no puede leerla.
+ *
+ * Así que vive aquí, que es la capa por la que pasa todo lo que escribe —igual
+ * que `firmaValida()`— y no en la acción ni en el formulario. Lo que se perdió
+ * es real: un `insert` a mano puede dejar la nota vacía. Está dicho en la
+ * migración para que nadie lo descubra por su cuenta.
+ *
+ * Se rechaza un rubro INACTIVO porque desactivarlo es decir «no se use más»; si
+ * se aceptara, la única diferencia con estar activo sería que no sale en el
+ * desplegable, y el catálogo dejaría de significar algo.
+ */
+async function vetoRubro(
+  tx: DbOrTx,
+  rubroId: string,
+  note: string | null | undefined,
+): Promise<string | null> {
+  const [r] = await tx
+    .select({
+      name: viaticoRubros.name,
+      active: viaticoRubros.active,
+      requiresNote: viaticoRubros.requiresNote,
+    })
+    .from(viaticoRubros)
+    .where(eq(viaticoRubros.id, rubroId))
+    .limit(1);
+
+  if (!r) return "Ese rubro de gasto no existe.";
+  if (!r.active) return `El rubro «${r.name}» está retirado. Elige otro.`;
+  if (r.requiresNote && !note?.trim()) {
+    return `En «${r.name}» hay que especificar de qué se trata.`;
+  }
+  return null;
+}
 
 /**
  * ¿Cabe este destino en este viático?
@@ -833,11 +877,9 @@ export async function addExpense(
   if (!(gasto.amountMxn > 0)) {
     return { ok: false, reason: "El importe tiene que ser mayor que cero." };
   }
-  // El mismo CHECK vive en la base. Aquí está para poder decirlo con palabras
-  // en vez de que salga un error de restricción.
-  if (gasto.category === "otros" && !gasto.otherLabel?.trim()) {
-    return { ok: false, reason: "En «Otros» hay que especificar de qué se trata." };
-  }
+
+  const vetoDelRubro = await vetoRubro(tx, gasto.rubroId, gasto.note);
+  if (vetoDelRubro) return { ok: false, reason: vetoDelRubro };
 
   const vetoDestino = await destinoValido(tx, v, gasto.destino);
   if (vetoDestino) return { ok: false, reason: vetoDestino };
@@ -847,8 +889,11 @@ export async function addExpense(
     .values({
       viaticoId: gasto.viaticoId,
       ...columnasDeDestino(gasto.destino),
-      category: gasto.category,
-      otherLabel: gasto.category === "otros" ? gasto.otherLabel!.trim() : null,
+      rubroId: gasto.rubroId,
+      // La nota se guarda si la hay, la pida el rubro o no: alguien que aclara
+      // «cena con el cliente» en un gasto de Comida está dando información que
+      // no hay motivo para tirar.
+      note: gasto.note?.trim() || null,
       description: gasto.description,
       amountMxn: gasto.amountMxn.toFixed(2),
       spentOn: gasto.spentOn,

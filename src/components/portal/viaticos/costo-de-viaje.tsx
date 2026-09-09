@@ -1,6 +1,6 @@
 import { Plane } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { CATEGORIA_LABELS, mxnViatico, type ViaticoCategoria } from "@/lib/viaticos";
+import { mxnViatico } from "@/lib/viaticos";
 
 /**
  * LO QUE COSTÓ IR, en la ficha de un prospecto o de un negocio.
@@ -33,7 +33,13 @@ export function CostoDeViaje({
 }: {
   viajes: number;
   costo: number;
-  porCategoria: Array<{ k: ViaticoCategoria; total: number }>;
+  /*
+    La clave ya es el NOMBRE del rubro y no una etiqueta que haya que traducir:
+    desde la 0029 el catálogo lo manda la empresa, así que el mapa de etiquetas
+    del código dejó de existir — y con él la posibilidad de que un rubro nuevo
+    saliera sin nombre.
+  */
+  porCategoria: Array<{ k: string; total: number }>;
   titulo: string;
   /** Qué decir cuando no hay ningún viaje cerrado todavía. */
   pieVacio: string;
@@ -66,7 +72,7 @@ export function CostoDeViaje({
                   key={c.k}
                   className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground"
                 >
-                  {CATEGORIA_LABELS[c.k]}{" "}
+                  {c.k}{" "}
                   <span className="font-medium tabular-nums text-foreground">
                     {mxnViatico(c.total)}
                   </span>

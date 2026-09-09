@@ -2870,26 +2870,6 @@ export const viaticoStatus = pgEnum("viatico_status", [
   "cancelado",
 ]);
 
-/**
- * En qué se gastó.
- *
- * Cerrado a propósito, con `otros` como válvula. La alternativa —texto libre—
- * produce «Hotel», «hotel», «Hospedaje» y «HOTEL SLP» en el mismo trimestre, y
- * a partir de ahí no hay forma de sumar en qué se va el dinero de los viajes.
- *
- * `refacciones` está en la lista y merece una nota: es la pieza que el
- * ingeniero COMPRA en ruta porque no podía esperar a una orden de compra. No
- * entra al inventario —nunca estuvo en el almacén— pero sí es costo del
- * servicio, y sin esta categoría acababa en `otros` y desaparecía del análisis
- * de refacciones.
- */
-export const viaticoCategoria = pgEnum("viatico_categoria", [
-  "hotel",
-  "transporte",
-  "comida",
-  "refacciones",
-  "otros",
-]);
 
 /** Folio de viático: EVO-V-000123. */
 export const viaticoSeq = pgSequence("viatico_reference_seq", {
@@ -3124,6 +3104,67 @@ export const viaticoModules = pgTable(
  * a la vista. Degradar en silencio aquí sería exactamente lo que dejó 633
  * tickets sin técnico.
  */
+/**
+ * LOS RUBROS DE GASTO, que ahora los manda la empresa.
+ *
+ * Nacieron como un enum cerrado en la 0026, con un motivo que sigue en pie:
+ * texto libre produce «Hotel», «hotel» y «HOSPEDAJE SLP» en el mismo trimestre
+ * y a partir de ahí no hay forma de sumar. Un catálogo administrado conserva
+ * eso —se elige de una lista, no se teclea— y quita lo que estorbaba: que
+ * añadir «casetas» o «paquetería» necesitara un despliegue, y que mientras
+ * tanto todo cayera en `otros`, que es donde el análisis se pierde.
+ *
+ * Lo administra quien puede ADMINISTRAR VIÁTICOS —administrador y General—, no
+ * quien administra Configuración: es una decisión de gasto, no de sistema. Ver
+ * `RUTAS` en `lib/permisos.ts`.
+ */
+export const viaticoRubros = pgTable(
+  "viatico_rubros",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /**
+     * Clave de máquina, inmutable. Los cinco de fábrica la heredaron del enum
+     * viejo, que es lo que permitió rellenar los gastos ya capturados.
+     *
+     * NO es lo que se enseña: el nombre se edita —«Hotel» puede pasar a
+     * «Hospedaje»— sin mover un solo gasto ya clasificado. Un catálogo donde
+     * renombrar rompe el histórico no sirve para nada.
+     */
+    key: varchar("key", { length: 40 }).notNull().unique(),
+    name: varchar("name", { length: 80 }).notNull(),
+
+    /**
+     * Lo que la empresa autoriza POR DÍA en este rubro.
+     *
+     * El tope del viaje no se guarda: es este número por los días entre salida
+     * y regreso, así que un viaje de dos días y uno de ocho se miden con el
+     * mismo dato. Y se compara contra la SUMA del rubro en ese viático, no
+     * contra cada gasto: una factura de hotel por tres noches es un renglón de
+     * 4 500 que contra un tope diario de 1 500 parecería el triple de lo
+     * permitido sin serlo.
+     *
+     * NULO = sin tope, y no es lo mismo que cero: cero diría que el rubro no se
+     * paga, y convertir «no lo hemos definido» en «no se paga» marcaría en rojo
+     * los gastos de toda empresa que aún no configuró nada.
+     */
+    dailyBudgetMxn: numeric("daily_budget_mxn", { precision: 12, scale: 2 }),
+
+    /** Como el viejo `otros`: obliga a decir de qué se trata. */
+    requiresNote: boolean("requires_note").notNull().default(false),
+
+    /**
+     * Se DESACTIVA, no se borra. Un rubro con gastos encima no se puede quitar
+     * —la llave es `restrict`— y aunque se pudiera, el histórico se quedaría
+     * sin nombre. Inactivo desaparece del formulario y sigue sumando en los
+     * informes de lo ya capturado.
+     */
+    active: boolean("active").notNull().default(true),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("viatico_rubros_orden_idx").on(t.active, t.position, t.name)],
+);
+
 export const viaticoExpenses = pgTable(
   "viatico_expenses",
   {
@@ -3163,16 +3204,27 @@ export const viaticoExpenses = pgTable(
       onDelete: "set null",
     }),
 
-    category: viaticoCategoria("category").notNull(),
+    rubroId: uuid("rubro_id")
+      .notNull()
+      .references((): AnyPgColumn => viaticoRubros.id, { onDelete: "restrict" }),
+
     /**
-     * Qué es, cuando la categoría es `otros`.
+     * De qué se trata, cuando el rubro lo pide (`requiresNote`).
      *
-     * Lo exige un CHECK en la base y no solo el formulario: «otros» sin
-     * especificar es una fila que nadie puede interpretar seis meses después, y
-     * la validación que vive únicamente en la pantalla se salta desde cualquier
-     * otro camino que escriba en la tabla.
+     * ── SU CHECK SE MUDÓ AL DOMINIO, Y SE PERDIÓ ALGO ──────────────────────
+     *
+     * Era `other_label` y lo exigía un CHECK en la base, con este argumento en
+     * la 0026: la validación que vive solo en la pantalla se salta desde
+     * cualquier otro camino que escriba en la tabla. Sigue siendo verdad.
+     *
+     * Pero la regla pasó a ser «lo exigen los rubros marcados `requiresNote`»,
+     * y eso depende de OTRA TABLA: un CHECK no puede leerla. Así que baja a
+     * `domain/viaticos.ts`, junto a `firmaValida()` y por el mismo motivo que
+     * aquella —depende de un dato fuera del alcance de la restricción—, no por
+     * comodidad. Lo que se pierde es real: un `insert` a mano puede dejar la
+     * nota vacía en un rubro que la pide.
      */
-    otherLabel: varchar("other_label", { length: 120 }),
+    note: varchar("note", { length: 120 }),
 
     description: varchar("description", { length: 300 }).notNull(),
     amountMxn: numeric("amount_mxn", { precision: 12, scale: 2 }).notNull(),

@@ -7,12 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Selector } from "@/components/ui/selector";
-import {
-  CATEGORIA_AYUDA,
-  CATEGORIA_LABELS,
-  VIATICO_CATEGORIAS,
-  type ViaticoCategoria,
-} from "@/lib/viaticos";
+import { mxnViatico, type Rubro } from "@/lib/viaticos";
 
 const initial: ViaticoState = { ok: false };
 const selectCls =
@@ -52,15 +47,25 @@ export function GastoForm({
   tickets,
   negocios,
   esProspecto,
+  rubros,
+  dias,
 }: {
   viaticoId: string;
   tickets: TicketOpcion[];
   negocios: NegocioOpcion[];
   /** El viático es de un prospecto: no hay tickets, hay negocio o nada. */
   esProspecto: boolean;
+  /** Solo los activos: ofrecer uno retirado sería invitar a seguir usándolo. */
+  rubros: Rubro[];
+  /** Días del viaje, para poder decir el tope de ESTE viaje y no el diario. */
+  dias: number;
 }) {
   const [state, action, pending] = useActionState(agregarGastoAction, initial);
-  const [categoria, setCategoria] = useState<ViaticoCategoria>("hotel");
+  // El primero de la lista, que es el que la empresa puso arriba. No hay un
+  // «hotel» por omisión que se pueda dar por hecho desde que el catálogo lo
+  // manda cada empresa.
+  const [rubroId, setRubroId] = useState(rubros[0]?.id ?? "");
+  const rubro = rubros.find((r) => r.id === rubroId);
   const [destino, setDestino] = useState<"negocio" | "comercial">(
     // Se abre en «gasto del viaje» y no en «negocio»: en un viaje de
     // prospección la mayoría de los renglones son del viaje, y el valor por
@@ -68,6 +73,22 @@ export function GastoForm({
     // hace falta.
     "comercial",
   );
+
+  /*
+    Sin rubros no se puede capturar nada, y se dice con la salida a la vista.
+
+    Pasa en una empresa que desactivó todos los suyos. Enseñar el formulario con
+    un desplegable vacío dejaría a alguien intentando guardar un gasto que la
+    base va a rechazar por una llave foránea que no significa nada para él.
+  */
+  if (rubros.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+        No hay rubros de gasto activos. Quien administre viáticos los da de alta
+        en Configuración → Viáticos.
+      </p>
+    );
+  }
 
   if (!esProspecto && tickets.length === 0) {
     return (
@@ -153,32 +174,44 @@ export function GastoForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <Label htmlFor="category">Categoría</Label>
+          <Label htmlFor="rubroId">Rubro</Label>
           <select
-            id="category"
-            name="category"
+            id="rubroId"
+            name="rubroId"
             required
             className={selectCls}
-            value={categoria}
-            onChange={(e) => setCategoria(e.target.value as ViaticoCategoria)}
+            value={rubroId}
+            onChange={(e) => setRubroId(e.target.value)}
           >
-            {VIATICO_CATEGORIAS.map((c) => (
-              <option key={c} value={c}>
-                {CATEGORIA_LABELS[c]}
+            {rubros.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
               </option>
             ))}
           </select>
+          {/*
+            EL PRESUPUESTO SE DICE AQUÍ, ANTES DE TECLEAR EL IMPORTE.
+
+            Es el único momento en que sirve: enterarse del tope cuando quien
+            revisa te devuelve la comprobación no evita nada. Se enseña el tope
+            del VIAJE —presupuesto × días— y no el diario, porque es contra ese
+            número contra el que se compara lo que se capture.
+          */}
           <p className="mt-1.5 text-xs text-muted-foreground">
-            {CATEGORIA_AYUDA[categoria]}
+            {rubro?.dailyBudgetMxn != null
+              ? `Presupuesto: ${mxnViatico(rubro.dailyBudgetMxn)} por día · ${mxnViatico(
+                  rubro.dailyBudgetMxn * Math.max(1, dias),
+                )} en este viaje de ${dias} día(s). Pasarse no bloquea: se marca.`
+              : "Este rubro no tiene tope configurado."}
           </p>
         </div>
 
-        {categoria === "otros" ? (
+        {rubro?.requiresNote ? (
           <div>
-            <Label htmlFor="otherLabel">¿De qué se trata?</Label>
+            <Label htmlFor="note">¿De qué se trata?</Label>
             <Input
-              id="otherLabel"
-              name="otherLabel"
+              id="note"
+              name="note"
               required
               maxLength={120}
               placeholder="Ej. Envío de paquetería"

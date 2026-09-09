@@ -204,6 +204,13 @@
       "when": 1788907610315,
       "tag": "0028_viaticos_prospectos",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1788919517036,
+      "tag": "0029_rubros_de_viatico",
+      "breakpoints": true
     }
   ]
 }

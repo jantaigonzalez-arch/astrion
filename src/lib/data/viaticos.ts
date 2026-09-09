@@ -7,6 +7,7 @@ import {
   contracts,
   crmDeals,
   crmOrganizations,
+  viaticoRubros,
   equipment,
   equipmentModules,
   tickets,
@@ -271,8 +272,10 @@ export async function getViatico(id: string, soloDe: string | null) {
     db
       .select({
         id: viaticoExpenses.id,
-        category: viaticoExpenses.category,
-        otherLabel: viaticoExpenses.otherLabel,
+        rubroId: viaticoExpenses.rubroId,
+        rubro: viaticoRubros.name,
+        rubroPresupuesto: viaticoRubros.dailyBudgetMxn,
+        note: viaticoExpenses.note,
         description: viaticoExpenses.description,
         amountMxn: viaticoExpenses.amountMxn,
         spentOn: viaticoExpenses.spentOn,
@@ -297,6 +300,10 @@ export async function getViatico(id: string, soloDe: string | null) {
       */
       .leftJoin(tickets, eq(tickets.id, viaticoExpenses.ticketId))
       .leftJoin(crmDeals, eq(crmDeals.id, viaticoExpenses.dealId))
+      // `inner` y no `left`: el rubro es obligatorio desde la 0029 y un gasto
+      // sin él no puede existir. Con `left` se escondería una fila corrupta en
+      // vez de que la pantalla la delatara.
+      .innerJoin(viaticoRubros, eq(viaticoRubros.id, viaticoExpenses.rubroId))
       .where(eq(viaticoExpenses.viaticoId, id))
       .orderBy(asc(viaticoExpenses.spentOn)),
     db
@@ -336,6 +343,66 @@ async function nombresDe(ids: Array<string | null>): Promise<Map<string, string 
     .from(users)
     .where(inArray(users.id, limpios));
   return new Map(filas.map((f) => [f.id, f.name]));
+}
+
+/* ═══════════════ Los rubros y su presupuesto ═══════════════ */
+
+export type RubroFila = {
+  id: string;
+  key: string;
+  name: string;
+  dailyBudgetMxn: number | null;
+  requiresNote: boolean;
+  active: boolean;
+  position: number;
+  /** Cuántos gastos lo usan. Es lo que decide si se puede borrar. */
+  usos: number;
+};
+
+/**
+ * El catálogo de rubros.
+ *
+ * `soloActivos` para el formulario de captura —donde ofrecer un rubro retirado
+ * sería invitar a seguir usándolo— y la lista completa para la pantalla que lo
+ * administra, que necesita ver lo desactivado justamente para reactivarlo.
+ *
+ * `usos` viaja siempre y no solo cuando se administra: es lo que permite que la
+ * pantalla diga «no se puede borrar, tiene 14 gastos» ANTES de que alguien
+ * pulse y se lleve un error de llave foránea, que no explica nada.
+ */
+export async function listRubros(
+  soloActivos = false,
+  conexion?: DbOrTx,
+): Promise<RubroFila[]> {
+  const db = conexion ?? (await tenantDb());
+  const filas = await db
+    .select({
+      id: viaticoRubros.id,
+      key: viaticoRubros.key,
+      name: viaticoRubros.name,
+      dailyBudgetMxn: viaticoRubros.dailyBudgetMxn,
+      requiresNote: viaticoRubros.requiresNote,
+      active: viaticoRubros.active,
+      position: viaticoRubros.position,
+      // Subconsulta correlacionada y no `left join` + `count`: con el join, un
+      // rubro con gastos se repetiría una vez por gasto. Mismo arreglo que en
+      // el listado de viáticos.
+      usos: sql<number>`(
+        select count(*)::int from ${viaticoExpenses} g
+         where g.rubro_id = ${viaticoRubros.id}
+      )`,
+    })
+    .from(viaticoRubros)
+    .where(soloActivos ? eq(viaticoRubros.active, true) : undefined)
+    .orderBy(asc(viaticoRubros.position), asc(viaticoRubros.name));
+
+  return filas.map((f) => ({
+    ...f,
+    // El importe llega como cadena de `numeric`. Se convierte aquí, una vez, y
+    // no en cada pantalla que lo pinte: es la misma razón por la que el cuadre
+    // vive en `lib/viaticos.ts`.
+    dailyBudgetMxn: f.dailyBudgetMxn == null ? null : Number(f.dailyBudgetMxn),
+  }));
 }
 
 /* ═══════════════ Lo que necesita el formulario ═══════════════ */
@@ -785,18 +852,19 @@ export async function viaticosDelProspecto(
       ),
     db
       .select({
-        k: viaticoExpenses.category,
+        k: viaticoRubros.name,
         total: sql<number>`coalesce(sum(${viaticoExpenses.amountMxn}), 0)::float8`,
       })
       .from(viaticoExpenses)
       .innerJoin(viaticos, eq(viaticos.id, viaticoExpenses.viaticoId))
+      .innerJoin(viaticoRubros, eq(viaticoRubros.id, viaticoExpenses.rubroId))
       .where(
         and(
           eq(viaticos.organizationId, organizationId),
           eq(viaticos.status, "cerrado"),
         ),
       )
-      .groupBy(viaticoExpenses.category)
+      .groupBy(viaticoRubros.name)
       .orderBy(desc(sql`sum(${viaticoExpenses.amountMxn})`)),
   ]);
 
@@ -833,13 +901,14 @@ export async function viaticosDelContrato(contractId: string, conexion?: DbOrTx)
       .where(and(eq(viaticos.contractId, contractId), eq(viaticos.status, "cerrado"))),
     db
       .select({
-        k: viaticoExpenses.category,
+        k: viaticoRubros.name,
         total: sql<number>`coalesce(sum(${viaticoExpenses.amountMxn}), 0)::float8`,
       })
       .from(viaticoExpenses)
       .innerJoin(viaticos, eq(viaticos.id, viaticoExpenses.viaticoId))
+      .innerJoin(viaticoRubros, eq(viaticoRubros.id, viaticoExpenses.rubroId))
       .where(and(eq(viaticos.contractId, contractId), eq(viaticos.status, "cerrado")))
-      .groupBy(viaticoExpenses.category)
+      .groupBy(viaticoRubros.name)
       .orderBy(desc(sql`sum(${viaticoExpenses.amountMxn})`)),
   ]);
 

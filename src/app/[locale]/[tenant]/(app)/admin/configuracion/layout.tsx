@@ -29,7 +29,26 @@ export default async function ConfiguracionLayout({
   const { locale } = await params;
   setRequestLocale(locale);
 
-  if (!(await puedeEn("configuracion", "administrar"))) {
+  /*
+    EL GUARDIA DEL ÁREA ABRE SI SE PUEDE ABRIR *ALGUNA* PESTAÑA.
+
+    Era `configuracion: administrar` a secas, y con la pestaña de Viáticos eso
+    dejaba fuera al rol General —que tiene `configuracion: ninguno` y es
+    justamente quien administra el gasto—. Bajarle el listón a Configuración
+    entera para colar una pestaña habría sido regalar el resto: usuarios,
+    catálogo, plantillas.
+
+    Así que el layout comprueba la UNIÓN y cada pantalla conserva su propio
+    guardia. Es lo mismo que ya hacía por dentro —el comentario de abajo cuenta
+    que `usuarios`, `catálogo` y `plantillas` no tenían guardia propio y colgaban
+    de este— con la diferencia de que ahora entrar al área no significa poder
+    abrirlo todo.
+  */
+  const [puedeConfiguracion, puedeViaticos] = await Promise.all([
+    puedeEn("configuracion", "administrar"),
+    puedeEn("viaticos", "administrar"),
+  ]);
+  if (!puedeConfiguracion && !puedeViaticos) {
     await redirectInTenant("/dashboard", locale);
   }
 
@@ -41,7 +60,10 @@ export default async function ConfiguracionLayout({
           Cómo se ve tu empresa, quién entra y con qué reglas trabaja.
         </p>
       </div>
-      <SettingsTabs />
+      <SettingsTabs
+        puedeConfiguracion={puedeConfiguracion}
+        puedeViaticos={puedeViaticos}
+      />
       {children}
     </div>
   );

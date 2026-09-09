@@ -7,31 +7,107 @@
  * ingeniero no es el que ve quien autoriza.
  */
 
-export const VIATICO_CATEGORIAS = [
-  "hotel",
-  "transporte",
-  "comida",
-  "refacciones",
-  "otros",
-] as const;
-export type ViaticoCategoria = (typeof VIATICO_CATEGORIAS)[number];
+/**
+ * LOS RUBROS YA NO VIVEN AQUÍ: los manda la empresa.
+ *
+ * Estaban como una lista fija con sus etiquetas y su ayuda, porque el rubro era
+ * un enum del código. Desde la 0029 es un catálogo en la base (`viatico_rubros`)
+ * que administran administrador y General, así que el nombre y la explicación
+ * salen de la fila, no de aquí.
+ *
+ * Lo que sí se queda en esta capa es la ARITMÉTICA del presupuesto, por el
+ * mismo criterio de siempre en este archivo: la pantalla y el servidor tienen
+ * que contar lo mismo, y un cálculo hecho en dos sitios acaba dando dos
+ * números.
+ */
 
-export const CATEGORIA_LABELS: Record<ViaticoCategoria, string> = {
-  hotel: "Hotel",
-  transporte: "Transporte",
-  comida: "Comida",
-  refacciones: "Refacciones",
-  otros: "Otros",
+/** Lo mínimo de un rubro que necesitan la pantalla y el cálculo. */
+export type Rubro = {
+  id: string;
+  name: string;
+  /** Autorizado por DÍA. `null` = sin tope. */
+  dailyBudgetMxn: number | null;
+  requiresNote: boolean;
 };
 
-/** Qué cabe en cada una, para que dos personas clasifiquen igual. */
-export const CATEGORIA_AYUDA: Record<ViaticoCategoria, string> = {
-  hotel: "Hospedaje y lo que venga en la factura del hotel.",
-  transporte: "Vuelos, autobús, taxis, gasolina, casetas y estacionamiento.",
-  comida: "Alimentos del viaje.",
-  refacciones: "Piezas compradas en ruta, que no salieron del almacén.",
-  otros: "Cualquier otra cosa. Hay que especificar qué.",
+/**
+ * Días de viaje, contando salida y regreso.
+ *
+ * Un viaje que sale y vuelve el mismo día es UN día, no cero: se durmió fuera o
+ * no, pero se comió. Con cero, el tope de cualquier rubro sería cero y todo
+ * gasto de un viaje relámpago saldría marcado en rojo.
+ */
+export function diasDeViaje(departsOn: string, returnsOn: string): number {
+  const a = Date.parse(`${departsOn}T00:00:00Z`);
+  const b = Date.parse(`${returnsOn}T00:00:00Z`);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return 1;
+  return Math.floor((b - a) / 86_400_000) + 1;
+}
+
+export type ConsumoDeRubro = {
+  rubroId: string;
+  nombre: string;
+  /** Lo comprobado en ese rubro, en todo el viaje. */
+  gastado: number;
+  /** Presupuesto × días. `null` cuando el rubro no tiene tope. */
+  tope: number | null;
+  /** Cuánto se pasó. Cero si no se pasó o si no hay tope. */
+  exceso: number;
+  excedido: boolean;
 };
+
+/**
+ * QUÉ SE PASÓ DEL PRESUPUESTO EN ESTE VIAJE.
+ *
+ * Se compara el TOTAL del rubro contra presupuesto × días, y no cada gasto
+ * suelto contra el tope diario. Una factura de hotel por tres noches es un solo
+ * renglón de 4 500 que contra un tope de 1 500 al día parecería el triple de lo
+ * autorizado sin serlo; comparar totales es lo único que da una respuesta que
+ * se sostiene delante de quien firma.
+ *
+ * Los rubros SIN tope no se marcan nunca: nulo es «no lo hemos definido», no
+ * «no se paga». Ver la migración 0029.
+ */
+export function consumoPorRubro(
+  gastos: Array<{ rubroId: string; amountMxn: string | number }>,
+  rubros: Rubro[],
+  dias: number,
+): ConsumoDeRubro[] {
+  const porRubro = new Map<string, number>();
+  for (const g of gastos) {
+    porRubro.set(g.rubroId, (porRubro.get(g.rubroId) ?? 0) + Number(g.amountMxn));
+  }
+
+  return [...porRubro.entries()].map(([rubroId, gastado]) => {
+    const r = rubros.find((x) => x.id === rubroId);
+    const tope =
+      r?.dailyBudgetMxn != null ? r.dailyBudgetMxn * Math.max(1, dias) : null;
+    const exceso = tope != null && gastado > tope ? gastado - tope : 0;
+    return {
+      rubroId,
+      // El rubro puede haberse desactivado después de capturar el gasto: el
+      // histórico conserva el nombre porque se lee de la fila, que sigue ahí.
+      nombre: r?.name ?? "—",
+      gastado,
+      tope,
+      exceso,
+      excedido: exceso > 0,
+    };
+  });
+}
+
+/**
+ * El estimado que se le propone a quien pide: la suma de todos los topes.
+ *
+ * Es una SUGERENCIA y no un límite —el formulario la ofrece y quien pide la
+ * cambia—, porque un viaje no consume todos los rubros: quien va en coche de la
+ * empresa no gasta en vuelos y el número saldría alto. Sirve para no partir de
+ * una casilla vacía, que es de donde salen los estimados inventados.
+ */
+export function estimadoSugerido(rubros: Rubro[], dias: number): number {
+  const d = Math.max(1, dias);
+  return rubros.reduce((a, r) => a + (r.dailyBudgetMxn ?? 0) * d, 0);
+}
 
 export const VIATICO_ESTADOS = [
   "borrador",

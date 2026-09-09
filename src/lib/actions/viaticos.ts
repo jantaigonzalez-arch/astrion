@@ -5,7 +5,6 @@ import { auth } from "@/lib/auth";
 import { puedeEn, tenantDb } from "@/lib/tenancy/context";
 import { revalidateTenant } from "@/lib/revalidate";
 import { saveReceipt } from "@/lib/uploads";
-import { VIATICO_CATEGORIAS } from "@/lib/viaticos";
 import {
   addExpense,
   approveViatico,
@@ -298,8 +297,8 @@ export async function agregarGastoAction(
   const destino = destinoDelFormulario(formData);
   if ("error" in destino) return { ok: false, error: destino.error };
 
-  const category = z.enum(VIATICO_CATEGORIAS).safeParse(formData.get("category"));
-  if (!category.success) return { ok: false, error: "Elige una categoría." };
+  const rubroId = uuid.safeParse(formData.get("rubroId"));
+  if (!rubroId.success) return { ok: false, error: "Elige un rubro de gasto." };
 
   const description = String(formData.get("description") ?? "").trim();
   if (!description) return { ok: false, error: "Describe el gasto." };
@@ -329,8 +328,11 @@ export async function agregarGastoAction(
       {
         viaticoId: viaticoId.data,
         destino: destino.valor,
-        category: category.data,
-        otherLabel: String(formData.get("otherLabel") ?? ""),
+        rubroId: rubroId.data,
+        // Que el rubro EXIJA la nota lo decide el dominio, leyendo la fila: aquí
+        // no se sabe cuál la pide y comprobarlo obligaría a consultar el
+        // catálogo desde la acción, que es justo lo que esta capa no hace.
+        note: String(formData.get("note") ?? ""),
         description,
         amountMxn: monto,
         spentOn: spentOn.data,

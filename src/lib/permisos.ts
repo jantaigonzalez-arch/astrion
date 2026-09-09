@@ -402,6 +402,23 @@ const RUTAS: Regla[] = [
 
   // ── Configuración ──
   { prefijo: "/admin/configuracion", modulo: "configuracion", nivel: "administrar" },
+  /*
+    LA EXCEPCIÓN QUE PRUEBA PARA QUÉ SIRVE ESTA TABLA.
+
+    Vive DENTRO de Configuración pero no la manda Configuración: quien decide
+    cuánto se paga por noche de hotel es quien administra el GASTO —el rol
+    General y el administrador—, no quien administra el sistema. Con la regla
+    del prefijo padre, General no podía abrirla: tiene `configuracion: ninguno`
+    de fábrica.
+
+    Ese hueco ya existía y no se había visto: el interruptor de viáticos a
+    prospectos nació en «Marca y tarifas», así que era invisible justo para el
+    único rol que existe para administrar viáticos. Ahora vive aquí.
+
+    Se resuelve por prefijo más largo, así que esta gana sobre la de arriba sin
+    tener que declarar ninguna excepción a mano.
+  */
+  { prefijo: "/admin/configuracion/viaticos", modulo: "viaticos", nivel: "administrar" },
 ];
 
 /** Las reglas, de la más específica a la más general. Ver la nota de `RUTAS`. */
