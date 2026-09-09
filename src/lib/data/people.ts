@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { ordenarPor } from "@/lib/data/orden";
 import type { Orden } from "@/lib/listado";
 import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
@@ -179,12 +180,31 @@ export async function contarMiembros(tenantId: string): Promise<{
   };
 }
 
-export async function listTenantMembers(
+/**
+ * MEMOIZADA POR PETICIÓN, y no es un adorno.
+ *
+ * Es la lectura que más se repite dentro de una misma operación de viáticos:
+ * `vetoAprobador` la pide para saber si el elegido puede firmar, `vetoProspecto`
+ * para leer el rol de quien pide y `aprobadoresPosibles` para repartir el aviso.
+ * Medido: tres llamadas, tres consultas a la base — la misma fila leída tres
+ * veces en la misma petición, para contestar tres preguntas sobre la misma
+ * gente.
+ *
+ * `cache()` de React memoiza POR PETICIÓN y por argumentos, así que
+ * `listTenantMembers()` y `listTenantMembers({ roles: ["agent"] })` siguen
+ * siendo dos lecturas distintas — que es lo correcto, porque devuelven cosas
+ * distintas.
+ *
+ * Es el mismo tratamiento que ya tiene `getTenantContext`, y por el mismo
+ * motivo: dato caliente e inmóvil dentro de una petición. Fuera de una —un
+ * script, un probe— `cache()` simplemente ejecuta, así que nada cambia allí.
+ */
+export const listTenantMembers = cache(async function listTenantMembers(
   opts?: MemberListOptions,
 ): Promise<TenantMember[]> {
   const { tenantId } = await requireTenant();
   return listTenantMembersFor(tenantId, opts);
-}
+});
 
 /**
  * Igual que la anterior con la empresa explícita, para lo que corre fuera de una
