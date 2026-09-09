@@ -154,38 +154,34 @@ function RubroRow({ rubro }: { rubro: RubroFila }) {
               Activo
             </label>
             {/*
-              SE VE SIEMPRE, PERO APAGADA SIN TOPE.
+              SE PUEDE MARCAR SIEMPRE, Y AVISA SI NO VA A SURTIR EFECTO.
 
-              Estaba escondida cuando el rubro no tenía presupuesto, con el
-              argumento de que una casilla sin efecto enseña a desconfiar de la
-              pantalla. El argumento era bueno y la consecuencia, mala: los
-              cinco rubros de fábrica nacen sin tope, así que la casilla no
-              aparecía en NINGUNO y quien la buscaba concluía que no existe.
+              Estuvo escondida cuando el rubro no tenía tope, y después visible
+              pero DESHABILITADA. Las dos versiones fallaron con un usuario de
+              verdad, y por la misma razón: los cinco rubros de fábrica nacen sin
+              presupuesto, así que la casilla no se podía marcar en ninguno —y
+              desde fuera eso se lee como «no guarda», que es exactamente lo que
+              se reportó—.
 
-              Deshabilitada dice las dos cosas a la vez —existe, y le falta un
-              tope—, que es justo lo que la ausencia no decía. El `title` lo
-              explica al pasar por encima.
+              El miedo era una casilla que no hace nada. Es real, pero es MENOS
+              grave que una que no se deja pulsar: la primera se explica con una
+              línea de texto, la segunda parece una avería. Así que se guarda
+              siempre y el aviso dice qué falta.
+
+              Y de paso se cierra un fallo silencioso: con la versión
+              deshabilitada, borrar el presupuesto de un rubro que sí bloqueaba
+              lo mandaba al servidor sin la casilla —los campos deshabilitados no
+              se envían— y lo apagaba sin que nadie lo pidiera.
             */}
-            <label
-              className={`flex items-center gap-1.5 ${
-                budget.trim() ? "" : "opacity-50"
-              }`}
-              title={
-                budget.trim()
-                  ? "Impide guardar un gasto que rebase el tope del viaje"
-                  : "Ponle un presupuesto por día para poder hacerlo cumplir"
-              }
-            >
+            <label className="flex items-center gap-1.5">
               <input
                 type="checkbox"
                 name="blocksOverBudget"
-                checked={bloquea && Boolean(budget.trim())}
-                disabled={!budget.trim()}
+                checked={bloquea}
                 onChange={(e) => setBloquea(e.target.checked)}
                 className="size-3.5 rounded border-input"
               />
               No dejar pasarse
-              {budget.trim() ? "" : " (necesita tope)"}
             </label>
             {/*
               Los usos se enseñan siempre, no solo al intentar borrar: es lo que
@@ -195,6 +191,17 @@ function RubroRow({ rubro }: { rubro: RubroFila }) {
             {rubro.usos > 0 ? (
               <span>
                 {rubro.usos} gasto{rubro.usos === 1 ? "" : "s"} lo usan
+              </span>
+            ) : null}
+            {/*
+              Marcado y sin tope no es un error —se guarda igual— pero no hace
+              nada, y callarlo sería dejar a alguien creyendo que su gasto está
+              controlado. Se dice aquí, en el renglón, no en un mensaje que
+              desaparece al guardar.
+            */}
+            {bloquea && !budget.trim() ? (
+              <span className="text-warning">
+                Sin tope no hay nada que hacer cumplir: ponle un presupuesto.
               </span>
             ) : null}
           </div>
