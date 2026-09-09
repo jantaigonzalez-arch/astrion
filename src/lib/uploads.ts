@@ -59,7 +59,31 @@ async function carpetaDelInquilino(): Promise<string> {
   return slug.replace(/[^a-z0-9_-]/gi, "");
 }
 
-/** Lo que ocupa hoy una empresa: adjuntos en disco, en bytes. */
+/**
+ * Lo que ocupa hoy una empresa: adjuntos en disco, en bytes.
+ *
+ * ── CUESTA LO QUE ARCHIVOS TENGA, Y EL CUPO ES LO QUE LO ACOTA ────────────
+ *
+ * Recorre el árbol con un `stat` por archivo, así que el costo crece con el
+ * número de ficheros. Medido: 40 ms con 3 000. Suena mal hasta que se ve qué lo
+ * limita — el propio cupo:
+ *
+ *   5 GB de cupo ÷ 1,5 MB de adjunto típico ≈ 3 400 archivos ≈ 40 ms
+ *
+ * Es decir, 40 ms es el PEOR caso de una empresa con el cupo lleno, en una
+ * pantalla que se abre de vez en cuando y en una subida que ya está escribiendo
+ * en disco. Se aceptó por eso, no por descuido.
+ *
+ * ── Y AQUÍ ESTÁ EL ACOPLE QUE HAY QUE RECORDAR ────────────────────────────
+ *
+ * Si algún día se venden cupos de 100 GB —lo que exige añadir disco primero—,
+ * el mismo recorrido pasa a unos 800 ms y deja de ser aceptable. Ese es el
+ * momento de llevar el total a una columna que se actualice al subir, no antes:
+ * un contador que hay que mantener sincronizado es deuda, y hoy no compra nada.
+ *
+ * Queda escrito aquí porque el día que alguien suba el cupo no va a estar
+ * pensando en este archivo.
+ */
 export async function bytesDeAdjuntos(slug: string): Promise<number> {
   const { readdir, stat } = await import("node:fs/promises");
   const raiz = path.join(uploadsDir(), slug.replace(/[^a-z0-9_-]/gi, ""));
