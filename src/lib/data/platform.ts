@@ -405,3 +405,107 @@ export async function getPlatformEvents(limit = 40) {
     .orderBy(desc(platformEvents.id))
     .limit(limit);
 }
+
+/* ═══════════════════ Capacidad de la plataforma ═══════════════════ */
+
+export type UsoDeRecurso = {
+  etiqueta: string;
+  usado: number;
+  techo: number;
+  /** Cómo se escribe el valor: «70 de 300», «18 MB de 43 GB». */
+  sufijo?: string;
+  /** Por qué ese techo es el techo. Se enseña bajo la barra. */
+  nota: string;
+};
+
+export type CapacidadPlataforma = {
+  recursos: UsoDeRecurso[];
+  /** Peso de cada inquilino, en MB. Otro eje, por eso va en otro gráfico. */
+  porInquilino: Array<{ etiqueta: string; mb: number }>;
+  /** Lo que la base NO puede saber, dicho en la pantalla. */
+  fueraDeAlcance: string;
+};
+
+/**
+ * QUÉ TAN LLENA ESTÁ LA PLATAFORMA, con lo que la base sabe de sí misma.
+ *
+ * ── POR QUÉ NO SALE NI CPU NI RAM ──────────────────────────────────────────
+ *
+ * Porque la aplicación corre DENTRO de un contenedor y desde ahí `/proc` habla
+ * del contenedor, no del anfitrión: leerlo daría un número que parece una
+ * medición y no lo es. Sacarlo de verdad pide montar métricas del sistema, que
+ * es infraestructura nueva para un dato que hoy dice «sobra de todo» —la carga
+ * del servidor no pasa de 0,13 con dos núcleos—.
+ *
+ * Así que esta pantalla enseña SOLO lo que Postgres puede responder de sí mismo
+ * y lo que el código declara como techo, y dice en voz alta lo que deja fuera.
+ * Un tablero de capacidad que calla sus puntos ciegos es peor que no tenerlo:
+ * hace creer que la respuesta está completa.
+ *
+ * ── EL TECHO DE EMPRESAS NO ES DEL SERVIDOR, ES DEL CÓDIGO ────────────────
+ *
+ * `connectionCeiling()` deriva de `DB_TENANT_CONN_BUDGET` y `DB_TENANT_POOL_MAX`
+ * cuántos inquilinos pueden estar TRABAJANDO a la vez. No es cuántos caben dados
+ * de alta —eso lo limita el disco, y con inquilinos de decenas de megas está
+ * lejos— sino cuántos pueden tener su pool abierto al mismo tiempo. Es el número
+ * que se toca cuando hace falta más, y por eso se enseña junto a lo que consume
+ * de `max_connections`, que es contra lo que hay que compararlo.
+ */
+export async function capacidadDePlataforma(): Promise<CapacidadPlataforma> {
+  const db = getDb();
+  const { connectionCeiling } = await import("@/lib/tenancy/context");
+  const techo = connectionCeiling();
+
+  const [ajustes] = (await db.execute(sql`
+    select current_setting('max_connections')::int as max_conexiones,
+           (select count(*)::int from pg_stat_activity) as en_uso
+  `)) as unknown as Array<{ max_conexiones: number; en_uso: number }>;
+
+  const tamanos = (await db.execute(sql`
+    select n.nspname as esquema,
+           (sum(pg_total_relation_size(c.oid)) / 1048576.0)::float8 as mb
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname like 'tenant_%'
+     group by n.nspname
+     order by 2 desc
+  `)) as unknown as Array<{ esquema: string; mb: number }>;
+
+  const [inquilinos] = (await db.execute(sql`
+    select count(*)::int as n from tenants
+  `)) as unknown as Array<{ n: number }>;
+
+  const maxConn = Number(ajustes?.max_conexiones ?? 0);
+  const enUso = Number(ajustes?.en_uso ?? 0);
+
+  return {
+    recursos: [
+      {
+        etiqueta: "Conexiones abiertas ahora",
+        usado: enUso,
+        techo: maxConn,
+        sufijo: "conexiones",
+        nota: "Lo que hay conectado en este instante, contra el máximo de Postgres.",
+      },
+      {
+        etiqueta: "Conexiones reservadas en el peor caso",
+        usado: techo.techoTotal,
+        techo: maxConn,
+        sufijo: "conexiones",
+        nota: `${techo.poolsEnCache} empresas × ${techo.porInquilino} conexiones, más ${techo.techoControl} del plano de control. Es el tope que el código se permite, no lo que usa.`,
+      },
+      {
+        etiqueta: "Empresas dadas de alta",
+        usado: Number(inquilinos?.n ?? 0),
+        techo: techo.poolsEnCache,
+        sufijo: "empresas",
+        nota: `El techo es cuántas pueden estar TRABAJANDO a la vez. Pasado ese número siguen entrando: la que lleva más tiempo inactiva cierra su pool y la siguiente paga una reconexión de milisegundos.`,
+      },
+    ],
+    porInquilino: tamanos.map((t) => ({
+      etiqueta: t.esquema.replace(/^tenant_/, ""),
+      mb: Math.round(Number(t.mb) * 10) / 10,
+    })),
+    fueraDeAlcance:
+      "CPU, memoria y disco del servidor no aparecen: la aplicación corre en un contenedor y desde ahí solo puede ver el suyo, no el del anfitrión. Medirlos de verdad pide métricas del sistema.",
+  };
+}

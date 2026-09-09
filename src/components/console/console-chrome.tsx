@@ -2,7 +2,15 @@
 
 import { signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
-import { LogOut, Building2, ShieldAlert, Home, Inbox, History } from "lucide-react";
+import {
+  LogOut,
+  Building2,
+  ShieldAlert,
+  Home,
+  Inbox,
+  History,
+  Gauge,
+} from "lucide-react";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { cn } from "@/lib/utils";
@@ -63,6 +71,10 @@ export function ConsoleChrome({
       ? [{ href: "/platform/solicitudes", label: "Solicitudes", Icon: Inbox }]
       : []),
     { href: "/platform/bitacora", label: "Bitácora", Icon: History },
+    // Al final: se abre cuando alguien se pregunta si cabe otro cliente, no en
+    // el día a día. Por eso tampoco está en la bienvenida, que tiene escrito
+    // que orienta y no inventaría.
+    { href: "/platform/capacidad", label: "Capacidad", Icon: Gauge },
   ];
   const initials = (name ?? email ?? "?")
     .split(" ")

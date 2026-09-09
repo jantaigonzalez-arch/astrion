@@ -1,6 +1,6 @@
 import "server-only";
 import { sql } from "drizzle-orm";
-import { tenantDb } from "@/lib/tenancy/context";
+import { requireTenant, tenantDb } from "@/lib/tenancy/context";
 
 /**
  * La empresa entera en cifras, para la pantalla de llegada.
@@ -111,4 +111,69 @@ export async function resumenEmpresa(): Promise<ResumenEmpresa | null> {
   } catch {
     return null;
   }
+}
+
+/* ═══════════════ Lo que esta empresa lleva dentro ═══════════════ */
+
+export type ConsumoDelPlan = {
+  registros: Array<{ etiqueta: string; n: number }>;
+  /** Aparte del gráfico: es otra unidad. Ver la nota. */
+  megas: number;
+};
+
+/**
+ * QUÉ LLEVA GUARDADO ESTA EMPRESA.
+ *
+ * ── NO ES «CUÁNTO TE QUEDA», Y ESO ES UNA DECISIÓN, NO UNA FALTA ───────────
+ *
+ * El plan Tierra no tiene límites: `lib/suscripcion.ts` lo dice con todas sus
+ * letras —«el sistema completo, sin recortes ni módulos que se compren
+ * aparte»—. Así que no hay barra de consumo contra un tope, porque no hay tope,
+ * e inventarle uno para que el gráfico se vea más completo sería inventar una
+ * restricción que nadie contrató.
+ *
+ * Lo que sí contesta es la pregunta que un cliente sí se hace al mirar lo que
+ * paga: qué hay aquí dentro que es mío.
+ *
+ * ── LOS MEGAS VAN FUERA DEL GRÁFICO ───────────────────────────────────────
+ *
+ * Porque son otra unidad. Registros contra registros comparten eje y se pueden
+ * dibujar juntos; meter megabytes en las mismas barras obligaría a un segundo
+ * eje escondido y haría que dos barras del mismo largo significaran cosas
+ * distintas. Van como una cifra al lado.
+ */
+export async function consumoDelPlan(): Promise<ConsumoDelPlan> {
+  const db = await tenantDb();
+  const ctx = await requireTenant();
+
+  const [f] = (await db.execute(sql`
+    select
+      (select count(*)::int from tickets)              as tickets,
+      (select count(*)::int from equipment)            as equipos,
+      (select count(*)::int from contracts)            as contratos,
+      (select count(*)::int from crm_organizations)    as organizaciones,
+      (select count(*)::int from spare_parts)          as refacciones,
+      (select count(*)::int from ticket_comments)      as bitacora
+  `)) as unknown as Array<Record<string, number>>;
+
+  // El peso del esquema de ESTA empresa, no el de la base entera: `getDb()`
+  // porque `pg_namespace` es del catálogo, no de las tablas del inquilino.
+  const { getDb } = await import("@/lib/db");
+  const [t] = (await getDb().execute(sql`
+    select coalesce(sum(pg_total_relation_size(c.oid)) / 1048576.0, 0)::float8 as mb
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = ${ctx.schemaName}
+  `)) as unknown as Array<{ mb: number }>;
+
+  return {
+    registros: [
+      { etiqueta: "Tickets de servicio", n: Number(f?.tickets ?? 0) },
+      { etiqueta: "Movimientos de bitácora", n: Number(f?.bitacora ?? 0) },
+      { etiqueta: "Equipos instalados", n: Number(f?.equipos ?? 0) },
+      { etiqueta: "Refacciones en catálogo", n: Number(f?.refacciones ?? 0) },
+      { etiqueta: "Organizaciones", n: Number(f?.organizaciones ?? 0) },
+      { etiqueta: "Contratos", n: Number(f?.contratos ?? 0) },
+    ],
+    megas: Math.round(Number(t?.mb ?? 0) * 10) / 10,
+  };
 }
