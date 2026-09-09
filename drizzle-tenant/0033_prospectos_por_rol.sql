@@ -20,9 +20,25 @@
 -- prospectos no aparece en el formulario: es exactamente lo que hacía el
 -- interruptor en `false`.
 --
--- El valor por omisión es `[]`, así que nadie estrena nada al actualizar. Quien
--- ya lo tenía encendido vuelve a marcar los roles una vez; son cuatro casillas
--- y a cambio no vuelve a tocar la hoja de permisos de nadie por este motivo.
+-- El valor por omisión es `[]`, así que nadie estrena nada al actualizar.
+--
+-- ---------------------------------------------------------------------------
+-- PERO A QUIEN YA LO TENÍA ENCENDIDO NO SE LE APAGA
+--
+-- Producción lo tenía en `true` al escribir esto, y soltar la columna a secas
+-- habría dejado la lista vacía — o sea, habría APAGADO una función que alguien
+-- encendió a propósito, sin decírselo y sin que ningún error saltara. Un
+-- despliegue que revierte una decisión del usuario en silencio es peor que uno
+-- que falla.
+--
+-- Así que se rellena, y se rellena FIEL a quién podía de verdad antes: la regla
+-- vieja era «interruptor encendido Y la persona alcanza `ventas: ver`», y con
+-- la tabla de permisos de fábrica eso son exactamente `owner`, `admin` y
+-- `sales` —el agente y General tienen `ventas: ninguno`—. Poner los cinco roles
+-- habría sido regalar acceso que nadie dio.
+--
+-- Con el interruptor apagado, la lista queda vacía, que significa lo mismo que
+-- significaba el `false`.
 --
 -- ---------------------------------------------------------------------------
 -- POR ROL, AUNQUE EL RESTO DEL SISTEMA VAYA POR CAPACIDAD
@@ -55,5 +71,11 @@
 -- ESCRITA A MANO. Ver la regla 4 de AGENTS.md — vale para las dos carpetas.
 
 ALTER TABLE "settings" ADD COLUMN "viaticos_prospectos_roles" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+
+-- El relleno va ANTES del `drop` y en la misma transacción que él: si algo
+-- falla, no queda una base con la función apagada y la columna vieja perdida.
+UPDATE "settings"
+   SET "viaticos_prospectos_roles" = '["owner","admin","sales"]'::jsonb
+ WHERE "viaticos_prospectos" IS TRUE;--> statement-breakpoint
 
 ALTER TABLE "settings" DROP COLUMN "viaticos_prospectos";
