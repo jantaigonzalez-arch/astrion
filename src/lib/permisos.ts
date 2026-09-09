@@ -391,6 +391,16 @@ const RUTAS: Regla[] = [
   // el único sitio donde se puede aplicar sin que se olvide en una pantalla.
   { prefijo: "/admin/viaticos", modulo: "viaticos", nivel: "ver" },
   { prefijo: "/admin/viaticos/nuevo", modulo: "viaticos", nivel: "editar" },
+  /*
+    El documento imprimible NO necesita regla propia: cae bajo `/admin/viaticos`
+    con `ver`, que es lo correcto —quien puede mirar un viático puede archivarlo
+    en papel— y además una regla con `[id]` dentro no casaría nunca, porque esto
+    se compara contra rutas reales y no contra patrones.
+
+    Lo que sí conserva es el acotado por persona, que vive en la consulta: el
+    ingeniero solo alcanza los suyos, así que la versión imprimible no es una
+    puerta trasera al expediente de un compañero.
+  */
 
   // ── Análisis ──
   { prefijo: "/admin/crm/informes", modulo: "analisis", nivel: "ver" },

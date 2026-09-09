@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { setRequestLocale } from "next-intl/server";
-import { AlertTriangle, FileText, Plane, Wrench } from "lucide-react";
+import { AlertTriangle, FileText, Plane, Printer, Wrench } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { Link } from "@/lib/nav";
 import { redirectInTenant } from "@/lib/nav-server";
@@ -14,6 +14,7 @@ import {
 import { aprobadoresPosibles } from "@/lib/domain/viaticos";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   AccionesViatico,
   QuitarGasto,
@@ -222,7 +223,22 @@ export default async function ViaticoPage({
             </p>
           ) : null}
         </div>
-        <Badge className="ring-1 ring-border">{ESTADO_LABELS[v.status]}</Badge>
+        <div className="flex items-center gap-2">
+          {/*
+            IMPRIMIR ESTÁ EN LA CABECERA, no al final del expediente.
+
+            Es lo mismo que se aprendió con el bloque de acciones: enterrado bajo
+            la tabla de gastos, en un viático largo queda a un scroll entero de
+            distancia y nadie lo encuentra. Y aquí el documento se busca justo
+            cuando hay que archivarlo, que es al terminar de mirarlo.
+          */}
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/admin/viaticos/${v.id}/reporte`}>
+              <Printer className="size-4" /> Imprimir
+            </Link>
+          </Button>
+          <Badge className="ring-1 ring-border">{ESTADO_LABELS[v.status]}</Badge>
+        </div>
       </div>
 
       {/*

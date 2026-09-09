@@ -1,13 +1,13 @@
 import { setRequestLocale } from "next-intl/server";
 import { notFound } from "next/navigation";
-import Image from "next/image";
-import { getTenantBrand } from "@/lib/data/platform";
+import { membreteDeDocumento } from "@/lib/documentos";
+import {
+  Documento,
+  FirmasDoc,
+} from "@/components/portal/documentos/documento";
 import { ROLE_LABELS } from "@/lib/roles";
 import { getTicketById } from "@/lib/data/tickets";
 import { rolesByUser } from "@/lib/data/people";
-import { Link } from "@/lib/nav";
-import { Button } from "@/components/ui/button";
-import { PrintButton } from "@/components/portal/print-button";
 import { puedeEn } from "@/lib/tenancy/context";
 import { CATEGORY_LABELS, STATUS_LABELS, PRIORITY_LABELS, label } from "@/lib/tickets";
 
@@ -34,17 +34,14 @@ export default async function TicketReportPage({
     vista previa, y si alguna vez dejaran de coincidir, la vista previa estaría
     mintiendo sobre lo único que promete.
   */
-  const marca = await getTenantBrand(tenant);
-  const nombreEmpresa = marca?.brandName || marca?.name || "";
-  const logoDoc = marca?.documentLogoUrl ?? marca?.logoUrl ?? null;
-  const pieDelDocumento = [
-    nombreEmpresa,
-    marca?.contactAddress,
-    marca?.contactPhone,
-    marca?.contactEmail,
-  ]
-    .map((v) => (v ?? "").trim())
-    .filter(Boolean);
+  /*
+    El membrete sale de la capa de documentos, no de aquí.
+
+    Estaba escrito en esta página —la cascada del logo y el armado del pie—, y
+    en cuanto apareció el segundo documento imprimible eso habría sido una
+    copia. Ver `lib/documentos.ts`.
+  */
+  const membrete = await membreteDeDocumento(tenant);
 
   const loc = locale === "en" ? "en-US" : "es-MX";
   const dt = (d: Date | string | null) =>
@@ -95,70 +92,14 @@ export default async function TicketReportPage({
   );
 
   return (
-    <div className="mx-auto max-w-4xl">
-      {/* Barra de acciones (no se imprime) */}
-      <div className="no-print mb-6 flex items-center justify-between">
-        <Button asChild variant="outline" size="sm">
-          <Link href={`/tickets/${ticket.id}`}>← Volver al ticket</Link>
-        </Button>
-        <PrintButton label="Imprimir / Guardar PDF" />
-      </div>
-
-      {/* Hoja del reporte */}
-      <div className="print-sheet mx-auto max-w-4xl rounded-xl border border-zinc-200 bg-white p-8 text-zinc-900 shadow-sm sm:p-12">
-        {/* Encabezado */}
-        {/*
-          EL MEMBRETE SALE DE LA EMPRESA, NO DEL CÓDIGO.
-
-          Aquí había un `<svg>` con el logo de Evoelution, su nombre en dos
-          colores y su lema, los tres escritos a mano. En un producto
-          multiempresa eso significaba que cualquier otro inquilino le entregaba
-          a SU cliente un documento firmado con la marca de Evoelution — el
-          mismo error que ya se había corregido en la barra lateral y en el
-          prefijo de folio. Ver la migración 0029.
-        */}
-        <header className="flex items-start justify-between gap-6 border-b-2 border-zinc-900 pb-6">
-          <div>
-            <div className="flex items-center gap-2.5">
-              {logoDoc ? (
-                // `unoptimized`: el logo va a un documento que se imprime y que
-                // se abre una vez. Pasarlo por el optimizador de Next es
-                // trabajo de servidor para una imagen que no se vuelve a pedir,
-                // y encima puede recomprimirla justo cuando más nítida hace
-                // falta.
-                <Image
-                  src={logoDoc}
-                  alt={nombreEmpresa}
-                  width={160}
-                  height={44}
-                  className="h-10 w-auto object-contain"
-                  unoptimized
-                />
-              ) : (
-                // Monograma, y NUNCA el logo de otra empresa. Es la misma regla
-                // que ya sostiene `TenantMark` en la barra lateral.
-                <span className="flex size-9 items-center justify-center rounded-lg bg-zinc-900 text-sm font-bold text-white">
-                  {nombreEmpresa.trim().charAt(0).toUpperCase()}
-                </span>
-              )}
-              <span className="text-xl font-bold tracking-tight">
-                {nombreEmpresa}
-              </span>
-            </div>
-            {marca?.tagline ? (
-              <p className="mt-2 text-[13px] text-zinc-500">{marca.tagline}</p>
-            ) : null}
-          </div>
-          <div className="text-right">
-            <h1 className="text-lg font-bold uppercase tracking-wide">
-              Reporte de servicio
-            </h1>
-            <p className="mt-1 font-mono text-sm text-zinc-700">{ticket.reference}</p>
-            <p className="text-[13px] text-zinc-500">
-              Emitido: {dateOnly(new Date())}
-            </p>
-          </div>
-        </header>
+    <Documento
+      membrete={membrete}
+      titulo="Reporte de servicio"
+      folio={ticket.reference}
+      volverA={`/tickets/${ticket.id}`}
+      volverLabel="Volver al ticket"
+      emitido={dateOnly(new Date())}
+    >
 
         {/* Datos principales */}
         <section className="grid gap-8 py-6 sm:grid-cols-2">
@@ -406,41 +347,18 @@ export default async function TicketReportPage({
           </section>
         )}
 
-        {/* Firmas */}
-        <section className="print-avoid-break grid gap-10 pt-14 sm:grid-cols-2">
-          <div className="text-center">
-            <div className="mx-auto border-t border-zinc-400 pt-2 text-sm">
-              <p className="font-medium">
-                {ticket.assignedTo?.name ?? `Técnico de ${nombreEmpresa}`}
-              </p>
-              <p className="text-zinc-500">Técnico de servicio</p>
-            </div>
-          </div>
-          <div className="text-center">
-            <div className="mx-auto border-t border-zinc-400 pt-2 text-sm">
-              <p className="font-medium">{ticket.createdBy.name ?? "Cliente"}</p>
-              <p className="text-zinc-500">Conformidad del cliente</p>
-            </div>
-          </div>
-        </section>
-
-        {/* Pie */}
-        {/*
-          El pie llevaba la calle, el teléfono y el correo de Evoelution
-          literales. Ahora salen de la empresa y LO QUE FALTA SE OMITE: no se
-          hereda de nadie ni se rellena con un ejemplo. Una línea de menos se ve
-          al mirar el documento; una línea ajena pasa desapercibida hasta que la
-          lee el cliente y llama al teléfono equivocado.
-
-          Si no hay ningún dato, el pie entero desaparece en vez de dejar una
-          raya vacía cerrando la hoja.
-        */}
-        {pieDelDocumento.length > 0 ? (
-          <footer className="mt-10 border-t border-zinc-200 pt-4 text-center text-[11px] text-zinc-400">
-            {pieDelDocumento.join(" · ")}
-          </footer>
-        ) : null}
-      </div>
-    </div>
+        <FirmasDoc
+          firmas={[
+            {
+              nombre: ticket.assignedTo?.name ?? `Técnico de ${membrete.nombre}`,
+              calidad: "Técnico de servicio",
+            },
+            {
+              nombre: ticket.createdBy.name ?? "Cliente",
+              calidad: "Conformidad del cliente",
+            },
+          ]}
+        />
+    </Documento>
   );
 }
