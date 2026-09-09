@@ -117,8 +117,12 @@ export async function resumenEmpresa(): Promise<ResumenEmpresa | null> {
 
 export type ConsumoDelPlan = {
   registros: Array<{ etiqueta: string; n: number }>;
-  /** Aparte del gráfico: es otra unidad. Ver la nota. */
+  /** Lo que pesa la base de esta empresa. */
   megas: number;
+  /** Lo que pesan sus adjuntos: fotos y comprobantes. */
+  adjuntosMb: number;
+  /** El cupo contratado, en megas. */
+  cupoMb: number;
 };
 
 /**
@@ -165,7 +169,28 @@ export async function consumoDelPlan(): Promise<ConsumoDelPlan> {
      where n.nspname = ${ctx.schemaName}
   `)) as unknown as Array<{ mb: number }>;
 
+  /*
+    EL CUPO Y LOS ADJUNTOS, que son la única parte que puede acabarse.
+
+    La base de datos de una empresa pesa megas y no se acerca a ningún tope; lo
+    que llena disco son las fotos de equipo y los comprobantes. Por eso la barra
+    del cupo mide ESO y no la suma de las dos: mezclarlas escondería el número
+    que importa detrás de otro que nunca se mueve.
+  */
+  const { bytesDeAdjuntos } = await import("@/lib/uploads");
+  const { getDb: db2 } = await import("@/lib/db");
+  const { tenants } = await import("@/lib/db/platform");
+  const { eq } = await import("drizzle-orm");
+  const [fila] = await db2()
+    .select({ cupo: tenants.storageQuotaMb })
+    .from(tenants)
+    .where(eq(tenants.id, ctx.tenantId))
+    .limit(1);
+  const adjuntos = await bytesDeAdjuntos(ctx.slug);
+
   return {
+    adjuntosMb: Math.round((adjuntos / 1048576) * 10) / 10,
+    cupoMb: Number(fila?.cupo ?? 0),
     registros: [
       { etiqueta: "Tickets de servicio", n: Number(f?.tickets ?? 0) },
       { etiqueta: "Movimientos de bitácora", n: Number(f?.bitacora ?? 0) },

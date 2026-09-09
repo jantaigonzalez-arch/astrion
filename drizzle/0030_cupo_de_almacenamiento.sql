@@ -1,0 +1,46 @@
+-- CADA EMPRESA TIENE UN CUPO, Y HASTA HOY NO TENÍA NINGUNO.
+--
+-- El plan Tierra se vende a 320 USD «con el sistema completo», y eso incluía —
+-- sin que nadie lo decidiera— almacenamiento sin límite. No es generosidad: es
+-- que nadie puso el número. Un cliente podía subir hasta llenar el disco del
+-- servidor, y el primer aviso habría sido la aplicación dejando de escribir
+-- para TODOS los inquilinos a la vez.
+--
+-- ---------------------------------------------------------------------------
+-- POR QUÉ 100 GB
+--
+-- Medido y calculado, no elegido a ojo:
+--
+--   · la base de datos de una empresa con dos años reales pesa 9,5 MB, y la
+--     proyección a diez años ronda los 100 MB. Es despreciable;
+--   · lo que llena disco son los ADJUNTOS —fotos de equipo y comprobantes—, con
+--     un tope de 6 MB por archivo que ya aplica `lib/uploads.ts`. Un cliente
+--     activo que adjunte en un tercio de sus tickets acumula unos 2 GB al año:
+--     entre 5 y 10 GB en una década;
+--   · 100 GB es diez veces eso, y a los precios de almacenamiento de Hetzner
+--     cuesta alrededor de 5 USD al mes — el 1,6 % de la suscripción, o el 3 %
+--     contando el respaldo.
+--
+-- O sea: un número que no aprieta a nadie, que se dice bien en una propuesta y
+-- que cuesta menos que la comisión de la pasarela de pago. Por debajo de 250 GB
+-- el almacenamiento sencillamente no mueve la utilidad.
+--
+-- Se guarda POR EMPRESA y no como una constante del código porque es una
+-- decisión comercial: el día que se venda un plan mayor, se sube en esa fila y
+-- no en un despliegue.
+--
+-- ---------------------------------------------------------------------------
+-- EN MEGAS Y NO EN BYTES
+--
+-- Un `bigint` de bytes obligaría a leer 107374182400 y contar ceros cada vez
+-- que alguien mire la fila. En megas el número se lee: 102400. La precisión que
+-- se pierde no existe: nadie fija un cupo con granularidad de bytes.
+--
+-- ---------------------------------------------------------------------------
+-- ESCRITA A MANO
+--
+-- `drizzle-kit generate` no sirve tampoco en esta carpeta: los snapshots saltan
+-- del 0022 al 0029 y produce una migración que rehace seis. Ver la regla 4 de
+-- AGENTS.md, que lo documenta desde que estuvo a punto de tumbar producción.
+
+ALTER TABLE "tenants" ADD COLUMN "storage_quota_mb" integer DEFAULT 102400 NOT NULL;

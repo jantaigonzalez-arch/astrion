@@ -4,9 +4,9 @@ import { puedeEn } from "@/lib/tenancy/context";
 import { requireTenant } from "@/lib/tenancy/context";
 import { SuscripcionCard } from "@/components/portal/suscripcion-card";
 import { Card } from "@/components/ui/card";
-import { Database } from "lucide-react";
+import { Database, HardDrive } from "lucide-react";
 import { consumoDelPlan } from "@/lib/data/resumen";
-import { CountBars } from "@/components/portal/charts";
+import { CountBars, OccupancyBars } from "@/components/portal/charts";
 
 /**
  * La pestaña de suscripción.
@@ -56,6 +56,43 @@ export default async function SuscripcionSettingsPage({
         en las mismas barras haría que dos del mismo largo dijeran cosas
         distintas.
       */}
+      {/*
+        EL CUPO, que hasta la 0030 no existía.
+
+        El plan se vende «completo» y nadie había puesto un número, así que un
+        cliente podía subir hasta llenar el disco del servidor — y el primer
+        aviso habría sido la aplicación dejando de escribir para todas las
+        empresas a la vez.
+
+        Mide SOLO los adjuntos y no la base: la base pesa megas y no se acerca a
+        ningún tope, así que sumarlas escondería el número que sí puede acabarse
+        detrás de otro que nunca se mueve.
+      */}
+      <Card className="p-5">
+        <h2 className="flex items-center gap-2 font-semibold">
+          <HardDrive className="size-4 text-primary" />
+          Espacio de tu plan
+        </h2>
+        <p className="mb-4 mt-1 text-xs text-muted-foreground">
+          Fotos de equipos y comprobantes de gastos. Cada archivo puede pesar
+          hasta 6 MB.
+        </p>
+        <OccupancyBars
+          rows={[
+            {
+              label: "Adjuntos",
+              used: Math.round(consumo.adjuntosMb),
+              ceiling: consumo.cupoMb,
+              unit: "MB",
+              note:
+                consumo.adjuntosMb / Math.max(1, consumo.cupoMb) > 0.8
+                  ? "Te estás acercando al tope. Escríbenos antes de que se llene."
+                  : "De sobra. Un laboratorio activo suele usar unos 2 GB al año.",
+            },
+          ]}
+        />
+      </Card>
+
       <Card className="p-5">
         <h2 className="flex items-center gap-2 font-semibold">
           <Database className="size-4 text-primary" />

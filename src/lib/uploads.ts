@@ -40,6 +40,104 @@ function uploadsDir(): string {
 export const UPLOADS_URL_PREFIX = "/uploads";
 
 /**
+ * LOS ARCHIVOS SE GUARDAN BAJO LA CARPETA DE SU EMPRESA.
+ *
+ * Antes iban todos al mismo sitio —`/uploads/equipment/<uuid>.jpg`— y eso hacía
+ * imposible la pregunta que hoy se factura: cuánto guarda CADA cliente. Sin
+ * saberlo no hay cupo que poner ni plan que vender.
+ *
+ * Los archivos YA SUBIDOS se quedan donde están y siguen sirviéndose: sus
+ * rutas están guardadas en la base y reescribirlas sería mover ficheros y
+ * actualizar filas para ganar prolijidad. Lo que cuentan es despreciable —uno
+ * en producción— y el cupo mide la carpeta del inquilino, así que un archivo
+ * viejo simplemente no se le cobra a nadie. Se dice aquí para que quien vea la
+ * cuenta descuadrada por medio mega sepa por qué.
+ */
+async function carpetaDelInquilino(): Promise<string> {
+  const { requireTenant } = await import("@/lib/tenancy/context");
+  const { slug } = await requireTenant();
+  return slug.replace(/[^a-z0-9_-]/gi, "");
+}
+
+/** Lo que ocupa hoy una empresa: adjuntos en disco, en bytes. */
+export async function bytesDeAdjuntos(slug: string): Promise<number> {
+  const { readdir, stat } = await import("node:fs/promises");
+  const raiz = path.join(uploadsDir(), slug.replace(/[^a-z0-9_-]/gi, ""));
+  let total = 0;
+  async function caminar(dir: string) {
+    let entradas;
+    try {
+      entradas = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return; // la carpeta no existe todavía: cero, y es correcto
+    }
+    for (const e of entradas) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) await caminar(p);
+      else total += (await stat(p)).size;
+    }
+  }
+  await caminar(raiz);
+  return total;
+}
+
+/**
+ * ¿Le cabe este archivo a la empresa?
+ *
+ * Se comprueba ANTES de escribir, no después: escribir y luego borrar deja el
+ * disco tocado y una ventana en la que otro inquilino puede quedarse sin sitio.
+ *
+ * Y BLOQUEA, no avisa. Un cupo que no se hace cumplir es una cifra en un
+ * contrato, no un control: el disco se llena igual y el primer síntoma es la
+ * aplicación dejando de escribir para TODOS a la vez, que es exactamente lo que
+ * esto viene a evitar. El mensaje dice cuánto lleva y cuánto tiene, para que la
+ * salida sea hablar del plan y no adivinar.
+ */
+async function vetoDeCupo(slug: string, entrantes: number): Promise<void> {
+  const { getDb } = await import("@/lib/db");
+  const { tenants } = await import("@/lib/db/platform");
+  const { eq } = await import("drizzle-orm");
+
+  /*
+    SE BUSCA POR SLUG Y NO POR ID, y no es indiferente.
+
+    El slug es el mismo que nombra la carpeta cuyos bytes se acaban de contar,
+    así que las dos mitades de esta comprobación hablan de la misma empresa por
+    construcción. Con el id venían de sitios distintos, y la primera versión de
+    la prueba pasó en verde porque el id no resolvía y el cupo se leía como
+    cero: el veto no bloqueaba y parecía que sí.
+  */
+  const [t] = await getDb()
+    .select({ cupo: tenants.storageQuotaMb })
+    .from(tenants)
+    .where(eq(tenants.slug, slug))
+    .limit(1);
+
+  /*
+    SIN FILA O SIN CUPO NO SE BLOQUEA, y es una decisión, no un descuido.
+
+    Un fallo al leer la fila de la empresa no puede impedirle a un ingeniero
+    adjuntar el comprobante de su viaje: el costo de dejar pasar unos megas de
+    más es cero, y el de bloquear a un cliente que paga por algo que no es culpa
+    suya, no. Cero significa «sin cupo configurado» y se respeta igual.
+
+    Queda escrito porque una puerta abierta sin explicación se lee como un
+    olvido, y la siguiente persona la cierra sin saber lo que rompe.
+  */
+  const cupoBytes = Number(t?.cupo ?? 0) * 1024 * 1024;
+  if (!cupoBytes) return;
+
+  const usados = await bytesDeAdjuntos(slug);
+  if (usados + entrantes <= cupoBytes) return;
+
+  const mb = (n: number) => (n / 1048576).toFixed(0);
+  throw new Error(
+    `Se acabó el espacio del plan: llevas ${mb(usados)} MB de ${mb(cupoBytes)} MB. ` +
+      `Borra algún adjunto o habla con nosotros para ampliarlo.`,
+  );
+}
+
+/**
  * Guarda una imagen subida y devuelve su ruta pública
  * (p. ej. "/uploads/equipment/ab12.jpg"), o null si no hay archivo.
  *
@@ -60,14 +158,17 @@ export async function saveImage(
   if (!ext) throw new Error("Formato de imagen no permitido (usa JPG, PNG, WEBP o GIF).");
 
   const safeSub = subdir.replace(/[^a-z0-9/_-]/gi, "");
-  const dir = path.join(uploadsDir(), safeSub);
+  const slug = await carpetaDelInquilino();
+  await vetoDeCupo(slug, f.size);
+
+  const dir = path.join(uploadsDir(), slug, safeSub);
   await mkdir(dir, { recursive: true });
 
   const filename = `${randomUUID()}.${ext}`;
   const buffer = Buffer.from(await f.arrayBuffer());
   await writeFile(path.join(dir, filename), buffer);
 
-  return `${UPLOADS_URL_PREFIX}/${safeSub}/${filename}`;
+  return `${UPLOADS_URL_PREFIX}/${slug}/${safeSub}/${filename}`;
 }
 
 /**
@@ -107,10 +208,13 @@ export async function saveReceipt(
   }
 
   const safeSub = subdir.replace(/[^a-z0-9/_-]/gi, "");
-  const dir = path.join(uploadsDir(), safeSub);
+  const slug = await carpetaDelInquilino();
+  await vetoDeCupo(slug, f.size);
+
+  const dir = path.join(uploadsDir(), slug, safeSub);
   await mkdir(dir, { recursive: true });
 
   const filename = `${randomUUID()}.${ext}`;
   await writeFile(path.join(dir, filename), Buffer.from(await f.arrayBuffer()));
-  return `${UPLOADS_URL_PREFIX}/${safeSub}/${filename}`;
+  return `${UPLOADS_URL_PREFIX}/${slug}/${safeSub}/${filename}`;
 }

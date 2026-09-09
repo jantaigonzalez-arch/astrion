@@ -216,6 +216,24 @@ export const tenants = pgTable(
      */
     folioPrefix: varchar("folio_prefix", { length: 8 }),
 
+    /**
+     * CUÁNTO PUEDE GUARDAR ESTA EMPRESA, en megabytes.
+     *
+     * Hasta la 0030 no había cupo: el plan se vende «completo» y nadie había
+     * puesto el número, así que un cliente podía llenar el disco del servidor y
+     * el primer aviso habría sido la aplicación dejando de escribir para TODOS
+     * los inquilinos a la vez.
+     *
+     * 100 GB de fábrica, y sale de una medición: la base de datos de una
+     * empresa pesa megas —despreciable—, y lo que llena son los adjuntos, unos
+     * 2 GB al año en un cliente activo. Cien es diez veces eso y cuesta
+     * alrededor del 1,6 % de la suscripción. Ver la migración.
+     *
+     * Por empresa y no como constante del código: es una decisión comercial, y
+     * subírsela a un cliente grande no debería necesitar un despliegue.
+     */
+    storageQuotaMb: integer("storage_quota_mb").notNull().default(102400),
+
     /* --- EL MEMBRETE DE LOS DOCUMENTOS QUE VE EL CLIENTE ---
      *
      * El reporte de servicio tenía a Evoelution ESCRITA A MANO: el logo era un
