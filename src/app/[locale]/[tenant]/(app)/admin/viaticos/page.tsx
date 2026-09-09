@@ -85,7 +85,7 @@ function TablaViaticos({
                   <th className="px-4 py-2.5 font-medium">Folio</th>
                   <th className="px-4 py-2.5 font-medium">Destino</th>
                   {administra ? (
-                    <th className="px-4 py-2.5 font-medium">Ingeniero</th>
+                    <th className="px-4 py-2.5 font-medium">Solicitante</th>
                   ) : null}
                   {/*
                     «Asunto» y no «Contrato»: desde la 0028 la columna enseña un

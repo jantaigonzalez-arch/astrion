@@ -71,7 +71,7 @@ export default async function ReporteViaticoPage({
   /*
     EL MISMO ACOTADO QUE LA FICHA, y no uno propio.
 
-    `soloDe` hace que el ingeniero solo alcance los suyos. Escribirlo aquí otra
+    `soloDe` hace que quien no administra solo alcance los suyos. Escribirlo otra
     vez —en vez de copiar la condición— es lo que impide que la versión
     imprimible se convierta en la puerta trasera del expediente de un compañero:
     la regla vive en `data/viaticos.ts` y las dos pantallas la piden igual.

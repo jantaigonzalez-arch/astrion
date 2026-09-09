@@ -120,7 +120,7 @@ export function AccionesViatico({
             />
           </div>
           <div>
-            <Label htmlFor="note">Respuesta al ingeniero</Label>
+            <Label htmlFor="note">Respuesta a quien lo pidió</Label>
             <Textarea id="note" name="note" rows={2} placeholder="Opcional." />
           </div>
           <Aviso state={sAut} />

@@ -199,7 +199,7 @@ export function cuadre(anticipo: number, gastado: number): Cuadre {
  */
 export function saldoEnPalabras(c: Cuadre): string {
   if (c.saldo > 0) return "Por devolver a la empresa";
-  if (c.saldo < 0) return "Por reembolsar al ingeniero";
+  if (c.saldo < 0) return "Por reembolsar a quien viajó";
   return "Cuadra exacto";
 }
 

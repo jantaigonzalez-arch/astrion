@@ -134,7 +134,7 @@ ok("sobró dinero → saldo positivo", sobra.saldo === 1500 && !sobra.excedido);
 ok("y se lee desde la empresa", saldoEnPalabras(sobra) === "Por devolver a la empresa");
 const falta = cuadre(8000, 9200);
 ok("se pasó → saldo negativo y marcado", falta.saldo === -1200 && falta.excedido);
-ok("y se lee al revés", saldoEnPalabras(falta) === "Por reembolsar al ingeniero");
+ok("y se lee al revés", saldoEnPalabras(falta) === "Por reembolsar a quien viajó");
 ok("exacto → ni una cosa ni la otra", cuadre(5000, 5000).saldo === 0);
 // Sin anticipo no se divide entre cero.
 ok("sin anticipo, consumido = 0 y no NaN", cuadre(0, 500).consumido === 0);

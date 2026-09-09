@@ -307,7 +307,7 @@ const viaticos = dataset({
   },
   columnas: [
     { titulo: "Folio", tipo: "texto", valor: (v) => v.reference, ancho: 18 },
-    { titulo: "Ingeniero", tipo: "texto", valor: (v) => v.solicitante, ancho: 28 },
+    { titulo: "Solicitante", tipo: "texto", valor: (v) => v.solicitante, ancho: 28 },
     /*
       DOS COLUMNAS Y NO UNA «asunto» combinada.
 

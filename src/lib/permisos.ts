@@ -130,7 +130,7 @@ export const MODULO_INFO: Record<Modulo, { label: string; detalle: string }> = {
   },
   viaticos: {
     label: "Viáticos",
-    detalle: "Solicitudes de viaje del ingeniero y su comprobación de gastos.",
+    detalle: "Solicitudes de viaje y su comprobación de gastos.",
   },
   analisis: {
     label: "Análisis",
