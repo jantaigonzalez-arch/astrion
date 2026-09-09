@@ -154,23 +154,39 @@ function RubroRow({ rubro }: { rubro: RubroFila }) {
               Activo
             </label>
             {/*
-              Solo tiene sentido con tope: sin presupuesto no hay contra qué
-              comparar, así que la casilla desaparece en vez de quedarse ahí sin
-              efecto. Una casilla que no hace nada es peor que ninguna — se
-              marca, no pasa nada, y se deja de confiar en la pantalla.
+              SE VE SIEMPRE, PERO APAGADA SIN TOPE.
+
+              Estaba escondida cuando el rubro no tenía presupuesto, con el
+              argumento de que una casilla sin efecto enseña a desconfiar de la
+              pantalla. El argumento era bueno y la consecuencia, mala: los
+              cinco rubros de fábrica nacen sin tope, así que la casilla no
+              aparecía en NINGUNO y quien la buscaba concluía que no existe.
+
+              Deshabilitada dice las dos cosas a la vez —existe, y le falta un
+              tope—, que es justo lo que la ausencia no decía. El `title` lo
+              explica al pasar por encima.
             */}
-            {budget.trim() ? (
-              <label className="flex items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  name="blocksOverBudget"
-                  checked={bloquea}
-                  onChange={(e) => setBloquea(e.target.checked)}
-                  className="size-3.5 rounded border-input"
-                />
-                No dejar pasarse
-              </label>
-            ) : null}
+            <label
+              className={`flex items-center gap-1.5 ${
+                budget.trim() ? "" : "opacity-50"
+              }`}
+              title={
+                budget.trim()
+                  ? "Impide guardar un gasto que rebase el tope del viaje"
+                  : "Ponle un presupuesto por día para poder hacerlo cumplir"
+              }
+            >
+              <input
+                type="checkbox"
+                name="blocksOverBudget"
+                checked={bloquea && Boolean(budget.trim())}
+                disabled={!budget.trim()}
+                onChange={(e) => setBloquea(e.target.checked)}
+                className="size-3.5 rounded border-input"
+              />
+              No dejar pasarse
+              {budget.trim() ? "" : " (necesita tope)"}
+            </label>
             {/*
               Los usos se enseñan siempre, no solo al intentar borrar: es lo que
               explica por qué un rubro no se puede quitar antes de que alguien
