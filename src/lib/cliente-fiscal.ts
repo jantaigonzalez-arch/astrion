@@ -44,14 +44,43 @@ export type EstadoFiscal = {
 };
 
 export function estadoFiscal(c: DatosDelSemaforo): EstadoFiscal {
+  /*
+    DOS SITUACIONES SIN EXPEDIENTE, Y NO SON LA MISMA.
+
+    La primera versión las metía en un solo cajón —«Sin expediente»— y el
+    resultado fue una lista donde los veintitrés clientes decían exactamente lo
+    mismo. Uniforme e inútil: no se podía saber por dónde empezar sin abrir las
+    veintitrés fichas.
+
+    Pero la distancia hasta poder facturar es muy distinta:
+
+      · SIN RFC          no hay ni por dónde empezar; hay que pedirle la
+                         Constancia al cliente. No es trabajo de oficina.
+      · CON RFC DEL PADRÓN   el dato difícil ya está; faltan el régimen y el
+                         código postal, que se copian de la Constancia en un
+                         minuto. Es trabajo que alguien puede hacer HOY.
+
+    Es el mismo criterio que ordena las alertas del panel: un estado que no
+    distingue lo accionable de lo que no lo es manda a todo el mundo a abrir
+    fichas para averiguar cuál es cuál.
+  */
   if (!c.rfcFiscal) {
+    if (c.taxId) {
+      return {
+        texto: "Falta régimen y CP",
+        clase: "bg-warning/10 text-warning ring-warning/30",
+        ayuda:
+          `Tiene RFC del padrón (${c.taxId}), pero le faltan el régimen fiscal y el ` +
+          "código postal de la Constancia. Los dos se copian de ella y con eso queda listo.",
+        listo: false,
+      };
+    }
     return {
-      texto: "Sin expediente",
+      texto: "Sin RFC",
       clase: "bg-muted/40 text-muted-foreground ring-border",
-      ayuda: c.taxId
-        ? "Tiene RFC del padrón viejo, pero le faltan el régimen fiscal y el código " +
-          "postal de la Constancia. Con eso no se puede timbrar."
-        : "No tiene ni RFC. No se le puede facturar.",
+      ayuda:
+        "No tiene ningún dato fiscal. Hay que pedirle al cliente su Constancia de " +
+        "Situación Fiscal antes de poder facturarle.",
       listo: false,
     };
   }

@@ -328,6 +328,32 @@ Errores propios del sistema, con mensaje en lenguaje llano:
 
 ---
 
+## 6b. El semáforo de la lista y de la ficha ✅
+
+Lo que se ve de un vistazo en `Clientes` y en cada ficha. **Cinco estados, no
+dos**, porque la distancia hasta poder facturar es distinta en cada uno y un
+estado que no la distingue manda a todo el mundo a abrir fichas para averiguar
+cuál es cuál.
+
+| Estado | Qué significa | Qué hacer |
+|---|---|---|
+| **Sin RFC** | No tiene ningún dato fiscal | Pedirle al cliente su Constancia |
+| **Falta régimen y CP** | Tiene el RFC del padrón de SAE | Copiar régimen y CP de la Constancia — **un minuto** |
+| **Sin validar** | Expediente completo, nadie lo contrastó | Validarlo ante el SAT |
+| **Nombre / CP / RFC no coincide** | El SAT lo rechazó | Corregir con la Constancia a la vista |
+| **Validado** | El SAT confirmó los cuatro datos | Nada: se le puede facturar |
+
+**Verde significa que el SAT dijo que sí**, no que los datos se vean bien.
+
+> **Por qué al principio todos dicen lo mismo.** Al estrenar el módulo, `cliente_fiscal`
+> está vacía: la migración **no** traslada el padrón viejo, porque ninguna
+> organización tiene régimen fiscal —obligatorio en CFDI 4.0— y darlas por altas
+> las marcaría como expediente completo con datos que el SAT rechazaría. Los que
+> tienen RFC del padrón aparecen como **«Falta régimen y CP»**, que es cierto y es
+> por donde conviene empezar.
+
+---
+
 ## 7. El ciclo de vida de un cliente
 
 ```

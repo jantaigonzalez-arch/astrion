@@ -131,7 +131,17 @@ export async function getPanelEjecutivo(): Promise<PanelEjecutivo> {
     */
     db.execute(sql`
       select count(*)::int as total,
-             count(f.organization_id)::int as con_expediente
+             count(f.organization_id)::int as con_expediente,
+             /*
+               Los que están a UN PASO: tienen el RFC que trajo el padrón y solo
+               les faltan el régimen y el código postal, que se copian de la
+               Constancia. Se cuentan aparte porque la alerta sin ese número no
+               dice por dónde empezar, y «23 clientes sin expediente» sin más es
+               una cifra ante la que nadie sabe qué hacer primero.
+             */
+             count(*) filter (
+               where f.organization_id is null and o.tax_id is not null
+             )::int as con_rfc_del_padron
         from crm_organizations o
         left join cliente_fiscal f on f.organization_id = o.id
        where o.client_id is not null
@@ -186,16 +196,19 @@ export async function getPanelEjecutivo(): Promise<PanelEjecutivo> {
     });
   }
 
-  const fc = (clientes as unknown as Array<{ total: number; con_expediente: number }>)[0] ?? {
-    total: 0,
-    con_expediente: 0,
-  };
+  const fc = (clientes as unknown as Array<{
+    total: number;
+    con_expediente: number;
+    con_rfc_del_padron: number;
+  }>)[0] ?? { total: 0, con_expediente: 0, con_rfc_del_padron: 0 };
   const sinExpediente = Number(fc.total) - Number(fc.con_expediente);
   if (sinExpediente > 0) {
     alertas.push({
       clave: "sin-expediente",
       titulo: `${sinExpediente} cliente(s) sin expediente fiscal`,
-      detalle: "No se les puede timbrar una factura hasta capturarlo.",
+      detalle: Number(fc.con_rfc_del_padron)
+        ? `${fc.con_rfc_del_padron} ya tienen RFC: solo les falta el régimen y el código postal.`
+        : "No se les puede timbrar una factura hasta capturarlo.",
       cantidad: sinExpediente,
       href: "/admin/clientes",
       tono: "atencion",
