@@ -115,6 +115,7 @@ scripts/_dash.ts
 !probe-campana.mts
 !probe-clientes-fiscal.mts
 !probe-e2e.mts
+!probe-enlaces.mts
 !probe-equipos.mts
 !probe-formularios.mts
 !probe-payables.mts

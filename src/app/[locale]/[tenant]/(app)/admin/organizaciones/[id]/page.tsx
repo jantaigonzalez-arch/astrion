@@ -334,8 +334,18 @@ export default async function OrganizationDetailPage({
                     <ul className="mt-2 space-y-1.5">
                       {portal.tickets.map((t) => (
                         <li key={t.id} className="text-sm">
+                          {/*
+                            AL TICKET, no a la cola.
+
+                            Enlazaba a `/admin/tickets` —un destino fijo— así que
+                            los ocho tickets de la lista llevaban al mismo sitio:
+                            la cola entera, donde había que volver a buscar el
+                            que se acababa de pulsar. El enlace existía y
+                            respondía 200, que es por lo que no se veía como un
+                            error: no estaba roto, estaba mal apuntado.
+                          */}
                           <Link
-                            href={`/admin/tickets`}
+                            href={`/tickets/${t.id}`}
                             className="font-mono text-xs text-primary hover:underline"
                           >
                             {t.reference}
