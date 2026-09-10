@@ -13,9 +13,16 @@
  *
  * La orden sale de `invocacion()`, la misma que usa Vitest. Una sola fuente.
  */
-import { SOLO_LOCAL, CON_STUBS } from "../pruebas/registro";
+import { SOLO_LOCAL } from "../pruebas/registro";
 import { invocacion } from "../pruebas/probes";
 
-for (const archivo of [...Object.keys(SOLO_LOCAL), ...Object.keys(CON_STUBS)]) {
+/*
+  Ya NO incluye `CON_STUBS`. Esas catorce se fueron al CI el día que los stubs
+  entraron al repositorio: corren en cada PR contra la base sembrada, y
+  repetirlas aquí sería correrlas dos veces para saber lo mismo.
+
+  Aquí quedan solo las que el CI no puede correr porque miran datos reales.
+*/
+for (const archivo of Object.keys(SOLO_LOCAL)) {
   console.log(`${archivo}\t${invocacion(archivo)}`);
 }

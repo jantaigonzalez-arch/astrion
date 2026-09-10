@@ -32,11 +32,14 @@ DATABASE_URL="postgresql://…/evoelution_ci" PROBE_SCHEMA=tenant_evoelution \
   scripts/_probe-perf.ts            # CONSULTAS por pantalla
 ```
 
-`_probe-rendimiento.ts` sí está versionado —un skill que apunta a un archivo
-que el clon no trae es peor que no tener skill— pero **`tsconfig.probe.json` y
-los stubs de `scripts/_stub-*` siguen fuera del repositorio**. Es la decisión
-pendiente que ya nombra `pruebas/registro.ts`, no una nueva: sin ellos, esto no
-arranca en un clon limpio.
+Los dos arrancan en un clon limpio. Durante meses no fue así:
+`_probe-rendimiento.ts` estaba versionado pero `tsconfig.probe.json` y los
+stubs de `scripts/_stub-*` no, o sea que este skill apuntaba a algo que no se
+podía correr. Los stubs entraron al repositorio con una guardia que los mata si
+se cargan dentro de Next (`scripts/_stub-guardia.ts`), y con eso se cerró.
+
+`_probe-perf.ts` sigue fuera a propósito: mide contra el volumen REAL y vive en
+`SOLO_LOCAL`. Si no lo tenés, es que no sincronizaste producción.
 
 `--conditions` va **antes** de `--tsconfig`. Al revés, tsx le pasa el segundo a
 node y node contesta «bad option: --tsconfig» sin decir de quién es la culpa.

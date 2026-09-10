@@ -36,8 +36,9 @@ describe("el registro cubre todos los probes", () => {
       huerfanos.length
         ? `\nEstos probes no están en pruebas/registro.ts:\n  ${huerfanos.join("\n  ")}\n\n` +
             "Añadilo a la lista que le toque: UNITARIAS si no necesita base, " +
-            "INTEGRACION si sí, SOLO_LOCAL si depende de los datos reales de " +
-            "producción, y CON_STUBS si necesita los stubs, y DIAGNOSTICO si solo informa.\n"
+            "INTEGRACION si sí, CON_STUBS si además necesita los stubs de sesión " +
+            "e inquilino, SOLO_LOCAL si depende de los datos reales de producción, " +
+            "y DIAGNOSTICO si solo informa.\n"
         : undefined,
     ).toEqual([]);
   });
@@ -47,7 +48,7 @@ describe("el registro cubre todos los probes", () => {
       ...UNITARIAS,
       ...INTEGRACION,
       ...Object.keys(SOLO_LOCAL),
-      ...Object.keys(CON_STUBS),
+      ...CON_STUBS,
       ...Object.keys(DIAGNOSTICO),
     ];
     const repetidos = todas.filter((f, i) => todas.indexOf(f) !== i);
@@ -56,15 +57,20 @@ describe("el registro cubre todos los probes", () => {
 
   it("el registro no nombra probes del CI que ya no existen", () => {
     /*
-      SOLO sobre UNITARIAS e INTEGRACION, y no sobre las cinco listas.
+      SOLO sobre las tres listas del CI, y no sobre las cinco.
 
-      Las otras tres nombran archivos que siguen en `.gitignore` a propósito, así
-      que en un clon de CI no existen: comprobarlos allí daba treinta y tres
+      `SOLO_LOCAL` y `DIAGNOSTICO` nombran archivos que siguen en `.gitignore` a
+      propósito, así que en un clon de CI no existen: comprobarlos allí daba
       «fantasmas» que no eran tales, sino justo lo que se decidió no publicar.
       Aquí solo tiene sentido vigilar los que el repositorio SÍ debe tener.
+
+      `CON_STUBS` entró a esta comprobación cuando pasó a correr en el CI. Es el
+      cambio que la hace útil de nuevo: sus catorce archivos SÍ tienen que estar.
     */
     const existen = new Set(todosLosProbes());
-    const fantasmas = [...UNITARIAS, ...INTEGRACION].filter((f) => !existen.has(f));
+    const fantasmas = [...UNITARIAS, ...INTEGRACION, ...CON_STUBS].filter(
+      (f) => !existen.has(f),
+    );
     expect(
       fantasmas,
       `\nEl registro los declara para el CI y no están en el repo: ${fantasmas.join(", ")}\n`,
@@ -80,10 +86,11 @@ describe("el registro cubre todos los probes", () => {
       «ENOENT: probe-suscripcion.mts» porque en el repositorio remoto no había
       un solo probe que ejecutar. El fallo no se parecía a la causa.
 
-      Ahora, un probe en UNITARIAS o INTEGRACION que no esté en git rompe aquí
-      —en tu máquina, antes del push— y con un mensaje que dice qué hacer.
+      Ahora, un probe de cualquiera de las tres listas del CI —UNITARIAS,
+      INTEGRACION o CON_STUBS— que no esté en git rompe aquí, en tu máquina y
+      antes del push, con un mensaje que dice qué hacer.
     */
-    const necesarios = [...UNITARIAS, ...INTEGRACION];
+    const necesarios = [...UNITARIAS, ...INTEGRACION, ...CON_STUBS];
     const fuera = necesarios.filter((f) => {
       try {
         execFileSync("git", ["ls-files", "--error-unmatch", f], {
@@ -118,14 +125,22 @@ describe("el registro cubre todos los probes", () => {
 
       Fue la segunda vez en una tarde que el CI se cayó por un archivo que aquí
       está y allá no. Esta comprobación cierra la clase entera: todo destino de
-      `paths` en la configuración con la que corren los probes tiene que estar
-      en git.
+      `paths` en CUALQUIERA de las configuraciones con las que corren los probes
+      tiene que estar en git.
+
+      Son dos, y la segunda entró el día que los stubs se versionaron:
+      `tsconfig.probe.json` es con la que corren las catorce de `CON_STUBS` y
+      apunta a cuatro `scripts/_stub-*.ts` que hasta entonces estaban ignorados
+      —exactamente la forma de fallo que esto existe para atrapar—.
     */
-    const cfg = readFileSync(path.join(RAIZ, "tsconfig.check.json"), "utf8");
-    // El tsconfig lleva comentarios, así que no es JSON válido: se sacan los
-    // destinos con una expresión en vez de intentar analizarlo.
-    const destinos = [...cfg.matchAll(/\[\s*"(\.\/[^"]+)"\s*\]/g)].map((m) => m[1]);
-    expect(destinos.length, "no se encontró ningún `paths` en tsconfig.check.json").toBeGreaterThan(0);
+    const CONFIGS = ["tsconfig.check.json", "tsconfig.probe.json"];
+    const destinos = CONFIGS.flatMap((c) => {
+      const cfg = readFileSync(path.join(RAIZ, c), "utf8");
+      // El tsconfig lleva comentarios, así que no es JSON válido: se sacan los
+      // destinos con una expresión en vez de intentar analizarlo.
+      return [...cfg.matchAll(/\[\s*"(\.\/[^"]+)"\s*\]/g)].map((m) => m[1]);
+    });
+    expect(destinos.length, "no se encontró ningún `paths` en los tsconfig").toBeGreaterThan(0);
 
     const fuera = destinos.filter((d) => {
       const rel = d.replace(/^\.\//, "");
@@ -142,7 +157,7 @@ describe("el registro cubre todos los probes", () => {
     expect(
       fuera,
       fuera.length
-        ? `\ntsconfig.check.json apunta a archivos que no están en git:\n  ${fuera.join("\n  ")}\n\n` +
+        ? `\nLos tsconfig de pruebas apuntan a archivos que no están en git:\n  ${fuera.join("\n  ")}\n\n` +
             "Sin ellos los probes no arrancan en un clon limpio. Agregá la excepción en .gitignore.\n"
         : undefined,
     ).toEqual([]);

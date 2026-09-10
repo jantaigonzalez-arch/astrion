@@ -82,7 +82,8 @@ apunta. `pruebas:base` además se niega a borrar una base cuyo nombre no termine
 en `_ci`, `_test` o `_pruebas`.
 
 GitHub Actions corre las dos primeras en cada PR y en cada push a la rama de
-trabajo. `pruebas/registro.ts` dice qué prueba corre dónde y por qué.
+trabajo: 15 pruebas sin base y 26 contra la base sembrada. `pruebas/registro.ts`
+dice qué prueba corre dónde y por qué.
 
 1. **Un probe nuevo va al registro.** Hay una prueba que lo exige, así que no es
    opcional: si no lo clasificás, la suite se pone roja. Existe porque catorce
@@ -98,3 +99,11 @@ trabajo. `pruebas/registro.ts` dice qué prueba corre dónde y por qué.
    candado entradas opcionales que Linux sí necesita —pasó con `@swc/helpers` y
    tumbó un despliegue— y el CI lo detecta ahora en el PR. Si tocás
    dependencias, revisá que el diff del candado no traiga BORRADOS.
+5. **Los stubs no se tocan a la ligera.** `scripts/_stub-*.ts` sustituyen la
+   sesión y el contexto de inquilino para que los probes puedan llamar a la capa
+   de datos; `_stub-tenancy` devuelve rol `owner` y un `puedeEn()` que concede
+   todo. Están en el repositorio, y lo que lo hace aceptable es la guardia de
+   `scripts/_stub-guardia.ts`: cada uno revienta si se carga con `NEXT_RUNTIME`
+   definido o en producción. **Nunca los importes desde `src/`, ni les quites la
+   guardia, ni los mapees en `tsconfig.json`** — `probe-stubs.mts` comprueba las
+   tres cosas y se pone rojo sin base de datos.

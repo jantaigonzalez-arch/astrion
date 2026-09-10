@@ -1,11 +1,16 @@
 /**
  * QUÉ PRUEBA CORRE DÓNDE, Y POR QUÉ.
  *
- * Las cinco listas de este archivo reparten los 53 probes del repositorio. La
+ * Las cinco listas de este archivo reparten los 54 probes del repositorio. La
  * meta-prueba de `cobertura.test.ts` exige que TODOS estén exactamente en una:
  * un probe nuevo que nadie clasifique rompe la suite en vez de quedarse fuera
  * en silencio, que es como se llega a tener catorce pruebas muertas sin que
  * nadie se entere.
+ *
+ * Tres listas van al CI —`UNITARIAS`, `INTEGRACION` y `CON_STUBS`— y dos no:
+ * `SOLO_LOCAL` porque su valor depende de datos reales, y `DIAGNOSTICO` porque
+ * no tiene aserciones. Lo que va al CI tiene que estar versionado, y hay una
+ * prueba que lo exige.
  *
  * ── LO QUE DECIDE EN QUÉ LISTA CAE CADA UNO ────────────────────────────────
  *
@@ -35,6 +40,7 @@ export const UNITARIAS = [
   "probe-revision.mts",
   "probe-rutas.mts",
   "probe-selector.mts",
+  "probe-stubs.mts",
   "probe-suscripcion.mts",
   "probe-tablas.mts",
 ] as const;
@@ -95,49 +101,50 @@ export const SOLO_LOCAL: Record<string, string> = {
 };
 
 /**
- * LAS CATORCE QUE PARECÍAN ROTAS. No lo estaban: estaban mal invocadas.
+ * LAS CATORCE QUE NECESITAN LOS STUBS. Corren en el CI, contra la base sembrada.
  *
- * Durante meses reventaron con «`headers` was called outside a request scope»
- * y se dieron por muertas. El diagnóstico era correcto en el síntoma y erróneo
- * en la causa: llaman a `tenantDb()`, sí, pero el repositorio ya tenía la
- * respuesta —`tsconfig.probe.json` sustituye `@/lib/tenancy/context` por un
- * stub que fija la empresa con `PROBE_SCHEMA`— y a ninguna se le había escrito
- * en la cabecera que había que correrlas con esa configuración. El runner les
- * aplicaba el valor por omisión de su carpeta y cargaban el módulo de verdad.
+ * ── DOS DIAGNÓSTICOS EQUIVOCADOS, UNO DETRÁS DEL OTRO ──────────────────────
  *
- * Ahora las catorce declaran su orden y las catorce corren. Corren en local, con
- * `npm run probes:local`.
+ * Primero se las dio por MUERTAS: reventaban con «`headers` was called outside
+ * a request scope» y se supuso que llamaban mal a `tenantDb()`. Falso. El
+ * repositorio ya tenía la respuesta —`tsconfig.probe.json` sustituye
+ * `@/lib/tenancy/context` por un stub que fija la empresa con `PROBE_SCHEMA`— y
+ * a ninguna se le había escrito en la cabecera que había que correrlas así. El
+ * runner les aplicaba el valor por omisión de su carpeta y cargaban el módulo
+ * de verdad.
  *
- * ── POR QUÉ NO ESTÁN EN EL CI ──────────────────────────────────────────────
+ * Arreglado eso, corrían en local y aun así se quedaron fuera del CI, por un
+ * segundo motivo que parecía sólido: necesitan los stubs, y los stubs estaban
+ * en `.gitignore` porque nadie debería importar por accidente un `puedeEn()`
+ * que concede todo.
  *
- * Solo por una razón, y es una decisión pendiente, no un impedimento técnico:
- * necesitan `tsconfig.probe.json` y `scripts/_stub-*.ts`, que están fuera del
- * repositorio a propósito —sustituyen la sesión y el contexto de inquilino, y
- * nadie debería importarlos por accidente desde la aplicación—. Versionarlos
- * las llevaría al CI tal cual están.
+ * ── POR QUÉ AHORA SÍ ENTRAN ────────────────────────────────────────────────
+ *
+ * Porque el segundo motivo confundía esconder con proteger. Los stubs ahora
+ * abortan el proceso si se cargan dentro de Next o en producción
+ * (`scripts/_stub-guardia.ts`), y `probe-stubs.mts` falla si algún archivo de
+ * `src/` los nombra. Con eso, tenerlos fuera del repositorio ya no compraba
+ * nada y seguía costando catorce pruebas.
+ *
+ * Antes de versionarlas se comprobó lo único que importaba: que pasan contra la
+ * base SEMBRADA y no solo contra la copia de producción. Catorce de catorce.
  */
-export const CON_STUBS: Record<string, string> = Object.fromEntries(
-  [
-    "probe-roles.mts",
-    "scripts/_probe-arq.ts",
-    "scripts/_probe-arreglos.ts",
-    "scripts/_probe-borrar.ts",
-    "scripts/_probe-busqueda.ts",
-    "scripts/_probe-clientes.ts",
-    "scripts/_probe-contratos.ts",
-    "scripts/_probe-goals.ts",
-    "scripts/_probe-huerfanos.ts",
-    "scripts/_probe-listas.ts",
-    "scripts/_probe-nuevo.ts",
-    "scripts/_probe-profit.ts",
-    "scripts/_probe-rent.ts",
-    "scripts/_probe-siembra.ts",
-  ].map((f) => [
-    f,
-    "Corre con `tsconfig.probe.json` y los stubs, que no se versionan. " +
-      "Fuera del CI por eso, no por estar rota.",
-  ]),
-);
+export const CON_STUBS = [
+  "probe-roles.mts",
+  "scripts/_probe-arq.ts",
+  "scripts/_probe-arreglos.ts",
+  "scripts/_probe-borrar.ts",
+  "scripts/_probe-busqueda.ts",
+  "scripts/_probe-clientes.ts",
+  "scripts/_probe-contratos.ts",
+  "scripts/_probe-goals.ts",
+  "scripts/_probe-huerfanos.ts",
+  "scripts/_probe-listas.ts",
+  "scripts/_probe-nuevo.ts",
+  "scripts/_probe-profit.ts",
+  "scripts/_probe-rent.ts",
+  "scripts/_probe-siembra.ts",
+] as const;
 
 /**
  * DIAGNÓSTICO. Miden e informan; no afirman nada.
@@ -171,6 +178,6 @@ export const CLASIFICADOS = new Set<string>([
   ...UNITARIAS,
   ...INTEGRACION,
   ...Object.keys(SOLO_LOCAL),
-  ...Object.keys(CON_STUBS),
+  ...CON_STUBS,
   ...Object.keys(DIAGNOSTICO),
 ]);

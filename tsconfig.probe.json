@@ -1,0 +1,24 @@
+{
+  // Solo para los probes que necesitan la condición `react-server`, que es la
+  // única versión de React donde `cache` memoiza de verdad.
+  //
+  // Separado de `tsconfig.scripts.json` y no añadido a él: el stub de
+  // `next/navigation` lanza al llamarse, y un script de verdad —una siembra, un
+  // importador— que redirigiera se rompería sin saber por qué. Aquí el stub es
+  // correcto porque nada de lo que se mide navega.
+  "extends": "./tsconfig.scripts.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"],
+      "server-only": ["./scripts/_server-only.ts"],
+      "next/navigation": ["./scripts/_stub-navigation.ts"],
+      // `unstable_cache` se apoya en el `incrementalCache` que Next monta al
+      // atender una petición; fuera de un servidor revienta con un «Invariant»
+      // que no nombra a quien la llamó. El stub la deja pasar sin cachear, que
+      // además es lo que quiere un probe: ver la consulta ir a Postgres.
+      "next/cache": ["./scripts/_stub-cache.ts"],
+      "@/lib/auth": ["./scripts/_stub-auth.ts"],
+      "@/lib/tenancy/context": ["./scripts/_stub-tenancy.ts"]
+    }
+  }
+}

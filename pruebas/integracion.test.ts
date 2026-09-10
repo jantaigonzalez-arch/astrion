@@ -18,7 +18,7 @@
  * solo problema de preparación — media hora persiguiendo el error equivocado.
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { INTEGRACION } from "./registro";
+import { INTEGRACION, CON_STUBS } from "./registro";
 import { correr, resumenDeFallo, RAIZ } from "./probes";
 import { urlDePruebas } from "./base";
 import { execFileSync } from "node:child_process";
@@ -79,6 +79,34 @@ beforeAll(() => {
 
 describe("contra la base sembrada", () => {
   for (const archivo of INTEGRACION) {
+    it(
+      archivo,
+      () => {
+        const r = correr(archivo);
+        expect(r.ok, resumenDeFallo(r)).toBe(true);
+      },
+      300_000,
+    );
+  }
+});
+
+/**
+ * Las que además sustituyen la sesión y el contexto de inquilino.
+ *
+ * ── POR QUÉ EN UN BLOQUE APARTE Y NO MEZCLADAS ─────────────────────────────
+ *
+ * Corren contra la misma base y con el mismo runner, así que juntarlas habría
+ * sido más corto. Se separan porque lo que las distingue importa al leer un
+ * fallo: estas corren con `tsconfig.probe.json`, que cambia `@/lib/auth` y
+ * `@/lib/tenancy/context` por stubs. Si una se pone roja, la primera pregunta
+ * es si falló el producto o falló el andamiaje — y en un listado plano de
+ * veintiséis renglones esa pregunta no se le ocurre a nadie.
+ *
+ * La invocación sale de la cabecera de cada probe, igual que arriba: `correr()`
+ * la lee del archivo, así que aquí no hay una segunda tabla que mantener.
+ */
+describe("con los stubs de sesión e inquilino", () => {
+  for (const archivo of CON_STUBS) {
     it(
       archivo,
       () => {

@@ -63,39 +63,52 @@ services/intelligence/.venv/
 services/intelligence/**/__pycache__/
 services/intelligence/.pytest_cache/
 
-# Andamiaje de medición. Scripts que cronometran y cuentan consultas de la capa
-# de datos contra una base real, con los stubs que les permiten llamarla sin un
-# navegador delante (`tsconfig.probe.json` los enruta).
+# ── ANDAMIAJE DE PRUEBAS ─────────────────────────────────────────────────────
 #
-# Fuera del repo a propósito: dependen de que la base local tenga volumen —los
-# números no significan nada contra una base vacía— y los stubs sustituyen la
-# sesión y el contexto de inquilino, que es exactamente lo que nadie debería
-# importar por accidente desde la aplicación.
+# Probes: scripts que ejercitan y cronometran la capa de datos contra una base
+# de verdad, con los stubs que les permiten llamarla sin un navegador delante
+# (`tsconfig.probe.json` los enruta).
+#
+# Durante meses estuvieron TODOS fuera del repositorio, por dos razones. La
+# primera —que dependían del volumen de la base local— cayó cuando
+# `scripts/base-de-pruebas.sh` empezó a sembrar diez años de historia sintética.
+# La segunda era el peligro de los stubs, y esa se resolvió de otra manera: ver
+# abajo.
+#
+# Lo que sigue fuera es una decisión sobre CADA probe, no sobre la clase entera.
 scripts/_probe-*.ts
-scripts/_stub-*.ts
-tsconfig.probe.json
 probe*.mts
 .probe/
 scripts/_dash.ts
 
-# ── Y LOS QUE SÍ ENTRAN ──────────────────────────────────────────────────────
+# ── LOS STUBS SÍ ENTRAN, Y POR QUÉ SE PUEDE ─────────────────────────────────
 #
-# De las dos razones de arriba, la primera dejó de aplicar: la integración corre
-# contra una base que `scripts/base-de-pruebas.sh` siembra con diez años de
-# historia, así que estos ya no dependen del volumen de la base de nadie.
+# `scripts/_stub-*.ts` y `tsconfig.probe.json` estuvieron ignorados porque
+# sustituyen la sesión y el contexto de inquilino: `_stub-tenancy` devuelve rol
+# `owner` y un `puedeEn()` que concede todo. Importado por accidente desde la
+# aplicación, abriría los permisos de par en par sin dejar ni un error.
 #
-# La segunda sigue en pie y por eso esto es una lista y no un `!probe*.mts`:
-# `scripts/_stub-*.ts` y `tsconfig.probe.json` SIGUEN FUERA, y con ellos queda
-# fuera todo probe que los use. Ninguno de los de abajo los toca — usan
-# `tsconfig.check.json` o `tsconfig.scripts.json`, que ya estaban versionados—,
-# de modo que el sustituto de la sesión y del contexto de inquilino continúa
-# sin estar al alcance de un import despistado.
+# Esconder el archivo era una protección barata y cara a la vez: mantenía fuera
+# del CI catorce pruebas que pasan, dejaba `_probe-rendimiento` versionado pero
+# inservible en un clon limpio, y hacía imposible probar las 137 acciones de
+# servidor —que hoy no tienen ni una prueba, por esto—.
 #
-# Estos veinte son los que sostienen el CI. Si añadís uno a `UNITARIAS` o a
-# `INTEGRACION` en `pruebas/registro.ts`, tiene que entrar también aquí: hay una
-# prueba en `pruebas/cobertura.test.ts` que lo exige, porque un probe que el
-# flujo necesita y el repositorio no tiene es un CI que se cae sin decir por qué
-# —y así se cayó la primera vez—.
+# Ahora la protección es activa y no pasiva: cada stub llama a `soloEnPruebas()`
+# en su primera línea ejecutable y REVIENTA si se carga con `NEXT_RUNTIME`
+# definido o en producción, con un mensaje que dice cuál se cargó y qué concede
+# de más. Y hay una prueba sin base —`probe-stubs.mts`— que falla si algún
+# archivo de `src/` los nombra. Un montaje roto y ruidoso es mejor que uno que
+# funciona con los permisos abiertos.
+!scripts/_stub-*.ts
+!tsconfig.probe.json
+
+# ── LOS PROBES QUE SOSTIENEN EL CI ──────────────────────────────────────────
+#
+# Si añadís uno a `UNITARIAS`, `INTEGRACION` o `CON_STUBS` en
+# `pruebas/registro.ts`, tiene que entrar también aquí: hay una prueba en
+# `pruebas/cobertura.test.ts` que lo exige, porque un probe que el flujo
+# necesita y el repositorio no tiene es un CI que se cae sin decir por qué —y
+# así se cayó la primera vez—.
 !probe-avisos.mts
 !probe-beta.mts
 !probe-borrar-modelos.mts
@@ -111,21 +124,39 @@ scripts/_dash.ts
 !probe-selector.mts
 !probe-series.mts
 !probe-sla.mts
+!probe-stubs.mts
 !probe-suscripcion.mts
 !probe-tablas.mts
 !probe-unapply.mts
 !probe-viaticos.mts
 
-# ── Y UNO DE `scripts/`, POR UNA RAZÓN DISTINTA ────────────────────────────
+# Y los catorce que necesitan los stubs. Nunca estuvieron rotos: estaban mal
+# invocadas y luego fuera del repositorio. Corren contra la base sembrada igual
+# que los de arriba —se comprobó apuntándolos a `evoelution_ci` antes de
+# versionarlos, 14 de 14— y con los stubs dentro ya no hay nada que los frene.
+!probe-roles.mts
+!scripts/_probe-arq.ts
+!scripts/_probe-arreglos.ts
+!scripts/_probe-borrar.ts
+!scripts/_probe-busqueda.ts
+!scripts/_probe-clientes.ts
+!scripts/_probe-contratos.ts
+!scripts/_probe-goals.ts
+!scripts/_probe-huerfanos.ts
+!scripts/_probe-listas.ts
+!scripts/_probe-nuevo.ts
+!scripts/_probe-profit.ts
+!scripts/_probe-rent.ts
+!scripts/_probe-siembra.ts
+
+# ── Y DOS DE `scripts/`, POR UNA RAZÓN DISTINTA ────────────────────────────
 #
 # `_probe-rendimiento` no entra al CI —mide, no comprueba, y un umbral en un
 # ejecutor compartido falla los martes— pero SÍ tiene que estar en el
 # repositorio: el skill `.claude/skills/rendimiento` le dice a cualquiera que lo
 # corra, y un skill que apunta a un archivo que el clon no trae es peor que no
-# tener skill.
-#
-# Sigue necesitando `tsconfig.probe.json` y los stubs, que continúan fuera. Esa
-# es la decisión pendiente que ya nombra `pruebas/registro.ts`, no una nueva.
+# tener skill. Hasta hoy estaba versionado y aun así no arrancaba, porque sus
+# stubs seguían fuera; con ellos dentro, ya corre.
 !scripts/_probe-rendimiento.ts
 !scripts/_probe-budget.ts
 
