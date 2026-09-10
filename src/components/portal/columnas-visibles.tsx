@@ -234,6 +234,39 @@ export function ColumnasVisibles({ tabla }: { tabla: string }) {
               Ver todas
             </button>
           )}
+
+          {/*
+            ── LA SALIDA DE EMERGENCIA ──────────────────────────────────────
+
+            Esta tabla recuerda dos cosas en el navegador: qué columnas se ven y
+            cuánto mide cada una. Las dos son útiles y las dos pueden dejar la
+            tabla ilegible —un ancho guardado hace meses, una columna oculta que
+            nadie recuerda— y hasta ahora no había forma de deshacerlo salvo
+            abrir las herramientas del navegador y borrar `localStorage` a mano.
+
+            Que un ajuste no se pueda deshacer desde la propia pantalla es un
+            fallo de diseño, no una molestia: quien no sepa que existe ese
+            recuerdo va a concluir que el sistema está roto. Y tendrá razón,
+            porque para él lo está.
+          */}
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                window.localStorage.removeItem(CLAVE(tabla));
+                window.localStorage.removeItem(`evo:anchos:${tabla}`);
+              } catch {
+                /* Si no se puede escribir, recargar igual devuelve lo de serie. */
+              }
+              window.location.reload();
+            }}
+            className="mt-1 w-full border-t border-border px-2 pt-2 text-left text-xs text-muted-foreground hover:text-foreground"
+          >
+            Restablecer esta tabla
+            <span className="block text-[11px] opacity-70">
+              Deshace las columnas ocultas y los anchos guardados
+            </span>
+          </button>
         </div>
       )}
     </div>
