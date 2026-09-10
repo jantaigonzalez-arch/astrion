@@ -39,7 +39,10 @@ RUN npm run build
 FROM node:22-alpine AS migrator
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json tsconfig.json drizzle.config.ts drizzle.tenant.config.ts ./
+# `tsconfig.scripts.json` además del base: es con el que corren los scripts de
+# esta imagen, y sin él `tsx` aborta con «Cannot resolve tsconfig» — un error que
+# solo aparece al ejecutarlos allá, nunca al construir.
+COPY package.json tsconfig.json tsconfig.scripts.json drizzle.config.ts drizzle.tenant.config.ts ./
 COPY drizzle ./drizzle
 COPY drizzle-tenant ./drizzle-tenant
 COPY scripts ./scripts
