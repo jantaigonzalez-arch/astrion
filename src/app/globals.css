@@ -585,9 +585,32 @@
       sensible tiene que ser más grande que la marca que se ve. Cabe dentro del
       relleno de la celda, así que nunca se solapa con el texto ni con el
       enlace que ordena. */
-.tabla-erp[data-tabla] thead th {
-  position: relative;
-}
+/*
+  ⚠ AQUÍ NO VA `position: relative`. Costó encontrarlo y merece el aviso.
+
+  Estuvo, para que el `::after` del tirador tuviera contra qué colocarse. Y
+  ROMPÍA LAS CABECERAS PEGAJOSAS DE TODAS LAS TABLAS:
+
+    `.tabla-erp[data-tabla] thead th`   (0,2,2)  ← esta regla
+    `.tabla-erp thead th:first-child`   (0,2,2)  ← la que fija la primera columna
+    `.tabla-erp thead th`               (0,1,2)  ← la que fija el encabezado
+
+  Misma especificidad que la segunda y escrita DESPUÉS, así que ganaba por orden
+  de archivo y sustituía `sticky` por `relative` en todas.
+
+  El síntoma no se parecía a la causa. En el cuerpo la primera celda SÍ se
+  quedaba fija —a ella no la alcanza esta regla— así que al desplazarse los
+  nombres se quedaban quietos, la cabecera se iba, y «Estado fiscal» acababa
+  encima de la columna del cliente. Parecía que las columnas estaban
+  desalineadas o que los datos estaban mal; lo que había era una cabecera que no
+  se fijaba y una celda opaca tapando el arranque de la columna vecina.
+
+  Y el `relative` no hacía falta: `position: sticky` es una posición, así que ya
+  establece bloque contenedor para un hijo absoluto. El tirador se coloca igual.
+
+  Hay un probe que lo vigila (`probe-tablas`), porque este es exactamente el
+  fallo que nadie relaciona con la regla que lo causa.
+*/
 .tabla-erp[data-tabla] thead th::after {
   content: "";
   position: absolute;

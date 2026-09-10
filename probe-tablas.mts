@@ -190,6 +190,64 @@ const conTirador = sh(
   `grep -rho 'data-tabla="[a-z]*"' src/app --include='*.tsx' | sort -u | wc -l`);
 check("las tablas de trabajo lo piden", Number(conTirador) >= 8, `${conTirador} tablas`);
 
+/* ── Nada pisa la posición pegajosa de las cabeceras ───────────────────── */
+/*
+  EL FALLO QUE ESTO CIERRA, Y QUE COSTÓ SEIS RONDAS ENCONTRAR.
+
+  El tirador para arrastrar columnas es un `::after`, y para colocarlo se le
+  había puesto `position: relative` al `th`:
+
+    .tabla-erp[data-tabla] thead th { position: relative }   (0,2,2)
+    .tabla-erp thead th:first-child { position: sticky  }    (0,2,2)
+
+  MISMA ESPECIFICIDAD, y la primera escrita después. Ganaba por orden de archivo
+  y sustituía `sticky` por `relative` en TODAS las cabeceras de TODAS las tablas
+  con tirador. Ni el encabezado se quedaba al bajar, ni la primera columna al
+  desplazarse en horizontal.
+
+  Y el síntoma no se parecía a la causa: en el CUERPO la primera celda sí seguía
+  fija —a ella no la alcanza esa regla—, así que los nombres se quedaban quietos
+  mientras la cabecera se iba, y «Estado fiscal» acababa encima de la columna del
+  cliente. Se reportó tres veces como «las columnas están desalineadas» y una
+  como «parece que hay un hold».
+
+  El `relative` ni siquiera hacía falta: `sticky` ya establece bloque contenedor
+  para un hijo absoluto.
+
+  Se comprueba sobre el CSS: ninguna regla que termine en `thead th` puede
+  declarar `position` distinto de `sticky`.
+*/
+console.log("\n── nada pisa la posición pegajosa de las cabeceras ──");
+
+/*
+  Se leen los bloques `selector { ... }` y se miran los que apuntan a una celda
+  de cabecera. Un análisis a ojo sobre el texto entero daría falsos positivos con
+  los comentarios, que en este archivo son largos y hablan justamente de esto.
+*/
+const bloques = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+  .map((m) => ({ sel: m[1].trim(), cuerpo: m[2] }))
+  // Fuera los comentarios: solo interesa el selector de verdad.
+  .map((b) => ({ ...b, sel: b.sel.replace(/\/\*[\s\S]*?\*\//g, "").trim() }))
+  .filter((b) => /thead\s+th\s*$/.test(b.sel) || /thead\s+th:[a-z-]+\s*$/.test(b.sel));
+
+check(`hay reglas de cabecera que revisar (${bloques.length})`, bloques.length >= 2);
+
+const pisadas = bloques.filter((b) => {
+  const m = /position\s*:\s*([a-z-]+)/.exec(b.cuerpo);
+  return m !== null && m[1] !== "sticky";
+});
+
+check(
+  "ninguna regla sobre `thead th` declara una posición que no sea sticky",
+  pisadas.length === 0,
+  pisadas.map((b) => `${b.sel} → ${/position\s*:\s*([a-z-]+)/.exec(b.cuerpo)?.[1]}`).join(" · "),
+);
+
+check(
+  "y la cabecera sigue declarándose pegajosa",
+  bloques.some((b) => /position\s*:\s*sticky/.test(b.cuerpo)),
+);
+
 /* ── Los anchos caducan cuando la tabla cambia ─────────────────────────── */
 /*
   EL FALLO QUE ESTO CIERRA.
