@@ -1,12 +1,10 @@
-"use client";
-
-import { useMemo, useState } from "react";
 import { SLA_HOURS } from "@/lib/tickets";
-import { ThLocal, useOrdenLocal } from "@/components/portal/orden-local";
+import { ThOrden } from "@/components/portal/listado-controles";
 import { AlertTriangle, Building2, Search, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { estadoFiscal } from "@/lib/cliente-fiscal";
+import type { CampoCartera } from "@/lib/data/crm";
 import { Link } from "@/lib/nav";
 import { Telefono } from "@/components/portal/telefono";
 import { ColumnasVisibles } from "@/components/portal/columnas-visibles";
@@ -86,90 +84,84 @@ type Filter = "all" | "conAbiertos" | "sinPortal";
  * por `null` en ese caso, no por cero: sin cuenta no es que tenga cero equipos,
  * es que no hay por dónde saberlo, y `useOrdenLocal` manda lo vacío al final.
  */
-const VALORES = {
-  nombre: (c: ClientListRow) => c.name,
-  // Cero contactos es un hueco de verdad —no hay a quién llamar—, así que ordena
-  // como nulo y `useOrdenLocal` lo manda al final en las dos direcciones. Es la
-  // misma decisión que en la cartera de prospectos.
-  contactos: (c: ClientListRow) => (c.contacts > 0 ? c.contacts : null),
-  contratos: (c: ClientListRow) => (c.hasPortal ? c.contracts : null),
-  equipos: (c: ClientListRow) => (c.hasPortal ? c.equipment : null),
-  tickets: (c: ClientListRow) =>
-    c.hasPortal ? c.openTickets * 10_000 + c.totalTickets : null,
-  ultimo: (c: ClientListRow) => (c.hasPortal ? c.lastTicketAt : null),
-  comprado: (c: ClientListRow) => (c.wonDeals > 0 ? c.wonValue : null),
-  // Nulo para quien no pactó nada, así que ordenar por SLA agrupa arriba a los
-  // que sí tienen un plazo propio —que es la pregunta— y manda al final a los
-  // que van con el general. Ver `useOrdenLocal`.
-  sla: (c: ClientListRow) => c.slaHours,
-  responsable: (c: ClientListRow) => c.ownerName,
-  /*
-    ── ORDENAR POR ESTADO FISCAL ORDENA POR DISTANCIA A LA FACTURA ──────────
+/*
+  ── ESTA TABLA YA NO ORDENA NI FILTRA EN EL NAVEGADOR ─────────────────────
 
-    No alfabéticamente por la etiqueta —«Falta régimen y CP» iría antes que
-    «Sin RFC» y eso no significa nada—, sino por cuánto falta para poder
-    timbrarle. Ordenar de menor a mayor pone arriba lo que está listo; de mayor
-    a menor, lo que más trabajo pide. Las dos preguntas son reales y por eso la
-    columna se ordena en los dos sentidos.
-  */
-  fiscal: (c: ClientListRow) => {
-    if (c.rfcFiscal) return c.validacion === "valido" ? 0 : 1;
-    return c.taxId ? 2 : 3;
-  },
-  // El RFC ordena como texto: agrupa por las tres o cuatro letras iniciales,
-  // que es como se busca a una empresa cuando se tiene el RFC a mano.
-  rfc: (c: ClientListRow) => c.rfcFiscal ?? c.taxId,
-} as const;
+  Lo hacía, y con veintitrés filas estaba bien. Con la lista paginada deja de
+  estarlo, y no por rendimiento: buscar en el navegador solo encontraría a
+  quienes caen en la página que se está mirando, y ordenar reordenaría
+  veinticinco filas de doscientas —cambiaría lo que se ve, no CUÁLES—. La cola
+  de tickets ya tenía escrita esa misma lección.
 
-type CampoCliente = keyof typeof VALORES;
+  Así que recortar, buscar y ordenar se deciden en el MISMO sitio: el servidor.
+  Este componente pasa a ser de servidor y a pintar lo que le dan; el estado
+  vive en la URL, que además se puede compartir y marcar.
 
-const norm = (s: string) =>
-  s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  Lo único que sigue siendo de cliente es el selector de columnas, que es una
+  preferencia del navegador y no una consulta.
+*/
 
 export function ClientsList({
   clients,
   locale,
+  total,
+  q,
+  filtro,
+  orden,
+  basePath,
+  totalSinFiltro,
+  conAbiertos,
+  sinPortal,
 }: {
+  /** Solo las filas de ESTA página. */
   clients: ClientListRow[];
   locale: string;
+  /** Cuántas hay con los filtros puestos. Lo dice el pie y lo usa el paginador. */
+  total: number;
+  q: string;
+  filtro: Filter;
+  orden: { campo: CampoCartera; dir: "asc" | "desc" };
+  basePath: string;
+  /** Conteos de cada ficha, calculados en la base sobre la cartera ENTERA. */
+  totalSinFiltro: number;
+  conAbiertos: number;
+  sinPortal: number;
 }) {
-  const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  /*
+    La consulta que viaja en cada enlace. Sin ella, pulsar una columna para
+    ordenar perdería la búsqueda que se acababa de escribir.
 
-  const filtrados = useMemo(() => {
-    const term = norm(q.trim());
-    return clients.filter((c) => {
-      if (filter === "conAbiertos" && c.openTickets === 0) return false;
-      if (filter === "sinPortal" && c.hasPortal) return false;
-      if (!term) return true;
-      return norm(
-        // Los DOS RFC: quien busca «AAA010101AA1» no sabe —ni tiene por qué
-        // saber— si esa ficha ya tiene expediente fiscal o solo el dato viejo
-        // del padrón. Buscar por uno y no por el otro deja al cliente sin
-        // aparecer justo cuando se le busca por el número que se tiene a mano.
-        [c.name, c.taxId, c.rfcFiscal, c.cpFiscal, c.industry, c.phone]
-          .filter(Boolean)
-          .join(" "),
-      ).includes(term);
-    });
-  }, [clients, q, filter]);
+    `page` se omite a propósito: al cambiar el orden o el filtro se vuelve a la
+    primera página. Quedarse en la siete después de filtrar es la forma más
+    rápida de enseñar una lista vacía y que parezca que no hay resultados.
+  */
+  const consulta = {
+    q: q || undefined,
+    filtro: filtro === "all" ? undefined : filtro,
+    campo: orden.campo === "nombre" ? undefined : orden.campo,
+    dir: orden.dir === "asc" ? undefined : orden.dir,
+  };
+  /*
+    Las filas llegan ya recortadas, buscadas y ordenadas por la base. Aquí no se
+    filtra ni se ordena nada: hacerlo sería reordenar una página y mentir sobre
+    cuál es la primera de la lista.
+  */
+  const filtered = clients;
 
   /*
-    El orden se aplica DESPUÉS de filtrar, y sobre la lista entera: aquí no hay
-    paginación, así que ordenar no esconde nada. Ver `useOrdenLocal`.
+    Un enlace a esta misma pantalla cambiando UNA cosa y conservando el resto.
 
-    Arranca por nombre y no por volumen de tickets porque este listado se usa
-    sobre todo para BUSCAR a alguien, y para eso el alfabeto gana a cualquier
-    ranking. Quien viene a ver quién pesa más pulsa la columna.
+    Sin esto, cada control tendría que acordarse de arrastrar los otros tres, y
+    el que se olvidara borraría en silencio la búsqueda de alguien.
   */
-  const { orden, pulsar, ordenadas: filtered } = useOrdenLocal<ClientListRow, CampoCliente>(
-    filtrados,
-    VALORES,
-    { campo: "nombre", dir: "asc" },
-  );
-
-  const conAbiertos = clients.filter((c) => c.openTickets > 0).length;
-  const sinPortal = clients.filter((c) => !c.hasPortal).length;
+  const enlace = (cambios: Record<string, string | undefined>) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries({ ...consulta, ...cambios })) {
+      if (v) p.set(k, v);
+    }
+    const cola = p.toString();
+    return cola ? `${basePath}?${cola}` : basePath;
+  };
 
   const chip = (active: boolean) =>
     cn(
@@ -191,43 +183,69 @@ export function ClientsList({
   return (
     <div className="space-y-4">
       <Card className="p-4">
-        <div className="flex items-center gap-2 rounded-lg border border-input bg-background px-3">
+        {/*
+          UN FORMULARIO, NO UN CAMPO QUE FILTRA AL TECLEAR.
+
+          Con la lista paginada la búsqueda tiene que ir a la base, y una consulta
+          por cada tecla sería una consulta por cada tecla. Se envía al pulsar
+          Enter, que además deja la búsqueda en la URL — se comparte, se marca y
+          el botón de atrás la deshace.
+
+          `method="get"` y sin JavaScript: el navegador arma la URL solo. Los
+          demás parámetros viajan como campos ocultos para que buscar no borre el
+          orden ni el filtro que ya estaban puestos.
+        */}
+        <form
+          method="get"
+          action={basePath}
+          className="flex items-center gap-2 rounded-lg border border-input bg-background px-3"
+        >
+          {filtro !== "all" && <input type="hidden" name="filtro" value={filtro} />}
+          {orden.campo !== "nombre" && <input type="hidden" name="campo" value={orden.campo} />}
+          {orden.dir !== "asc" && <input type="hidden" name="dir" value={orden.dir} />}
           <Search className="size-4 shrink-0 text-muted-foreground" />
           <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar por nombre, RFC, giro o teléfono…"
+            name="q"
+            defaultValue={q}
+            placeholder="Buscar por nombre, RFC, código postal, giro o teléfono…"
             className="h-10 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             aria-label="Buscar cliente"
           />
           {q && (
-            <button
-              onClick={() => setQ("")}
+            <Link
+              href={enlace({ q: undefined })}
               className="text-muted-foreground hover:text-foreground"
               aria-label="Limpiar búsqueda"
             >
               <X className="size-4" />
-            </button>
+            </Link>
           )}
-        </div>
+        </form>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button onClick={() => setFilter("all")} className={chip(filter === "all")}>
-            Todos ({clients.length})
-          </button>
-          <button
-            onClick={() => setFilter("conAbiertos")}
-            className={chip(filter === "conAbiertos")}
+          {/*
+            Enlaces y no botones: el filtro vive en la URL, así que se puede
+            compartir, marcar y volver con el botón de atrás. Los conteos salen
+            de la BASE y no de las filas que hay a mano — con la lista paginada,
+            contar lo que se ve daría «Con tickets abiertos (7)» cuando hay
+            dieciséis.
+          */}
+          <Link href={enlace({ filtro: undefined })} className={chip(filtro === "all")}>
+            Todos ({totalSinFiltro})
+          </Link>
+          <Link
+            href={enlace({ filtro: "conAbiertos" })}
+            className={chip(filtro === "conAbiertos")}
           >
             Con tickets abiertos ({conAbiertos})
-          </button>
+          </Link>
           {sinPortal > 0 && (
-            <button
-              onClick={() => setFilter("sinPortal")}
-              className={chip(filter === "sinPortal")}
+            <Link
+              href={enlace({ filtro: "sinPortal" })}
+              className={chip(filtro === "sinPortal")}
             >
               Sin cuenta de portal ({sinPortal})
-            </button>
+            </Link>
           )}
 
           {/*
@@ -270,9 +288,9 @@ export function ClientsList({
             <table data-tabla="clientes" className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <ThLocal campo="nombre" orden={orden} onPulsar={pulsar}>
+                  <ThOrden campo="nombre" actual={orden} basePath={basePath} query={consulta}>
                     Cliente
-                  </ThLocal>
+                  </ThOrden>
                   {/*
                     DOS COLUMNAS, NO UNA CELDA CON CUATRO DATOS DENTRO.
 
@@ -290,37 +308,38 @@ export function ClientsList({
                     clientes buscando por régimen fiscal; son datos del
                     expediente, y en la lista solo ocupan ancho.
                   */}
-                  <ThLocal campo="fiscal" orden={orden} onPulsar={pulsar}>
+                  <ThOrden campo="fiscal" actual={orden} basePath={basePath} query={consulta}>
                     Estado fiscal
-                  </ThLocal>
-                  <ThLocal campo="rfc" orden={orden} onPulsar={pulsar}>
+                  </ThOrden>
+                  <ThOrden campo="rfc" actual={orden} basePath={basePath} query={consulta}>
                     RFC
-                  </ThLocal>
+                  </ThOrden>
                   <th className="px-4 py-3 font-medium">Teléfono</th>
-                  <ThLocal campo="contactos" orden={orden} onPulsar={pulsar} inicial="desc">
+                  <ThOrden campo="contactos" actual={orden} basePath={basePath} query={consulta} inicial="desc">
                     Contactos
-                  </ThLocal>
-                  <ThLocal campo="contratos" orden={orden} onPulsar={pulsar} inicial="desc">
+                  </ThOrden>
+                  <ThOrden campo="contratos" actual={orden} basePath={basePath} query={consulta} inicial="desc">
                     Contratos
-                  </ThLocal>
-                  <ThLocal campo="equipos" orden={orden} onPulsar={pulsar} inicial="desc">
+                  </ThOrden>
+                  <ThOrden campo="equipos" actual={orden} basePath={basePath} query={consulta} inicial="desc">
                     Equipos
-                  </ThLocal>
-                  <ThLocal campo="tickets" orden={orden} onPulsar={pulsar} inicial="desc">
+                  </ThOrden>
+                  <ThOrden campo="tickets" actual={orden} basePath={basePath} query={consulta} inicial="desc">
                     Tickets
-                  </ThLocal>
-                  <ThLocal campo="ultimo" orden={orden} onPulsar={pulsar} inicial="desc">
+                  </ThOrden>
+                  <ThOrden campo="ultimo" actual={orden} basePath={basePath} query={consulta} inicial="desc">
                     Último servicio
-                  </ThLocal>
-                  <ThLocal
+                  </ThOrden>
+                  <ThOrden
                     campo="comprado"
-                    orden={orden}
-                    onPulsar={pulsar}
+                    actual={orden}
+                    basePath={basePath}
+                    query={consulta}
                     inicial="desc"
                     className="text-right"
                   >
                     Comprado
-                  </ThLocal>
+                  </ThOrden>
                   {/*
                     EL PLAZO PACTADO, EN LA PANTALLA DONDE VIVE EL CLIENTE.
 
@@ -333,12 +352,12 @@ export function ClientsList({
                     algo pactado y quién no, que es la pregunta que se hace al
                     mirar una cartera—. El enlace lleva a cambiarlo.
                   */}
-                  <ThLocal campo="sla" orden={orden} onPulsar={pulsar} inicial="desc">
+                  <ThOrden campo="sla" actual={orden} basePath={basePath} query={consulta} inicial="desc">
                     SLA
-                  </ThLocal>
-                  <ThLocal campo="responsable" orden={orden} onPulsar={pulsar}>
+                  </ThOrden>
+                  <ThOrden campo="responsable" actual={orden} basePath={basePath} query={consulta}>
                     Responsable
-                  </ThLocal>
+                  </ThOrden>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -507,7 +526,8 @@ export function ClientsList({
             </table>
           </div>
           <p className="border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
-            {filtered.length} de {clients.length} cliente(s)
+            {/* El total de la BASE, no las filas de esta página: «10 de 10» no dice nada. */}
+            {filtered.length} de {total} cliente(s)
           </p>
         </Card>
       )}

@@ -1,7 +1,7 @@
 import "server-only";
 import { ordenarPor } from "@/lib/data/orden";
 import type { Orden } from "@/lib/listado";
-import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
 import {
   clienteDomicilio,
@@ -886,7 +886,89 @@ export async function slaHorasDelCliente(
   return fila?.h ?? null;
 }
 
-export async function getClients(conexion?: DbOrTx) {
+/**
+ * Cómo se pide una página de la cartera.
+ *
+ * ── POR QUÉ TODO ESTO VA AL SERVIDOR Y NO SE FILTRA EN EL NAVEGADOR ───────
+ *
+ * Porque paginar sin llevar la búsqueda y el orden al servidor es peor que no
+ * paginar: quien escribe un nombre en el buscador solo encontraría a los que
+ * caen en la página que está mirando, y ordenar por «más tickets abiertos»
+ * ordenaría veinticinco filas de doscientas. Las tres cosas —recortar, buscar y
+ * ordenar— tienen que decidirse en el mismo sitio o se contradicen.
+ */
+export type OpcionesCartera = {
+  /** Texto libre: nombre, RFC (el del expediente y el del padrón), CP, giro o teléfono. */
+  q?: string;
+  /** `conAbiertos` deja los que tienen tickets abiertos; `sinPortal`, los que no tienen cuenta. */
+  filtro?: "all" | "conAbiertos" | "sinPortal";
+  campo?: CampoCartera;
+  dir?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+};
+
+/** Por qué se puede ordenar la cartera. Lo comparten la consulta y la tabla. */
+export type CampoCartera =
+  | "nombre"
+  | "fiscal"
+  | "rfc"
+  | "contactos"
+  | "contratos"
+  | "equipos"
+  | "tickets"
+  | "ultimo"
+  | "comprado"
+  | "sla"
+  | "responsable";
+
+  /*
+  ── EL FILTRO, ESCRITO UNA VEZ ──────────────────────────────────────────
+
+  Lo usan la página y el conteo del paginador, y tienen que decir EXACTAMENTE
+  lo mismo: si el conteo cuenta más filas de las que la consulta devuelve, el
+  paginador ofrece páginas vacías; si cuenta menos, esconde clientes. Dos
+  escrituras del mismo criterio acaban divergiendo, así que hay una.
+  */
+function filtroDeCartera(
+  o: OpcionesCartera | undefined,
+  porTicket: { abiertos: unknown },
+) {
+  const partes = [];
+
+  const q = o?.q?.trim();
+  if (q) {
+    /*
+      La búsqueda mira los DOS RFC —el del expediente y el heredado del padrón—
+      además del código postal fiscal. Quien teclea un RFC no sabe, ni tiene
+      por qué, si esa ficha ya tiene expediente.
+
+      `ilike` y no `=`: se busca por trozos, que es como alguien recuerda el
+      nombre de un laboratorio. Con `%` a los dos lados no hay índice que
+      sirva, y es aceptable — una cartera son cientos de filas, no millones, y
+      el conteo lo confirma cada vez que se mide.
+    */
+    const patron = `%${q}%`;
+    partes.push(
+      or(
+        ilike(crmOrganizations.name, patron),
+        ilike(crmOrganizations.taxId, patron),
+        ilike(crmOrganizations.industry, patron),
+        ilike(crmOrganizations.phone, patron),
+        ilike(clienteFiscal.rfc, patron),
+        ilike(clienteFiscal.cpFiscal, patron),
+      ),
+    );
+  }
+
+  if (o?.filtro === "conAbiertos") partes.push(sql`coalesce(${porTicket.abiertos}, 0) > 0`);
+  // Sin cuenta de portal enlazada: sus equipos y tickets no se pueden encontrar.
+  if (o?.filtro === "sinPortal") partes.push(isNull(crmOrganizations.clientId));
+
+  return partes.length ? and(...partes) : undefined;
+}
+
+export async function getClients(conexion?: DbOrTx, opciones?: OpcionesCartera) {
   /*
     Conexión explícita para la CAPA DE EXTRACCIÓN: una descarga corre por el pool
     de SOLO LECTURA para no ocupar una de las dos conexiones que la empresa tiene
@@ -935,6 +1017,62 @@ export async function getClients(conexion?: DbOrTx) {
     .where(eq(crmDeals.status, "won"))
     .groupBy(crmDeals.organizationId)
     .as("por_ganado");
+
+  /*
+    ── EL ORDEN ────────────────────────────────────────────────────────────
+
+    Las columnas calculadas se ordenan por su subconsulta, no por un valor que
+    JavaScript haya sacado después: con paginación, ordenar en el navegador
+    ordenaría veinticinco filas de doscientas y mentiría sobre cuál es la
+    primera.
+
+    `nulls last` en las que pueden faltar. Sin cuenta de portal no es que tenga
+    cero equipos: es que no hay por dónde saberlo, y esas fichas van al final en
+    los dos sentidos, igual que hacía el orden del navegador.
+  */
+  const ordenDeCartera = (o?: OpcionesCartera) => {
+    const desc_ = o?.dir === "desc";
+    const por = (col: unknown) =>
+      desc_ ? [sql`${col} desc nulls last`] : [sql`${col} asc nulls last`];
+
+    switch (o?.campo) {
+      case "fiscal":
+        /*
+          Por DISTANCIA A LA FACTURA, no alfabéticamente por la etiqueta: validado
+          primero, luego con expediente sin validar, luego con RFC del padrón, y
+          al final quien no tiene nada. Es el mismo criterio que en la tabla.
+        */
+        return por(sql`case
+          when ${clienteValidacionSat.resultado} = 'valido' then 0
+          when ${clienteFiscal.rfc} is not null then 1
+          when ${crmOrganizations.taxId} is not null then 2
+          else 3 end`);
+      case "rfc":
+        return por(sql`coalesce(${clienteFiscal.rfc}, ${crmOrganizations.taxId})`);
+      case "contactos":
+        return por(sql`(select count(*) from ${crmContacts}
+                         where ${crmContacts}.organization_id = ${crmOrganizations}.id)`);
+      case "contratos":
+        return por(porContrato.n);
+      case "equipos":
+        return por(porEquipo.n);
+      case "tickets":
+        // Abiertos primero y el total como desempate: quien tiene tres abiertos
+        // pide atención antes que quien acumuló doscientos cerrados.
+        return por(sql`coalesce(${porTicket.abiertos}, 0) * 10000 + coalesce(${porTicket.total}, 0)`);
+      case "ultimo":
+        return por(porTicket.ultimo);
+      case "comprado":
+        return por(porGanado.valor);
+      case "sla":
+        return por(crmOrganizations.slaHours);
+      case "responsable":
+        return por(crmOrganizations.ownerId);
+      case "nombre":
+      default:
+        return desc_ ? [desc(crmOrganizations.name)] : [];
+    }
+  };
 
   const rows = await db
     .select({
@@ -1008,8 +1146,23 @@ export async function getClients(conexion?: DbOrTx) {
       clienteValidacionSat,
       eq(clienteValidacionSat.organizationId, crmOrganizations.id),
     )
-    .where(ES_CLIENTE)
-    .orderBy(asc(crmOrganizations.name));
+    .where(and(ES_CLIENTE, filtroDeCartera(opciones, porTicket)))
+    /*
+      El desempate por nombre NO es decorativo.
+
+      Sin él, dos clientes con el mismo número de contratos pueden salir en
+      distinto orden en cada consulta —Postgres no promete estabilidad— y al
+      pasar de página aparecería uno repetido y otro nunca. Es el fallo clásico
+      de la paginación por `offset`, y solo se nota con datos de verdad.
+    */
+    .orderBy(...ordenDeCartera(opciones), asc(crmOrganizations.name))
+    /*
+      Sin `limit` se devuelve la cartera entera, que es lo que necesitan la capa
+      de extracción y los análisis. La PANTALLA sí lo pasa: ver el comentario de
+      `OpcionesCartera`.
+    */
+    .limit(opciones?.limit ?? Number.MAX_SAFE_INTEGER)
+    .offset(opciones?.offset ?? 0);
 
   const members = await listTenantMembers({ includeInactive: true });
   const nameById = new Map(members.map((m) => [m.id, m.name ?? m.email]));
@@ -1028,6 +1181,49 @@ export async function getClients(conexion?: DbOrTx) {
     hasPortal: Boolean(r.clientId),
     lastTicketAt: r.lastTicketAt ? new Date(r.lastTicketAt) : null,
   }));
+}
+
+/**
+ * Cuántos clientes hay CON los filtros puestos. Para el paginador.
+ *
+ * ── POR QUÉ NO SE CUENTAN LAS FILAS DE LA PÁGINA ──────────────────────────
+ *
+ * Porque la página trae veinticinco y el paginador necesita saber que hay
+ * doscientas. Es una consulta aparte, y por eso lo único que NO puede diferir es
+ * el filtro: si cuenta más filas de las que la lista devuelve, se ofrecen
+ * páginas vacías; si cuenta menos, se esconden clientes. Los dos usan
+ * `filtroDeCartera`, que está escrito una sola vez.
+ *
+ * ── Y POR QUÉ NO LLEVA LOS CUATRO AGREGADOS ───────────────────────────────
+ *
+ * Contar no necesita saber cuántos contratos tiene cada uno. Solo se trae la
+ * subconsulta de tickets —porque un filtro depende de ella— y el expediente
+ * fiscal, porque la búsqueda mira el RFC. Los otros tres se quedan fuera: en una
+ * consulta que corre en cada carga de la pantalla, lo que no se usa no se paga.
+ */
+export async function countClients(opciones?: OpcionesCartera): Promise<number> {
+  const db = await tenantDb();
+
+  const porTicket = db
+    .select({
+      createdById: tickets.createdById,
+      abiertos: sql<number>`count(*) filter (
+        where ${tickets.status} in ('open','in_progress','waiting','pending_review'))::int`.as(
+        "abiertos_n",
+      ),
+    })
+    .from(tickets)
+    .groupBy(tickets.createdById)
+    .as("por_ticket_conteo");
+
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(crmOrganizations)
+    .leftJoin(porTicket, eq(porTicket.createdById, crmOrganizations.clientId))
+    .leftJoin(clienteFiscal, eq(clienteFiscal.organizationId, crmOrganizations.id))
+    .where(and(ES_CLIENTE, filtroDeCartera(opciones, porTicket)));
+
+  return row?.n ?? 0;
 }
 
 export type ClientRow = Awaited<ReturnType<typeof getClients>>[number];
