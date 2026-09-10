@@ -82,7 +82,7 @@ apunta. `pruebas:base` además se niega a borrar una base cuyo nombre no termine
 en `_ci`, `_test` o `_pruebas`.
 
 GitHub Actions corre las dos primeras en cada PR y en cada push a la rama de
-trabajo: 15 pruebas sin base y 26 contra la base sembrada. `pruebas/registro.ts`
+trabajo: 15 pruebas sin base y 27 contra la base sembrada. `pruebas/registro.ts`
 dice qué prueba corre dónde y por qué.
 
 1. **Un probe nuevo va al registro.** Hay una prueba que lo exige, así que no es

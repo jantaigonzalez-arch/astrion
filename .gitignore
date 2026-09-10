@@ -135,6 +135,7 @@ scripts/_dash.ts
 # que los de arriba —se comprobó apuntándolos a `evoelution_ci` antes de
 # versionarlos, 14 de 14— y con los stubs dentro ya no hay nada que los frene.
 !probe-roles.mts
+!scripts/_probe-acciones.ts
 !scripts/_probe-arq.ts
 !scripts/_probe-arreglos.ts
 !scripts/_probe-borrar.ts

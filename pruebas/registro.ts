@@ -1,7 +1,7 @@
 /**
  * QUÉ PRUEBA CORRE DÓNDE, Y POR QUÉ.
  *
- * Las cinco listas de este archivo reparten los 54 probes del repositorio. La
+ * Las cinco listas de este archivo reparten los 55 probes del repositorio. La
  * meta-prueba de `cobertura.test.ts` exige que TODOS estén exactamente en una:
  * un probe nuevo que nadie clasifique rompe la suite en vez de quedarse fuera
  * en silencio, que es como se llega a tener catorce pruebas muertas sin que
@@ -101,7 +101,7 @@ export const SOLO_LOCAL: Record<string, string> = {
 };
 
 /**
- * LAS CATORCE QUE NECESITAN LOS STUBS. Corren en el CI, contra la base sembrada.
+ * LAS QUE NECESITAN LOS STUBS. Corren en el CI, contra la base sembrada.
  *
  * ── DOS DIAGNÓSTICOS EQUIVOCADOS, UNO DETRÁS DEL OTRO ──────────────────────
  *
@@ -128,9 +128,16 @@ export const SOLO_LOCAL: Record<string, string> = {
  *
  * Antes de versionarlas se comprobó lo único que importaba: que pasan contra la
  * base SEMBRADA y no solo contra la copia de producción. Catorce de catorce.
+ *
+ * `_probe-acciones` llegó después y es de otra clase: no venía de antes, se
+ * escribió PORQUE los stubs entraron. Es la primera prueba del repositorio que
+ * toca una acción de servidor, y solo se pudo escribir cuando `_stub-auth`
+ * aprendió a fabricar una sesión y `_stub-tenancy` a denegar un permiso. Es la
+ * cobertura que la decisión de versionar los stubs vino a comprar.
  */
 export const CON_STUBS = [
   "probe-roles.mts",
+  "scripts/_probe-acciones.ts",
   "scripts/_probe-arq.ts",
   "scripts/_probe-arreglos.ts",
   "scripts/_probe-borrar.ts",

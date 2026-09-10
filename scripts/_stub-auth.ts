@@ -41,8 +41,14 @@ soloEnPruebas(
  */
 import type { SessionKind, PlatformRole } from "@/lib/auth";
 
-/** El usuario que la sesión dirá que es, o nada si no se pidió ninguno. */
-const ID = process.env.PROBE_USER_ID;
+/*
+  Se lee en CADA llamada y no una vez al cargar el módulo.
+
+  Un probe de acciones necesita cambiar de identidad a mitad de camino —correr
+  la misma acción como dos personas de dos empresas es justamente como se
+  comprueba el aislamiento— y con la constante fijada al importar eso no se
+  puede: la primera sesión que se pidiera sería la única del proceso.
+*/
 
 /**
  * La sesión, con la misma forma que declara `@/lib/auth`.
@@ -63,10 +69,11 @@ type Sesion = {
 };
 
 export async function auth(): Promise<Sesion | null> {
-  if (!ID) return null;
+  const id = process.env.PROBE_USER_ID;
+  if (!id) return null;
   return {
     user: {
-      id: ID,
+      id,
       kind: (process.env.PROBE_USER_KIND as SessionKind) ?? "tenant",
       platformRole: (process.env.PROBE_PLATFORM_ROLE as PlatformRole) ?? null,
       name: process.env.PROBE_USER_NAME ?? "probe",
