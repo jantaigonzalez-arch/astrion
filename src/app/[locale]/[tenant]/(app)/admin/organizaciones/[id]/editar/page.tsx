@@ -159,6 +159,7 @@ export default async function EditOrganizationPage({
               numRegIdTrib: fiscal?.numRegIdTrib ?? null,
               curp: fiscal?.curp ?? null,
               usoCfdiDefault: fiscal?.usoCfdiDefault ?? null,
+              domicilio: fiscal?.domicilio ?? null,
             }}
             regimenes={regimenes.map((r) => ({
               clave: r.clave,

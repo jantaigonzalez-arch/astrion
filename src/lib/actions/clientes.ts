@@ -3,8 +3,13 @@
 import { auth } from "@/lib/auth";
 import { tenantDb, puedeEn } from "@/lib/tenancy/context";
 import { revalidateTenant } from "@/lib/revalidate";
-import { clienteFiscal, clienteValidacionSat, clienteValidacionSatLog } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import {
+  clienteDomicilio,
+  clienteFiscal,
+  clienteValidacionSat,
+  clienteValidacionSatLog,
+} from "@/lib/db/schema";
+import { and, eq } from "drizzle-orm";
 import { getCatalogosSat, precargarCp } from "@/lib/data/sat";
 import {
   validarExpediente,
@@ -139,6 +144,64 @@ export async function guardarExpedienteFiscal(
             actualizadoEn: new Date(),
           },
         });
+
+      /*
+        ── EL DOMICILIO FISCAL, CON EL MISMO CÓDIGO POSTAL. SIEMPRE. ────────
+
+        El CP se captura UNA vez y alimenta los dos sitios: `cliente_fiscal.
+        cp_fiscal`, que es el que se timbra, y el domicilio de tipo `fiscal`.
+        No hay dos campos que puedan discrepar porque no hay dos campos.
+
+        Es la parte que faltaba y la que hacía rara la pantalla: el código
+        postal fiscal vivía en el bloque fiscal y la calle en la ficha de la
+        organización, que es el domicilio COMERCIAL —donde se entrega—. Dos
+        domicilios en dos sitios, y el de entrega a un clic del que se timbra.
+
+        Del domicilio entero, el CFDI 4.0 solo lleva el código postal. Los demás
+        campos se guardan porque son los de la Constancia y porque el día que
+        haga falta una Carta Porte ya estarán.
+      */
+      const calle = texto(formData, "calle");
+      const colonia = texto(formData, "colonia");
+      const municipio = texto(formData, "municipio");
+      const estado = texto(formData, "estado");
+      const numExterior = texto(formData, "numExterior");
+      const numInterior = texto(formData, "numInterior");
+
+      const [domPrevio] = await tx
+        .select({ id: clienteDomicilio.id })
+        .from(clienteDomicilio)
+        .where(
+          and(
+            eq(clienteDomicilio.organizationId, organizationId),
+            eq(clienteDomicilio.tipo, "fiscal"),
+          ),
+        )
+        .limit(1);
+
+      const campos = {
+        calle,
+        numExterior,
+        numInterior,
+        colonia,
+        municipio,
+        estado,
+        // No sale del formulario: sale de lo que se acaba de validar. Así el
+        // domicilio fiscal no puede quedarse con un CP distinto del que se
+        // timbra ni aunque alguien manipule el envío.
+        cp: n.cpFiscal,
+      };
+
+      if (domPrevio) {
+        await tx
+          .update(clienteDomicilio)
+          .set(campos)
+          .where(eq(clienteDomicilio.id, domPrevio.id));
+      } else {
+        await tx
+          .insert(clienteDomicilio)
+          .values({ organizationId, tipo: "fiscal", esDefault: true, ...campos });
+      }
 
       /*
         ── LA VALIDACIÓN CADUCA CON EL DATO ────────────────────────────────

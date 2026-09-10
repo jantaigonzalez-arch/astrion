@@ -244,6 +244,19 @@ saldo se calculará.
 Un cliente puede tener varios: `fiscal`, `envio`, `facturacion`, `sucursal`.
 **Solo puede haber uno fiscal**, y la base lo garantiza.
 
+**El domicilio fiscal se captura con los datos fiscales, no con la ficha de la
+organización.** Es una corrección deliberada: al principio el código postal
+fiscal vivía en el bloque fiscal y la calle en la ficha de la organización —que
+es el domicilio COMERCIAL, donde se entrega—. Dos domicilios en dos pantallas, y
+el de entrega a un clic del que se timbra: es exactamente cómo se acaba mandando
+el CP de la bodega en una factura.
+
+**El código postal se captura UNA vez** y alimenta los dos sitios:
+`cliente_fiscal.cp_fiscal`, que es el que se timbra, y `cliente_domicilio.cp` del
+domicilio de tipo `fiscal`. No hay dos campos que puedan discrepar porque no hay
+dos campos — y el CP del domicilio no sale del formulario, sale de lo que se
+acaba de validar, así que no se pueden separar ni manipulando el envío.
+
 Los campos son los del nodo `Domicilio` del SAT: calle, número exterior e
 interior, colonia, localidad, municipio, estado, CP, país, referencia y entre
 calles.
@@ -560,11 +573,35 @@ regímenes que lo admiten. Escribirla a mano se equivoca —y el resultado es
 justamente el `CFDI40158` que la tabla existe para evitar— y se queda vieja,
 porque el SAT la cambia sin avisar.
 
-**Las tablas existen y están vacías**, y eso es correcto: las migraciones crean
+**Las tablas existen y llegan vacías**, y eso es correcto: las migraciones crean
 la forma, los datos se cargan desde los archivos oficiales del Anexo 20. No se
 siembran valores «de referencia» porque **un catálogo fiscal a medias es peor que
 uno vacío**: vacío, el sistema dice que no puede validar; a medias, valida mal y
 con aplomo.
+
+### Cómo se cargan ✅
+
+Del Anexo 20 del SAT, hoja «catCFDI». Se descarga el XLS y se exporta cada hoja a
+CSV con el nombre de su catálogo (`c_RegimenFiscal.csv`, `c_UsoCFDI.csv`…).
+
+```bash
+npm run sat:catalogos -- --dir ~/Descargas/catCFDI            # ENSAYO
+npm run sat:catalogos -- --dir ~/Descargas/catCFDI --aplicar
+```
+
+**Ensayo por omisión**: sin `--aplicar` no escribe nada — lee, cuenta y avisa de
+lo que no entiende. Los archivos que falten se saltan con un aviso; no hace falta
+tenerlos todos.
+
+Un catálogo se **reemplaza**, no se acumula: si el SAT quitó una clave, dejarla
+la seguiría ofreciendo en altas nuevas.
+
+**Lo que no entiende, lo dice** (regla 9 de `AGENTS.md`). Un uso que cita un
+régimen inexistente, una colonia con un CP que no está, una columna que falta:
+todo sale en el reporte. Y si falta la columna «Régimen Fiscal Receptor», lo dice
+con todas las letras: la matriz no se puede derivar y el `CFDI40158` seguirá sin
+comprobarse. No se inventa un «todos con todos», que parecería una comprobación
+sin serlo.
 
 `sat_catalogo` registra qué hay cargado, de qué archivo, con qué hash y en qué
 versión, para que «¿contra qué catálogo se validó esta factura?» tenga respuesta
@@ -618,15 +655,19 @@ manual de usuario no documente pantallas inexistentes:
 | Falta | Estado |
 |---|---|
 | `ValidadorFiscal` (PAC, portal masivo, mock) | Puerto descrito, adaptadores sin escribir |
-| Cargador `npm run sat:catalogos` | Las tablas existen y están **vacías** |
-| Formulario por pestañas | Sin construir |
-| Acciones de servidor de alta y edición | Sin construir |
+| Cargador `npm run sat:catalogos` | ✅ **construido**; las tablas siguen vacías hasta que se corra con los archivos del SAT |
+| Formulario del expediente fiscal | ✅ **construido**, en «Editar organización» |
+| Formulario por pestañas completo | Sin construir (hoy son dos tarjetas: comercial y fiscal) |
 | API REST de clientes | Sin construir |
 | Importación / exportación CSV | Sin construir |
 | Bloqueo por lista 69-B | La columna existe, nadie la lee |
 | Traslado del padrón (`clientes:adoptar`) | Sin construir |
 | Lectura del QR de la Constancia | Sin construir |
 
-**Hoy se puede:** guardar y validar un expediente desde código, con todas las
-reglas fiscales funcionando y probadas.
-**Hoy no se puede:** hacerlo desde una pantalla, ni consultar al SAT.
+**Hoy se puede:** capturar el expediente fiscal desde «Editar organización» con
+todas las reglas funcionando, ver su estado en la lista y en la ficha, y cargar
+los catálogos del SAT.
+
+**Hoy no se puede:** consultar al SAT. El semáforo no puede llegar a «Validado»
+por ningún camino automático — solo cambiando el estado a mano en la base—,
+porque el `ValidadorFiscal` no está escrito.

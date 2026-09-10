@@ -149,6 +149,36 @@ async function main() {
       (await q("cliente_validacion_sat", `where organization_id='${ORG}' and resultado='no_validado'`)) === 1,
     );
 
+    /* ── 3b · el domicilio fiscal NO puede tener otro código postal ───── */
+    console.log("\nEL DOMICILIO FISCAL COMPARTE EL CP QUE SE TIMBRA");
+    ok(
+      "guardar el expediente crea su domicilio fiscal",
+      (await q("cliente_domicilio", `where organization_id='${ORG}' and tipo='fiscal'`)) === 1,
+    );
+    const cpsIguales = async () => {
+      const [r0] = await sql.unsafe(
+        `select f.cp_fiscal, d.cp from ${ESQUEMA}.cliente_fiscal f
+           join ${ESQUEMA}.cliente_domicilio d
+             on d.organization_id = f.organization_id and d.tipo = 'fiscal'
+          where f.organization_id = '${ORG}'`,
+      );
+      const x = r0 as unknown as { cp_fiscal: string; cp: string } | undefined;
+      return Boolean(x) && x!.cp_fiscal === x!.cp;
+    };
+    ok("y con el MISMO código postal", await cpsIguales());
+
+    /*
+      Y no se puede separar ni mandando otro a propósito.
+
+      El CP del domicilio no sale del formulario: sale de lo que se acaba de
+      validar. Se comprueba enviando un `cp` distinto en el envío —que es lo que
+      haría alguien manipulando la petición— y exigiendo que no cuele.
+    */
+    const fd = forma({ ...BUENO, calle: "Prueba 100" });
+    fd.set("cp", "99999");
+    r = await guardarExpedienteFiscal({ ok: false }, fd);
+    ok("un CP suelto en el envío no separa los dos", r.ok === true && (await cpsIguales()));
+
     /* ── 4 · el veredicto caduca al cambiar un dato ───────────────────── */
     console.log("\nUN «VÁLIDO» NO SOBREVIVE A UN CAMBIO DE DATOS");
     await sql.unsafe(

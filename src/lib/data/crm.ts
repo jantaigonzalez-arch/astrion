@@ -4,6 +4,7 @@ import type { Orden } from "@/lib/listado";
 import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
 import {
+  clienteDomicilio,
   clienteFiscal,
   clienteValidacionSat,
   contracts,
@@ -571,7 +572,40 @@ export async function getExpedienteFiscal(organizationId: string) {
     .where(eq(clienteFiscal.organizationId, organizationId))
     .limit(1);
 
-  return fila ?? null;
+  if (!fila) return null;
+
+  /*
+    El domicilio fiscal viene con el expediente, no aparte.
+
+    Es la respuesta a una pregunta razonable: si el código postal fiscal vive en
+    el bloque fiscal, ¿dónde vive la calle? La calle NO se timbra —de todo el
+    domicilio, el CFDI 4.0 solo lleva el código postal— pero es el domicilio que
+    aparece en la Constancia, y separarlo del dato que sí se timbra es cómo se
+    acaba capturando el de entrega sin darse cuenta.
+
+    Se guarda en `cliente_domicilio` con tipo `fiscal`, del que la base garantiza
+    que hay UNO como mucho por cliente (índice único parcial).
+  */
+  const [domicilio] = await db
+    .select({
+      calle: clienteDomicilio.calle,
+      numExterior: clienteDomicilio.numExterior,
+      numInterior: clienteDomicilio.numInterior,
+      colonia: clienteDomicilio.colonia,
+      municipio: clienteDomicilio.municipio,
+      estado: clienteDomicilio.estado,
+      cp: clienteDomicilio.cp,
+    })
+    .from(clienteDomicilio)
+    .where(
+      and(
+        eq(clienteDomicilio.organizationId, organizationId),
+        eq(clienteDomicilio.tipo, "fiscal"),
+      ),
+    )
+    .limit(1);
+
+  return { ...fila, domicilio: domicilio ?? null };
 }
 
 export type ExpedienteFiscal = NonNullable<Awaited<ReturnType<typeof getExpedienteFiscal>>>;

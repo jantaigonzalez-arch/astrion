@@ -46,6 +46,15 @@ export type ExpedienteDefaults = {
   numRegIdTrib: string | null;
   curp: string | null;
   usoCfdiDefault: string | null;
+  /** El domicilio de la Constancia. Solo su CP se timbra; el resto se guarda igual. */
+  domicilio: {
+    calle: string | null;
+    numExterior: string | null;
+    numInterior: string | null;
+    colonia: string | null;
+    municipio: string | null;
+    estado: string | null;
+  } | null;
 };
 
 export type OpcionSat = { clave: string; descripcion: string };
@@ -250,22 +259,106 @@ export function ExpedienteFiscalForm({
         </div>
 
         <div>
-          <Label htmlFor="cpFiscal">Código postal fiscal</Label>
-          <Input
-            id="cpFiscal"
-            name="cpFiscal"
-            defaultValue={defaults.cpFiscal ?? ""}
-            maxLength={5}
-            inputMode="numeric"
-            className="font-mono"
-            placeholder="64000"
-          />
-          <p className="mt-1 text-xs text-muted-foreground">
-            El de la Constancia, <strong>no</strong> el de entrega.
+          <Label htmlFor="usoCfdiHueco" className="opacity-0">
+            .
+          </Label>
+          <p className="mt-2 text-xs text-muted-foreground">
+            El régimen tiene que ser el de la Constancia. No el que parezca
+            razonable: el SAT lo contrasta.
           </p>
-          <Aviso campo="cp_fiscal" />
         </div>
       </div>
+
+      {/*
+        ── EL DOMICILIO FISCAL VA AQUÍ, CON LOS DATOS FISCALES ─────────────
+
+        Estaba en la ficha de la organización, junto al domicilio comercial —el
+        de entrega—, y el código postal fiscal estaba aquí. Dos domicilios en
+        dos pantallas, y el de entrega a un clic del que se timbra: es
+        exactamente cómo se acaba mandando el CP de la bodega en una factura.
+
+        Ahora el código postal se captura UNA vez, aquí, y alimenta los dos
+        sitios: lo que se timbra y el domicilio fiscal guardado. No hay dos
+        campos que puedan discrepar porque no hay dos campos.
+
+        Del domicilio entero, el CFDI 4.0 solo lleva el CÓDIGO POSTAL. Lo demás
+        se guarda porque es lo que dice la Constancia y porque el día que haga
+        falta una Carta Porte ya estará.
+      */}
+      <fieldset className="rounded-xl border border-border p-4">
+        <legend className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Domicilio fiscal
+        </legend>
+
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div>
+            <Label htmlFor="cpFiscal">Código postal</Label>
+            <Input
+              id="cpFiscal"
+              name="cpFiscal"
+              defaultValue={defaults.cpFiscal ?? ""}
+              maxLength={5}
+              inputMode="numeric"
+              className="font-mono"
+              placeholder="64000"
+            />
+            <p className="mt-1 text-xs text-warning">
+              Es el único dato del domicilio que viaja en la factura. El de la
+              Constancia, <strong>no</strong> el de entrega.
+            </p>
+            <Aviso campo="cp_fiscal" />
+          </div>
+          <div className="sm:col-span-2">
+            <Label htmlFor="calle">Calle</Label>
+            <Input id="calle" name="calle" defaultValue={defaults.domicilio?.calle ?? ""} />
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-4">
+          <div>
+            <Label htmlFor="numExterior">Núm. exterior</Label>
+            <Input
+              id="numExterior"
+              name="numExterior"
+              defaultValue={defaults.domicilio?.numExterior ?? ""}
+              maxLength={55}
+            />
+          </div>
+          <div>
+            <Label htmlFor="numInterior">Núm. interior</Label>
+            <Input
+              id="numInterior"
+              name="numInterior"
+              defaultValue={defaults.domicilio?.numInterior ?? ""}
+              maxLength={55}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Label htmlFor="colonia">Colonia</Label>
+            <Input id="colonia" name="colonia" defaultValue={defaults.domicilio?.colonia ?? ""} />
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="municipio">Municipio o alcaldía</Label>
+            <Input
+              id="municipio"
+              name="municipio"
+              defaultValue={defaults.domicilio?.municipio ?? ""}
+            />
+          </div>
+          <div>
+            <Label htmlFor="estado">Estado</Label>
+            <Input id="estado" name="estado" defaultValue={defaults.domicilio?.estado ?? ""} />
+          </div>
+        </div>
+
+        <p className="mt-3 text-xs text-muted-foreground">
+          Este es el domicilio de la Constancia. El domicilio donde se entrega o se
+          da servicio se captura en la ficha de la organización.
+        </p>
+      </fieldset>
 
       <div>
         <Label htmlFor="usoCfdiDefault">Uso de CFDI por omisión</Label>

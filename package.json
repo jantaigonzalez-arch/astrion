@@ -26,7 +26,8 @@
     "check:requisitions": "tsx --tsconfig tsconfig.scripts.json scripts/check-requisitions.ts",
     "db:seed:orders": "tsx --tsconfig tsconfig.scripts.json scripts/seed-orders.ts",
     "sync:prod": "bash scripts/sync-desde-prod.sh",
-    "deploy:prod": "bash scripts/desplegar-prod.sh"
+    "deploy:prod": "bash scripts/desplegar-prod.sh",
+    "sat:catalogos": "tsx --tsconfig tsconfig.scripts.json scripts/sat-catalogos.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",

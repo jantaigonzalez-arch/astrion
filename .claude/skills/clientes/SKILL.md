@@ -69,12 +69,18 @@ distinto de lo que escribió.
 Y lo que **no** hay que quitar: acentos y `Ñ`. El padrón los tiene, y quitarlos
 provoca el mismo rechazo que se intenta evitar.
 
-### 2 · El CP fiscal no es el CP de entrega
+### 2 · El CP fiscal no es el CP de entrega, y el domicilio fiscal va con él
 
 `Receptor@DomicilioFiscalReceptor` es el código postal **de la Constancia** —el
 de la matriz—, no el de la bodega a la que se entrega. Por eso `cp_fiscal` vive
 en `cliente_fiscal` y no en `cliente_domicilio`: si estuvieran juntos, alguien
 acabaría timbrando el de envío.
+
+El domicilio fiscal se captura **dentro del bloque fiscal**, no en la ficha de
+la organización —que es el domicilio comercial, donde se entrega—. Y el código
+postal se captura UNA vez: alimenta `cliente_fiscal.cp_fiscal` y el
+`cliente_domicilio` de tipo `fiscal`, de modo que no pueden discrepar. El CP del
+domicilio no sale del formulario, sale de lo que se acaba de validar.
 
 **Una sucursal no tiene domicilio fiscal propio.** El SAT no conoce sucursales,
 conoce RFC. Si `matriz_id` está puesto, el CP que se timbra es el de la matriz,
@@ -181,11 +187,27 @@ error a la vista— es lo bastante desconcertante como para dejarlo escrito.
 
 ---
 
+## Cargar los catálogos del SAT
+
+```bash
+npm run sat:catalogos -- --dir ~/Descargas/catCFDI            # ENSAYO
+npm run sat:catalogos -- --dir ~/Descargas/catCFDI --aplicar
+```
+
+Sin `--aplicar` no escribe nada. La matriz uso↔régimen se DERIVA de la columna
+«Régimen Fiscal Receptor» de `c_UsoCFDI`; si esa columna falta, el cargador lo
+dice y la matriz se queda sin derivar — no inventa un «todos con todos», que
+parecería una comprobación sin serlo.
+
+Mientras las tablas estén vacías, el formulario cae a campos de texto y las
+validaciones que dependen de un catálogo salen como ADVERTENCIA. Eso es correcto
+y no hay que «arreglarlo» sembrando valores a mano.
+
 ## Lo que todavía no existe
 
 No lo des por hecho al leer lo de arriba: el `ValidadorFiscal` (puerto descrito,
-adaptadores sin escribir), el cargador `npm run sat:catalogos` (las tablas
-existen y están **vacías**), la UI por pestañas, la importación CSV con dry-run,
+adaptadores sin escribir — el semáforo NO puede llegar a «Validado» por ningún
+camino automático), la UI por pestañas completa, la importación CSV con dry-run,
 el bloqueo por lista 69-B, y `npm run clientes:adoptar`, que es el traslado de
 las 147 organizaciones con RFC al expediente — deliberadamente fuera de la
 migración, porque ninguna tiene régimen fiscal y darlas por altas las marcaría

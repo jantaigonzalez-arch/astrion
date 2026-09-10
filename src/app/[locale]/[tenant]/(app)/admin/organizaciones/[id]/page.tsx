@@ -519,6 +519,35 @@ export default async function OrganizationDetailPage({
                 {fiscal.numRegIdTrib && (
                   <Dato etiqueta="Registro tributario" valor={fiscal.numRegIdTrib} mono />
                 )}
+                {/*
+                  El domicilio fiscal, en el bloque fiscal y no en el de Datos.
+
+                  Aquél es el domicilio COMERCIAL: donde se entrega y donde va
+                  el técnico. Éste es el de la Constancia. Enseñarlos juntos
+                  sería invitar a confundirlos, que es exactamente cómo acaba
+                  timbrándose el código postal de la bodega.
+                */}
+                {fiscal.domicilio &&
+                  (fiscal.domicilio.calle || fiscal.domicilio.colonia) && (
+                    <div className="border-t border-border pt-2">
+                      <dt className="text-muted-foreground">Domicilio fiscal</dt>
+                      <dd className="mt-0.5 text-right">
+                        {[
+                          [fiscal.domicilio.calle, fiscal.domicilio.numExterior]
+                            .filter(Boolean)
+                            .join(" "),
+                          fiscal.domicilio.numInterior
+                            ? `int. ${fiscal.domicilio.numInterior}`
+                            : null,
+                          fiscal.domicilio.colonia,
+                          fiscal.domicilio.municipio,
+                          fiscal.domicilio.estado,
+                        ]
+                          .filter(Boolean)
+                          .join(", ")}
+                      </dd>
+                    </div>
+                  )}
                 {fiscal.lista69b !== "no_listado" && (
                   <div className="rounded-md bg-destructive/10 p-2 text-destructive">
                     Lista 69-B: {fiscal.lista69b}
