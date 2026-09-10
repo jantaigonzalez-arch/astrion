@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 const { densidadGuardada, DENSIDADES } = await import("./src/lib/densidad.ts");
-const { reglasDeAncho } = await import("./src/components/portal/anchos-de-columna.tsx");
+const { reglasDeAncho, firmaDeColumnas } = await import("./src/components/portal/anchos-de-columna.tsx");
 const { reglasDeColumnas } = await import("./src/components/portal/columnas-visibles.tsx");
 
 let fallos = 0;
@@ -181,6 +181,35 @@ check("un nombre de tabla que no es un identificador no produce selector",
 const conTirador = sh(
   `grep -rho 'data-tabla="[a-z]*"' src/app --include='*.tsx' | sort -u | wc -l`);
 check("las tablas de trabajo lo piden", Number(conTirador) >= 8, `${conTirador} tablas`);
+
+/* ── Los anchos caducan cuando la tabla cambia ─────────────────────────── */
+/*
+  EL FALLO QUE ESTO CIERRA.
+
+  Los anchos se guardan por POSICIÓN, que es lo único que entiende un selector
+  de CSS. Al añadirle dos columnas a Clientes, cada ancho guardado pasó a
+  gobernar una columna distinta de aquella en la que se midió, y la última se
+  quedó sin ninguno. Con `table-layout: fixed`, una columna sin ancho declarado
+  se reparte lo que sobra e ignora su contenido: «General» se veía como «Ge…».
+
+  Nada avisaba. El recuerdo seguía siendo válido para el navegador y absurdo
+  para la tabla, y vivía en `localStorage`, donde nadie mira.
+*/
+console.log("\n── los anchos guardados caducan si cambian las columnas ──");
+
+const antes = ["Cliente", "Teléfono", "Contactos"];
+const despues = ["Cliente", "Estado fiscal", "RFC", "Teléfono", "Contactos"];
+
+check("una tabla con las mismas columnas da la misma firma",
+  firmaDeColumnas(antes) === firmaDeColumnas(["Cliente", "Teléfono", "Contactos"]));
+check("añadir una columna cambia la firma",
+  firmaDeColumnas(antes) !== firmaDeColumnas(despues));
+check("reordenarlas también, aunque sean las mismas",
+  firmaDeColumnas(["Cliente", "Teléfono"]) !== firmaDeColumnas(["Teléfono", "Cliente"]));
+check("y el número de columnas entra en la firma",
+  firmaDeColumnas(antes).startsWith("3:"));
+check("los espacios de más no cuentan: no invalidan por un cambio de maquetado",
+  firmaDeColumnas([" Cliente ", "Teléfono"]) === firmaDeColumnas(["Cliente", "Teléfono"]));
 
 /* ── Elegir columnas ───────────────────────────────────────────────────── */
 /*

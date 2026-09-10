@@ -50,14 +50,70 @@ const AGARRE = 9;
 
 type Anchos = Record<number, number>;
 
-function leer(tabla: string): Anchos {
+/**
+ * LA FIRMA DE LAS COLUMNAS, Y POR QUÉ HACE FALTA.
+ *
+ * ── EL FALLO QUE ESTO ARREGLA, Y QUE COSTÓ TRES RONDAS ENCONTRAR ──────────
+ *
+ * Los anchos se guardan POR POSICIÓN (`nth-child(3)`), que es lo único que un
+ * selector de CSS entiende. Mientras la tabla no cambie, correcto.
+ *
+ * Pero la tabla cambia. A Clientes se le añadieron dos columnas fiscales en
+ * mitad de la fila, y a partir de ese momento cada ancho guardado se aplicó a
+ * una columna DISTINTA de aquella en la que se midió: el ancho del teléfono
+ * pasó a gobernar el estado fiscal, y la última columna se quedó sin ninguno.
+ *
+ * Y con `table-layout: fixed`, una columna sin ancho declarado se lleva lo que
+ * sobra a partes iguales con las demás e ignora su contenido. El resultado en
+ * pantalla era «General» convertido en «Ge…» y «Sin asignar» en «Sin as» — una
+ * tabla ilegible que nadie relacionaba con haber arrastrado un borde meses
+ * antes, porque el recuerdo estaba en `localStorage` y no había forma de verlo.
+ *
+ * NADA AVISABA. El estado guardado seguía siendo válido para el navegador y
+ * absurdo para la tabla.
+ *
+ * ── LA FIRMA ──────────────────────────────────────────────────────────────
+ *
+ * Se guarda junto a los anchos el texto de los encabezados. Si al leer no
+ * coincide —cambió una columna, se añadió, se quitó, se reordenaron— los anchos
+ * se DESCARTAN y la tabla vuelve a repartirse sola. Se pierde una preferencia;
+ * se gana que la tabla nunca quede rota por un recuerdo caduco.
+ *
+ * Es la misma idea que el `hash_datos` del expediente fiscal: un dato derivado
+ * que deja de cuadrar cuando cambia aquello de lo que salió, y que por eso puede
+ * invalidarse solo en vez de esperar a que alguien se dé cuenta.
+ */
+export function firmaDeColumnas(encabezados: readonly string[]): string {
+  return `${encabezados.length}:${encabezados.map((t) => t.trim()).join("|")}`;
+}
+
+type Guardado = { v: 2; firma: string; anchos: Anchos };
+
+function leer(tabla: string, firma: string): Anchos {
   try {
     const crudo = window.localStorage.getItem(CLAVE(tabla));
     if (!crudo) return {};
     const v = JSON.parse(crudo) as unknown;
     if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+
+    const g = v as Partial<Guardado>;
+    /*
+      El formato viejo —un objeto de anchos a secas, sin versión ni firma— se
+      descarta y se borra. No se puede saber a qué columnas correspondía, y
+      aplicarlo es exactamente el fallo que esto viene a cerrar. Quien tuviera
+      anchos guardados los pierde UNA vez.
+    */
+    if (g.v !== 2 || typeof g.firma !== "string" || !g.anchos) {
+      window.localStorage.removeItem(CLAVE(tabla));
+      return {};
+    }
+    if (g.firma !== firma) {
+      window.localStorage.removeItem(CLAVE(tabla));
+      return {};
+    }
+
     const out: Anchos = {};
-    for (const [k, ancho] of Object.entries(v as Record<string, unknown>)) {
+    for (const [k, ancho] of Object.entries(g.anchos as Record<string, unknown>)) {
       const i = Number(k);
       if (Number.isInteger(i) && i >= 0 && typeof ancho === "number" && ancho >= MINIMO) {
         out[i] = Math.round(ancho);
@@ -72,9 +128,10 @@ function leer(tabla: string): Anchos {
   }
 }
 
-function guardar(tabla: string, anchos: Anchos) {
+function guardar(tabla: string, anchos: Anchos, firma: string) {
   try {
-    window.localStorage.setItem(CLAVE(tabla), JSON.stringify(anchos));
+    const g: Guardado = { v: 2, firma, anchos };
+    window.localStorage.setItem(CLAVE(tabla), JSON.stringify(g));
   } catch {
     /* Ver `leer`: no poder recordar no puede romper el arrastre. */
   }
@@ -154,9 +211,15 @@ export function AnchosDeColumna() {
         .join("\n");
     }
 
+    /** El texto de los encabezados de una tabla, para firmar sus anchos. */
+    const rotulos = (t: HTMLTableElement) =>
+      Array.from(t.querySelectorAll<HTMLElement>("thead th")).map(
+        (h) => (h.textContent ?? "").trim(),
+      );
+
     for (const t of tablas()) {
       const nombre = t.dataset.tabla;
-      if (nombre) estado.set(nombre, leer(nombre));
+      if (nombre) estado.set(nombre, leer(nombre, firmaDeColumnas(rotulos(t))));
     }
     repintar();
 
@@ -209,7 +272,7 @@ export function AnchosDeColumna() {
         window.removeEventListener("pointermove", mover);
         window.removeEventListener("pointerup", soltar);
         window.removeEventListener("pointercancel", soltar);
-        guardar(nombre, anchos);
+        guardar(nombre, anchos, firmaDeColumnas(rotulos(tabla)));
       };
       window.addEventListener("pointermove", mover);
       window.addEventListener("pointerup", soltar);
