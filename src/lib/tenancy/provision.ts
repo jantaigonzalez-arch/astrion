@@ -85,9 +85,29 @@ export function prepareStatements(rawSql: string): string[] {
           PLATFORM_TABLES.has(table) ? match : `REFERENCES "${table}"`,
       );
 
-      // (3) Los tipos se comparten; el segundo inquilino los encuentra hechos.
-      if (/^CREATE TYPE /i.test(out)) {
-        const body = out.replace(/;\s*$/, "");
+      /*
+        (3) Los tipos se comparten; el segundo inquilino los encuentra hechos.
+
+        ── POR QUÉ SE MIRA DESPUÉS DE LOS COMENTARIOS ──────────────────────
+
+        La comprobación era `/^CREATE TYPE /` sobre el texto entero, y eso
+        dependía de que la sentencia empezara EXACTAMENTE por ahí. Una migración
+        escrita a mano con su cabecera de comentarios —que es como se escriben
+        todas en esta casa— hace que el texto empiece por `--`, la envoltura no
+        se aplica, y el resultado es un fallo que no se parece a la causa: el
+        PRIMER inquilino migra bien y el segundo muere con «type already
+        exists», porque para él el tipo ya lo creó el primero.
+
+        Pasó al escribir la 0034, y el síntoma era desconcertante: `evoelution`
+        con las tablas nuevas y `acme` y `bajio` clavados en la 0033, sin un
+        error a la vista porque el script de siembra no lo propagaba.
+
+        Se ignoran los comentarios de línea del principio, que es lo único que
+        puede haber antes de la sentencia de verdad.
+      */
+      const sinCabecera = out.replace(/^(?:\s*--[^\n]*\n)+/, "").trimStart();
+      if (/^CREATE TYPE /i.test(sinCabecera)) {
+        const body = sinCabecera.replace(/;\s*$/, "");
         out = `DO $do$ BEGIN ${body}; EXCEPTION WHEN duplicate_object THEN NULL; END $do$`;
       }
       return out;

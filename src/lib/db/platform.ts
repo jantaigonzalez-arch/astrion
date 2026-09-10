@@ -10,8 +10,11 @@ import {
   bigserial,
   bigint,
   integer,
+  numeric,
+  date,
   index,
   uniqueIndex,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { RUTAS_DE_PRIMER_NIVEL } from "@/lib/tenancy/host";
 
@@ -700,3 +703,184 @@ export const RESERVED_SLUGS = new Set([
   // Las rutas de primer nivel, en forma de slug.
   ...RUTEO_RESERVADO,
 ]);
+
+/* ═══════════════════════ CATÁLOGOS DEL SAT (Anexo 20) ═══════════════════════ */
+
+/**
+ * LOS CATÁLOGOS `c_*` DEL SAT, UNA SOLA VEZ PARA TODA LA PLATAFORMA.
+ *
+ * ── POR QUÉ ESTAS SÍ VIVEN EN `public` ─────────────────────────────────────
+ *
+ * Arriba está escrita la regla que sostiene el aislamiento: ninguna tabla de
+ * NEGOCIO existe en `public`, porque una consulta sin inquilino activo tiene
+ * que fallar en vez de devolver datos de otro cliente. Estas tablas no la
+ * rompen, y conviene entender por qué antes de mirarlas con recelo.
+ *
+ * No contienen datos de nadie. Son los catálogos que el SAT publica para todo
+ * México: la lista de regímenes fiscales, la de usos de CFDI, los códigos
+ * postales del país. Leerlos sin inquilino activo no filtra nada, porque no hay
+ * nada de ningún inquilino dentro. Son tan públicos como el calendario.
+ *
+ * Y duplicarlos por empresa sería absurdo: `c_CodigoPostal` trae unos 95 000
+ * renglones y `c_Colonia` unos 145 000. Con veinte inquilinos serían casi cinco
+ * millones de filas idénticas, actualizables una por una cada vez que el SAT
+ * publica una versión nueva. El aislamiento no gana nada y el mantenimiento lo
+ * pierde todo.
+ *
+ * ── SE CARGAN, NO SE ESCRIBEN A MANO ───────────────────────────────────────
+ *
+ * El SAT los actualiza periódicamente y son la fuente de verdad. `sat_catalogo`
+ * registra qué versión está cargada y de dónde salió, para que la pregunta
+ * «¿contra qué catálogo se validó esta factura?» tenga respuesta dentro del
+ * sistema y no dependa de la memoria de alguien.
+ *
+ * MIENTRAS UN CATÁLOGO NO ESTÉ CARGADO, LO QUE DEPENDE DE ÉL NO SE VALIDA Y SE
+ * DICE. Es la regla 9 de AGENTS.md aplicada aquí: degradar en silencio —dar por
+ * bueno un código postal porque no hay contra qué comprobarlo— es exactamente
+ * cómo se llega a una factura rechazada creyendo que el sistema la revisó.
+ */
+
+/** Qué catálogos hay cargados, en qué versión y de dónde salieron. */
+export const satCatalogo = pgTable("sat_catalogo", {
+  /** `c_RegimenFiscal`, `c_UsoCFDI`, `c_CodigoPostal`… tal como los nombra el SAT. */
+  nombre: varchar("nombre", { length: 40 }).primaryKey(),
+  /**
+   * La versión que publica el SAT en la propia hoja del Anexo 20.
+   *
+   * Texto y no número: el SAT versiona con fechas y con formas como «4.0» o
+   * «Publicado 15/07/2025», y normalizarlo a un número perdería justo lo que
+   * hace falta para saber si el archivo que alguien acaba de cargar es más
+   * nuevo que el que ya estaba.
+   */
+  version: varchar("version", { length: 60 }),
+  /** Cuántos renglones entraron. Sirve para ver de un vistazo una carga a medias. */
+  filas: integer("filas").notNull().default(0),
+  /** El archivo del que salió, para poder reproducir la carga. */
+  origen: text("origen"),
+  /** sha256 del archivo: dos cargas con el mismo hash son la misma carga. */
+  hashArchivo: varchar("hash_archivo", { length: 64 }),
+  cargadoEn: timestamp("cargado_en", { withTimezone: true }).notNull().defaultNow(),
+  cargadoPor: uuid("cargado_por"),
+});
+
+/**
+ * `c_RegimenFiscal`. Va en `Receptor@RegimenFiscalReceptor`.
+ *
+ * `aplicaFisica` y `aplicaMoral` salen de las dos columnas del catálogo oficial
+ * y NO se deducen de la clave: no hay regla en el número que diga a quién
+ * aplica —616 y 626 aplican a las dos— y deducirla sería inventar.
+ */
+export const satRegimenFiscal = pgTable("sat_regimen_fiscal", {
+  clave: varchar("clave", { length: 3 }).primaryKey(),
+  descripcion: text("descripcion").notNull(),
+  aplicaFisica: boolean("aplica_fisica").notNull(),
+  aplicaMoral: boolean("aplica_moral").notNull(),
+  /**
+   * Vigencia. Un régimen dado de baja NO se borra: deja de ofrecerse en altas
+   * nuevas y sigue resolviendo para los CFDI históricos que lo llevan. Borrarlo
+   * dejaría comprobantes ya timbrados apuntando a la nada.
+   */
+  vigenciaInicio: date("vigencia_inicio"),
+  vigenciaFin: date("vigencia_fin"),
+});
+
+/** `c_UsoCFDI`. Va en `Receptor@UsoCFDI`. */
+export const satUsoCfdi = pgTable("sat_uso_cfdi", {
+  clave: varchar("clave", { length: 5 }).primaryKey(),
+  descripcion: text("descripcion").notNull(),
+  aplicaFisica: boolean("aplica_fisica").notNull(),
+  aplicaMoral: boolean("aplica_moral").notNull(),
+  vigenciaInicio: date("vigencia_inicio"),
+  vigenciaFin: date("vigencia_fin"),
+});
+
+/**
+ * LA MATRIZ USO ↔ RÉGIMEN. Fuente de verdad del error CFDI40158.
+ *
+ * ── NO SE ESCRIBE A MANO. NUNCA ────────────────────────────────────────────
+ *
+ * Se DERIVA de la columna «Régimen Fiscal Receptor» de `c_UsoCFDI`, donde el
+ * SAT lista, por cada uso, los regímenes que lo admiten. Escribirla a mano tiene
+ * dos problemas y los dos son graves: se equivoca —y el resultado es justamente
+ * el rechazo que esta tabla existe para evitar— y se queda vieja, porque el SAT
+ * la cambia sin avisar a nadie.
+ *
+ * Un ejemplo de lo que hay dentro, para que se entienda qué se está modelando:
+ * `D01` (deducciones personales) solo lo admiten regímenes de persona física, y
+ * `CN01` (nómina) solo el 605. Ofrecerle `D01` a una persona moral en un
+ * `<select>` es programar un rechazo para dentro de tres pantallas.
+ */
+export const satUsoRegimen = pgTable(
+  "sat_uso_regimen",
+  {
+    usoCfdi: varchar("uso_cfdi", { length: 5 })
+      .notNull()
+      .references(() => satUsoCfdi.clave, { onDelete: "cascade" }),
+    regimenFiscal: varchar("regimen_fiscal", { length: 3 })
+      .notNull()
+      .references(() => satRegimenFiscal.clave, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.usoCfdi, t.regimenFiscal] }),
+    index("sat_uso_regimen_regimen_idx").on(t.regimenFiscal),
+  ],
+);
+
+/**
+ * `c_CodigoPostal`. Unos 95 000 renglones.
+ *
+ * El CP es `Receptor@DomicilioFiscalReceptor`, el único dato de domicilio que
+ * viaja del receptor en un CFDI 4.0. Que exista en este catálogo es condición
+ * necesaria —no suficiente: que EXISTA y que sea EL DE ESE RFC son dos
+ * preguntas, y la segunda la contesta el SAT.
+ */
+export const satCodigoPostal = pgTable("sat_codigo_postal", {
+  cp: varchar("cp", { length: 5 }).primaryKey(),
+  estado: varchar("estado", { length: 3 }),
+  municipio: varchar("municipio", { length: 3 }),
+  localidad: varchar("localidad", { length: 2 }),
+  /** Necesario para la hora de emisión de un comprobante en otra franja horaria. */
+  husoHorario: text("huso_horario"),
+  /** Estímulo de franja fronteriza, cuando aplica. Afecta tasas, no al receptor. */
+  estimuloFranjaFronteriza: numeric("estimulo_franja_fronteriza", { precision: 4, scale: 3 }),
+});
+
+/**
+ * `c_Colonia`. Unos 145 000 renglones, uno por colonia y código postal.
+ *
+ * Existe por un motivo de captura, no de timbrado: la colonia NO viaja en el
+ * CFDI. Sirve para que el formulario ofrezca un `<select>` con las colonias de
+ * ese CP en vez de un campo libre, que es lo que hace SAE y lo que elimina de
+ * raíz el domicilio con colonia inexistente.
+ */
+export const satColonia = pgTable(
+  "sat_colonia",
+  {
+    cp: varchar("cp", { length: 5 })
+      .notNull()
+      .references(() => satCodigoPostal.cp, { onDelete: "cascade" }),
+    clave: varchar("clave", { length: 4 }).notNull(),
+    nombre: text("nombre").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.cp, t.clave] })],
+);
+
+/** `c_FormaPago`: 01 efectivo, 03 transferencia, 99 por definir… */
+export const satFormaPago = pgTable("sat_forma_pago", {
+  clave: varchar("clave", { length: 2 }).primaryKey(),
+  descripcion: text("descripcion").notNull(),
+  vigenciaInicio: date("vigencia_inicio"),
+  vigenciaFin: date("vigencia_fin"),
+});
+
+/** `c_MetodoPago`: PUE (una exhibición) y PPD (parcialidades o diferido). */
+export const satMetodoPago = pgTable("sat_metodo_pago", {
+  clave: varchar("clave", { length: 3 }).primaryKey(),
+  descripcion: text("descripcion").notNull(),
+});
+
+/** `c_Pais`. Clave de tres letras; `MEX` para México. */
+export const satPais = pgTable("sat_pais", {
+  clave: varchar("clave", { length: 3 }).primaryKey(),
+  descripcion: text("descripcion").notNull(),
+});

@@ -225,6 +225,13 @@
       "when": 1788986879724,
       "tag": "0031_cupo_realista",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1789004950054,
+      "tag": "0032_catalogos_sat",
+      "breakpoints": true
     }
   ]
 }

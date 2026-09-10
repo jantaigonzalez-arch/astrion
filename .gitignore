@@ -113,6 +113,7 @@ scripts/_dash.ts
 !probe-beta.mts
 !probe-borrar-modelos.mts
 !probe-campana.mts
+!probe-clientes-fiscal.mts
 !probe-e2e.mts
 !probe-equipos.mts
 !probe-formularios.mts

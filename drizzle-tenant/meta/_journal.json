@@ -239,6 +239,13 @@
       "when": 1788927618400,
       "tag": "0033_prospectos_por_rol",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1789005032660,
+      "tag": "0034_cliente_expediente_fiscal",
+      "breakpoints": true
     }
   ]
 }

@@ -116,6 +116,31 @@ services/
                              #   puerto publicado. README propio.
 ```
 
+## Clientes y CFDI 4.0
+
+El catálogo de clientes no es un directorio comercial: es un **expediente fiscal
+validado**. Desde CFDI 4.0 el SAT contrasta el nodo `Receptor` contra su padrón
+al timbrar, así que un dato mal capturado no produce una advertencia — produce
+un rechazo del PAC.
+
+**El contrato de datos completo está en [`docs/CLIENTES.md`](docs/CLIENTES.md).**
+Lo esencial:
+
+- La entidad cliente es `crm_organizations`; el expediente fiscal cuelga de ella
+  en tablas 1:1 (`cliente_fiscal`, `cliente_comercial`, `cliente_validacion_sat`)
+  para que lo comercial no contamine lo que se timbra.
+- Los catálogos del SAT (`sat_*`) viven en `public`, una vez para toda la
+  plataforma: son públicos y duplicarlos por inquilino serían millones de filas
+  idénticas.
+- `nombre_fiscal` guarda el nombre **normalizado** —mayúsculas, sin régimen de
+  capital— porque es lo que el SAT tiene en la Constancia. De las 147
+  organizaciones con RFC del padrón de SAE, 75 se habrían rechazado por esto.
+- La validación devuelve **tres** respuestas: error, advertencia y ok. Sin los
+  catálogos cargados, un régimen inexistente no es inválido — es *incomprobable*,
+  y el sistema lo dice.
+- El veredicto del SAT caduca solo: `hash_datos` resume los cuatro campos que el
+  SAT contrasta, y al cambiar cualquiera el estado vuelve a `no_validado`.
+
 ## Sistema de tickets
 
 - Folio legible `EVO-000123`, categorías, prioridad y estados

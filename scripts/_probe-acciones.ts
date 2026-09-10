@@ -75,7 +75,7 @@ async function main() {
   const cuantos = async (esquema: string, tabla: string, filtro = "") => {
     const q = `select count(*)::int as n from ${esquema}.${tabla} ${filtro}`;
     const [r] = await sql.unsafe(q);
-    return Number((r as { n: number }).n);
+    return Number((r as unknown as { n: number }).n);
   };
 
   /* ── El usuario con el que se firmará ──────────────────────────────────── */
@@ -308,7 +308,7 @@ async function main() {
     const factura = await pagar.createSupplierInvoice(
       { ok: false },
       forma({
-        supplierId: String((prov as { id: string }).id),
+        supplierId: String((prov as unknown as { id: string }).id),
         subtotal: "1000",
         taxTotal: "160",
         total: "1160",
@@ -325,13 +325,13 @@ async function main() {
   */
     const [guardada] = await sql.unsafe(
       `select created_by_id from ${ESQUEMA}.supplier_invoices
-     where supplier_id = '${String((prov as { id: string }).id)}' limit 1`,
+     where supplier_id = '${String((prov as unknown as { id: string }).id)}' limit 1`,
     );
     ok(
       "y queda firmada por el usuario de la sesión",
-      String((guardada as { created_by_id: string | null })?.created_by_id) ===
+      String((guardada as unknown as { created_by_id: string | null })?.created_by_id) ===
         ACTOR,
-      `esperado ${ACTOR.slice(0, 8)}…, guardado ${String((guardada as { created_by_id: string | null })?.created_by_id).slice(0, 8)}…`,
+      `esperado ${ACTOR.slice(0, 8)}…, guardado ${String((guardada as unknown as { created_by_id: string | null })?.created_by_id).slice(0, 8)}…`,
     );
 
     /* ── 5 · AISLAMIENTO ───────────────────────────────────────────────────── */

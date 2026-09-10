@@ -3404,3 +3404,329 @@ export const viaticoExpensesRelations = relations(viaticoExpenses, ({ one }) => 
     relationName: "gasto_reclasifica",
   }),
 }));
+
+/* ═══════════════════ EL CLIENTE COMO EXPEDIENTE FISCAL ═══════════════════ */
+
+/**
+ * EL CATÁLOGO DE CLIENTES DEJA DE SER UN DIRECTORIO.
+ *
+ * ── QUÉ CAMBIA, Y POR QUÉ NO HAY UNA TABLA `cliente` NUEVA ─────────────────
+ *
+ * La entidad cliente YA EXISTE: es `crm_organizations`, con 161 organizaciones
+ * traídas del padrón de SAE, su RFC y su domicilio desarmado nodo por nodo del
+ * SAT. Crear una tabla `cliente` al lado habría partido el padrón en dos y
+ * obligado a mantener sincronizadas dos verdades sobre la misma empresa.
+ *
+ * Lo que faltaba no era la entidad: era el EXPEDIENTE FISCAL. En CFDI 4.0 el
+ * SAT contrasta el nodo `Receptor` contra su padrón al timbrar, así que un
+ * cliente no está «dado de alta» cuando tiene nombre y teléfono, sino cuando
+ * sus cuatro datos fiscales coinciden con la Constancia de Situación Fiscal.
+ *
+ * ── POR QUÉ EN TABLAS APARTE Y NO EN COLUMNAS NUEVAS ───────────────────────
+ *
+ * Porque lo fiscal y lo comercial tienen dueños, ritmos y consecuencias
+ * distintas. El límite de crédito lo mueve quien vende y equivocarse cuesta
+ * cartera; el régimen fiscal lo mueve quien factura y equivocarse cuesta que no
+ * salga la factura. Mezclados en una tabla ancha, un `update` de descuentos
+ * toca la misma fila que el RFC, la misma auditoría y los mismos permisos.
+ *
+ * Separados, cada bloque se puede leer solo —facturación no necesita cargar el
+ * crédito— y `cliente_fiscal` habla el vocabulario del SAT en vez del de la
+ * casa, que es lo que hace que quien arme el XML no tenga que traducir nada.
+ *
+ *   crm_organizations   identidad y CRM      (ya existía; no se toca)
+ *   cliente_fiscal      1:1  el expediente que se timbra
+ *   cliente_comercial   1:1  crédito, descuentos, contabilidad
+ *   cliente_domicilio   1:N  fiscal, envío, facturación, sucursal
+ *   cliente_validacion_sat  1:1  el veredicto del SAT, como ESTADO
+ *   cliente_campo_libre 1:N  lo que cada empresa quiera añadir
+ */
+
+/**
+ * Qué clase de receptor es, porque hay tres y se comportan distinto.
+ *
+ * No es una etiqueta descriptiva: DECIDE qué se valida. Un cliente `normal` se
+ * contrasta contra el padrón; `publico_general` y `extranjero` llevan RFC
+ * genérico, no están en el padrón y validarlos daría siempre «no existe».
+ */
+export const clienteRolFiscal = pgEnum("cliente_rol_fiscal", [
+  "normal",
+  "publico_general",
+  "extranjero",
+]);
+
+/** Se DERIVA del RFC (12 → moral, 13 → física). Nunca se le pregunta a nadie. */
+export const personaTipo = pgEnum("persona_tipo", ["fisica", "moral", "extranjero"]);
+
+export const clienteFiscal = pgTable(
+  "cliente_fiscal",
+  {
+    organizationId: uuid("organization_id")
+      .primaryKey()
+      .references(() => crmOrganizations.id, { onDelete: "cascade" }),
+
+    rolFiscal: clienteRolFiscal("rol_fiscal").notNull().default("normal"),
+    personaTipo: personaTipo("persona_tipo").notNull(),
+
+    /** `Receptor@Rfc`. Sin espacios ni guiones, en mayúsculas. */
+    rfc: varchar("rfc", { length: 13 }).notNull(),
+
+    /**
+     * `Receptor@Nombre`, YA NORMALIZADO: mayúsculas, sin régimen de capital.
+     *
+     * Es lo que se timbra, y tiene que coincidir EXACTAMENTE con la Constancia.
+     * Que aquí viva el nombre normalizado y no el comercial es la diferencia
+     * entre facturar y recibir un CFDI40147: de las 147 organizaciones con RFC
+     * que trajo el padrón de SAE, 75 llevaban el régimen de capital dentro del
+     * nombre y se habrían rechazado al primer intento.
+     */
+    nombreFiscal: text("nombre_fiscal").notNull(),
+
+    /**
+     * Lo que tecleó la persona, intacto.
+     *
+     * No es redundante: es lo único que permite explicarle a alguien por qué el
+     * sistema va a timbrar algo distinto de lo que escribió. Sin esto, la
+     * normalización parece que se come datos.
+     */
+    nombreCapturado: text("nombre_capturado"),
+
+    /** Solo persona física, y opcional. El SAT no la exige para facturar. */
+    curp: varchar("curp", { length: 18 }),
+
+    /** `Receptor@RegimenFiscalReceptor`, clave de `c_RegimenFiscal`. */
+    regimenFiscal: varchar("regimen_fiscal", { length: 3 }).notNull(),
+
+    /**
+     * `Receptor@DomicilioFiscalReceptor`: el CP FISCAL, cinco dígitos.
+     *
+     * Vive aquí y no en `cliente_domicilio` a propósito. Es el único dato de
+     * domicilio que viaja en el comprobante, y tenerlo dentro del bloque fiscal
+     * hace imposible el error clásico: mandar el CP de la bodega a la que se
+     * entrega en vez del de la matriz que está en la Constancia. El domicilio
+     * de entrega existe, pero por definición NO alimenta este campo.
+     */
+    cpFiscal: varchar("cp_fiscal", { length: 5 }).notNull(),
+
+    /** `Receptor@ResidenciaFiscal`. Obligatorio si el RFC es el genérico extranjero. */
+    paisResidencia: varchar("pais_residencia", { length: 3 }).notNull().default("MEX"),
+    /** `Receptor@NumRegIdTrib`: el tax ID del país de residencia. Solo extranjeros. */
+    numRegIdTrib: varchar("num_reg_id_trib", { length: 40 }),
+
+    /* ── Valores por omisión al facturar. Sugerencias, no ataduras ──────── */
+    usoCfdiDefault: varchar("uso_cfdi_default", { length: 5 }),
+    formaPagoDefault: varchar("forma_pago_default", { length: 2 }),
+    metodoPagoDefault: varchar("metodo_pago_default", { length: 3 }),
+    monedaDefault: varchar("moneda_default", { length: 3 }).notNull().default("MXN"),
+
+    /**
+     * La sucursal de otra ficha. Su CP fiscal es SIEMPRE el de la matriz.
+     *
+     * Una sucursal con domicilio propio sigue siendo el mismo contribuyente: el
+     * SAT no conoce sucursales, conoce RFC. El domicilio de la sucursal va a
+     * `cliente_domicilio` y no toca el nodo fiscal.
+     */
+    matrizId: uuid("matriz_id").references((): AnyPgColumn => clienteFiscal.organizationId, {
+      onDelete: "set null",
+    }),
+
+    creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
+    actualizadoEn: timestamp("actualizado_en", { withTimezone: true }).notNull().defaultNow(),
+    actualizadoPor: uuid("actualizado_por"),
+  },
+  (t) => [
+    index("cliente_fiscal_rfc_idx").on(t.rfc),
+    /*
+      RFC + CP, y NO el RFC solo.
+
+      Un mismo RFC puede estar dos veces con toda legitimidad: matriz y sucursal
+      con condiciones comerciales distintas. Lo que no puede repetirse es el
+      mismo contribuyente en el mismo domicilio fiscal, que ya es la misma ficha
+      capturada dos veces. Un único índice sobre el RFC habría bloqueado el caso
+      legítimo, que es el más frecuente en un ERP.
+    */
+    uniqueIndex("cliente_fiscal_rfc_cp_idx").on(t.rfc, t.cpFiscal),
+    index("cliente_fiscal_matriz_idx").on(t.matrizId),
+  ],
+);
+
+/** Lo comercial: no bloquea el timbrado y por eso no vive con lo fiscal. */
+export const clienteComercial = pgTable(
+  "cliente_comercial",
+  {
+    organizationId: uuid("organization_id")
+      .primaryKey()
+      .references(() => crmOrganizations.id, { onDelete: "cascade" }),
+
+    /** La clave de negocio visible. Diez caracteres, como en SAE. */
+    clave: varchar("clave", { length: 10 }),
+    clasificacion: varchar("clasificacion", { length: 5 }),
+    zona: varchar("zona", { length: 10 }),
+
+    manejaCredito: boolean("maneja_credito").notNull().default(false),
+    diasCredito: smallint("dias_credito").notNull().default(0),
+    limiteCredito: numeric("limite_credito", { precision: 14, scale: 2 }).notNull().default("0"),
+    descuentoPct: numeric("descuento_pct", { precision: 5, scale: 2 }).notNull().default("0"),
+
+    cuentaContable: varchar("cuenta_contable", { length: 30 }),
+
+    /*
+      NO HAY COLUMNA `saldo`, y es deliberado.
+
+      El saldo de un cliente es la suma de lo que se le facturó menos lo que
+      pagó: un DERIVADO de cuentas por cobrar. Guardarlo aquí crea un número que
+      hay que mantener sincronizado a mano y que, el día que se desincronice
+      —y se desincroniza—, nadie sabe si el bueno es éste o el de los
+      movimientos. Es el mismo criterio que ya sigue `payables`, donde el saldo
+      sale del ledger y no de un campo.
+
+      Cuando exista el módulo de cuentas por cobrar, el saldo se calcula. Hasta
+      entonces, no existe: una columna en cero que nadie alimenta miente más que
+      una columna ausente.
+    */
+
+    actualizadoEn: timestamp("actualizado_en", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("cliente_comercial_clave_idx").on(t.clave)],
+);
+
+/**
+ * Los domicilios del cliente. Uno fiscal, los demás operativos.
+ *
+ * El fiscal existe aquí por completitud —para imprimirlo en un contrato o
+ * mandarle a alguien— pero la verdad de lo que se timbra es
+ * `cliente_fiscal.cp_fiscal`. Si los dos discrepan, manda el bloque fiscal, y
+ * hay una comprobación que lo vigila: ver `probe-clientes-fiscal`.
+ */
+export const domicilioTipo = pgEnum("domicilio_tipo", [
+  "fiscal",
+  "envio",
+  "facturacion",
+  "sucursal",
+]);
+
+export const clienteDomicilio = pgTable(
+  "cliente_domicilio",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => crmOrganizations.id, { onDelete: "cascade" }),
+    tipo: domicilioTipo("tipo").notNull(),
+    esDefault: boolean("es_default").notNull().default(false),
+
+    /* Los campos del nodo `Domicilio` del SAT, con su nombre del SAT. */
+    calle: text("calle"),
+    numExterior: varchar("num_exterior", { length: 55 }),
+    numInterior: varchar("num_interior", { length: 55 }),
+    colonia: text("colonia"),
+    /** Clave de `c_Colonia`, cuando se eligió del catálogo y no se tecleó. */
+    coloniaClave: varchar("colonia_clave", { length: 4 }),
+    municipio: text("municipio"),
+    localidad: text("localidad"),
+    estado: text("estado"),
+    cp: varchar("cp", { length: 5 }).notNull(),
+    pais: varchar("pais", { length: 3 }).notNull().default("MEX"),
+    referencia: text("referencia"),
+    entreCalles: text("entre_calles"),
+
+    creadoEn: timestamp("creado_en", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("cliente_domicilio_org_idx").on(t.organizationId),
+    /*
+      Un solo domicilio FISCAL por cliente, garantizado por la base.
+
+      Índice único PARCIAL: la restricción vale solo para `tipo = 'fiscal'`, de
+      modo que puede haber tantos de envío como haga falta. Con un único normal
+      habría hecho falta un disparador, y un disparador es una regla que solo
+      existe en producción y que ninguna prueba ve venir.
+    */
+    uniqueIndex("cliente_domicilio_fiscal_unico_idx")
+      .on(t.organizationId)
+      .where(sql`tipo = 'fiscal'`),
+  ],
+);
+
+/**
+ * EL VEREDICTO DEL SAT, GUARDADO COMO ESTADO Y NO COMO EVENTO.
+ *
+ * ── POR QUÉ ESTADO ─────────────────────────────────────────────────────────
+ *
+ * Porque la pregunta que se hace todo el mundo es «¿este cliente está listo
+ * para facturarse?», y esa se contesta con UN valor actual, no recorriendo una
+ * bitácora. La bitácora existe igual, en `cliente_validacion_sat_log`, para
+ * cuando la pregunta sea «¿desde cuándo está mal?».
+ *
+ * ── EL HASH ES LO QUE IMPIDE LA MENTIRA MÁS PELIGROSA ──────────────────────
+ *
+ * Un «válido» de hace tres meses sobre un nombre que alguien editó ayer es peor
+ * que no haber validado nunca: da confianza sin respaldo. `hashDatos` guarda el
+ * sha256 de los cuatro campos que el SAT contrasta; cuando cualquiera cambia,
+ * el hash deja de cuadrar y el estado vuelve a `no_validado` por sí solo.
+ *
+ * Se compara en la capa de dominio y no con un disparador de base a propósito:
+ * un disparador no puede probarse desde un probe sin levantar Postgres, y esta
+ * es la regla que más falta hace poder probar.
+ */
+export const validacionResultado = pgEnum("validacion_resultado", [
+  "no_validado",
+  "valido",
+  "rfc_inexistente",
+  "nombre_no_coincide",
+  "cp_no_coincide",
+  "error",
+]);
+
+/** Lista 69-B: contribuyentes con operaciones presuntamente inexistentes. */
+export const lista69bEstatus = pgEnum("lista69b_estatus", [
+  "no_listado",
+  "presunto",
+  "desvirtuado",
+  "definitivo",
+  "sentencia_favorable",
+]);
+
+export const clienteValidacionSat = pgTable("cliente_validacion_sat", {
+  organizationId: uuid("organization_id")
+    .primaryKey()
+    .references(() => crmOrganizations.id, { onDelete: "cascade" }),
+  resultado: validacionResultado("resultado").notNull().default("no_validado"),
+  lista69b: lista69bEstatus("lista_69b").notNull().default("no_listado"),
+  validadoEn: timestamp("validado_en", { withTimezone: true }),
+  /** `pac` | `portal_sat_masiva` | `manual`. Quién dio el veredicto. */
+  origen: varchar("origen", { length: 30 }),
+  /** La respuesta cruda del validador, para poder discutir un veredicto raro. */
+  payloadCrudo: jsonb("payload_crudo"),
+  /** sha256(rfc|nombre|cp|regimen). Ver la nota de arriba. */
+  hashDatos: varchar("hash_datos", { length: 64 }),
+});
+
+/** La misma forma, pero append-only. Aquí no se hace `update` jamás. */
+export const clienteValidacionSatLog = pgTable(
+  "cliente_validacion_sat_log",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    organizationId: uuid("organization_id").notNull(),
+    resultado: validacionResultado("resultado").notNull(),
+    lista69b: lista69bEstatus("lista_69b").notNull(),
+    validadoEn: timestamp("validado_en", { withTimezone: true }).notNull().defaultNow(),
+    origen: varchar("origen", { length: 30 }),
+    payloadCrudo: jsonb("payload_crudo"),
+    hashDatos: varchar("hash_datos", { length: 64 }),
+  },
+  (t) => [index("cliente_validacion_log_org_idx").on(t.organizationId, desc(t.validadoEn))],
+);
+
+/** Lo que cada empresa necesita y nadie más: el `CLIE_CLIB` de SAE. */
+export const clienteCampoLibre = pgTable(
+  "cliente_campo_libre",
+  {
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => crmOrganizations.id, { onDelete: "cascade" }),
+    clave: varchar("clave", { length: 60 }).notNull(),
+    valor: text("valor"),
+  },
+  (t) => [primaryKey({ columns: [t.organizationId, t.clave] })],
+);
