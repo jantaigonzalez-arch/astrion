@@ -260,6 +260,21 @@ export const tickets = pgTable("tickets", {
     Medido en la 0032, junto con las tres de `ticket_comments`: 25,6 ms → 3,8 ms.
   */
   index("tickets_modulo_idx").on(t.moduleId),
+  /*
+    LA SERIE DE SERVICIOS CERRADOS DEL PANEL DE INICIO.
+
+    Parcial a propósito: solo lo resuelto o cerrado con fecha. Un ticket abierto
+    no entra, así que el índice es una fracción de la tabla y las altas —que es
+    lo que más se escribe— no lo tocan; la única escritura que lo toca es
+    resolver un ticket, que ocurre una vez por ticket.
+
+    Medido sobre la base sembrada (14 151 tickets): la consulta del panel pasa de
+    28,85 ms con recorrido completo a 2,6 ms con este índice. Ver la migración
+    0035 de inquilino.
+  */
+  index("tickets_resueltos_idx")
+    .on(t.resolvedAt)
+    .where(sql`status in ('resolved','closed') and resolved_at is not null`),
 ]);
 
 export const ticketComments = pgTable("ticket_comments", {

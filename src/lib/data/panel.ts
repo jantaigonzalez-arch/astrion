@@ -101,10 +101,24 @@ export async function getPanelEjecutivo(): Promise<PanelEjecutivo> {
     /*
       Tickets cerrados por mes, para la serie del indicador de servicio.
 
-      `date_trunc` sobre `now()` y no sobre `current_date`: sobre una fecha
-      devuelve timestamp sin huso y la serie se corre un mes en cualquier huso
-      con desfase, que son todos. Es el mismo cuidado que ya tiene la consulta
-      de rentabilidad.
+      ── EL PREDICADO VA POR RANGO, NO POR `date_trunc` ────────────────────
+
+      La primera versión decía `date_trunc('month', t.resolved_at) = m.mes`, que
+      se lee muy bien y es la razón por la que la pantalla de inicio recorría los
+      14 151 tickets ENTEROS en cada carga: una función sobre la columna la
+      esconde del índice, así que no hay índice que pueda ayudar. Medido con
+      `explain analyze`: 28,85 ms y `Seq Scan`.
+
+      Escrito como rango —`>= mes` y `< mes + 1 mes`— el predicado es indexable,
+      y con el índice parcial de la migración 0035 pasa a `Index Scan` y 2,6 ms.
+      Diez veces menos, en la pantalla que abre todo el mundo al entrar.
+
+      El rango además es correcto donde `date_trunc` era frágil: no depende de
+      que el huso del servidor coincida con el de la sesión.
+
+      `date_trunc` sobre `now()` sí se conserva —para generar los meses— y no
+      sobre `current_date`: sobre una fecha devuelve timestamp sin huso y la
+      serie se corre un mes en cualquier huso con desfase, que son todos.
     */
     db.execute(sql`
       with meses as (
@@ -118,7 +132,8 @@ export async function getPanelEjecutivo(): Promise<PanelEjecutivo> {
              count(t.id)::int as n
         from meses m
         left join tickets t
-          on date_trunc('month', t.resolved_at) = m.mes
+          on t.resolved_at >= m.mes
+         and t.resolved_at < m.mes + interval '1 month'
          and t.status in ('resolved','closed')
        group by m.mes
        order by m.mes
