@@ -40,6 +40,7 @@
  */
 import "./_env";
 import { readFileSync, existsSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
 import path from "node:path";
 import { createHash } from "node:crypto";
 
@@ -135,16 +136,19 @@ async function main() {
     const i = args.indexOf(`--${n}`);
     return i >= 0 ? args[i + 1] : undefined;
   };
-  const dir = flag("dir");
-  const aplicar = args.includes("--aplicar");
+  /*
+    Por omisión, los catálogos que vienen EN EL REPOSITORIO.
 
-  if (!dir) {
-    console.error(
-      "Falta --dir con la carpeta de los CSV del SAT.\n\n" +
-        "  npm run sat:catalogos -- --dir ~/Descargas/catCFDI\n",
-    );
-    process.exit(1);
-  }
+    Están versionados y comprimidos —1,8 MB los siete— así que llegan a
+    cualquier entorno con el `git pull` que ya hace el despliegue. No hay que
+    copiar nada a ningún servidor, y git contesta la pregunta que importa:
+    contra QUÉ versión del catálogo validó producción.
+
+    `--dir` sigue existiendo para cargar una descarga recién bajada del SAT antes
+    de versionarla.
+  */
+  const dir = flag("dir") ?? "datos/sat";
+  const aplicar = args.includes("--aplicar");
 
   const { getDb } = await import("../src/lib/db");
   const {
@@ -165,16 +169,37 @@ async function main() {
 
   /** Lee un archivo si está; si no, lo dice y sigue. */
   const abrir = (nombre: string) => {
-    const p = path.join(dir, nombre);
+    /*
+      Se acepta el CSV tal cual y comprimido.
+
+      Los del repositorio van en `.gz` porque el de códigos postales pasa de
+      14,5 MB a 303 KB —comprime cuarenta y tres veces, es texto repetitivo— y
+      así los siete juntos ocupan 1,8 MB en el árbol de trabajo en vez de
+      veintiuno. Se descomprime en memoria: `zlib` viene con Node, así que no
+      añade una dependencia al candado.
+    */
+    const gz = path.join(dir, `${nombre}.gz`);
+    const plano = path.join(dir, nombre);
+    const p = existsSync(gz) ? gz : plano;
+
     if (!existsSync(p)) {
       resumen.push({ catalogo: nombre.replace(/\.csv$/, ""), filas: 0, nota: "no está" });
       return null;
     }
-    const crudo = readFileSync(p);
+
+    const bytes = readFileSync(p);
+    const texto = p.endsWith(".gz") ? gunzipSync(bytes).toString("utf8") : bytes.toString("utf8");
+
     return {
-      filas: leerCsv(crudo.toString("utf8")),
-      hash: createHash("sha256").update(crudo).digest("hex"),
-      origen: nombre,
+      filas: leerCsv(texto),
+      /*
+        El hash es el del archivo TAL COMO ESTÁ EN DISCO, comprimido o no.
+        Sirve para saber si dos cargas fueron la misma carga, y comprimir el
+        mismo contenido dos veces no da el mismo byte — así que lo que se compara
+        es lo que se leyó, no lo que se dedujo.
+      */
+      hash: createHash("sha256").update(bytes).digest("hex"),
+      origen: path.basename(p),
     };
   };
 

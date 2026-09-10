@@ -43,6 +43,16 @@ COPY package.json tsconfig.json drizzle.config.ts drizzle.tenant.config.ts ./
 COPY drizzle ./drizzle
 COPY drizzle-tenant ./drizzle-tenant
 COPY scripts ./scripts
+# Los catálogos del SAT, versionados y comprimidos (1,8 MB los siete).
+#
+# Van EN LA IMAGEN a propósito. La alternativa era copiarlos al servidor a mano
+# cada vez, y entonces «¿contra qué versión del catálogo validó producción?» no
+# tendría respuesta dentro del sistema. Aquí la contesta git, y el cargador
+# guarda además el sha256 de cada archivo en `sat_catalogo`.
+#
+# Solo entran en ESTA imagen, no en la de la aplicación: los lee un script que
+# se corre a mano dos veces al año, no una petición.
+COPY datos ./datos
 # `src` entero y no solo `lib/db`: el aprovisionamiento importa el contexto de
 # inquilino, el esquema de negocio y el dominio (folios, eventos).
 COPY src ./src
