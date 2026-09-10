@@ -102,6 +102,22 @@ const VALORES = {
   // que van con el general. Ver `useOrdenLocal`.
   sla: (c: ClientListRow) => c.slaHours,
   responsable: (c: ClientListRow) => c.ownerName,
+  /*
+    ── ORDENAR POR ESTADO FISCAL ORDENA POR DISTANCIA A LA FACTURA ──────────
+
+    No alfabéticamente por la etiqueta —«Falta régimen y CP» iría antes que
+    «Sin RFC» y eso no significa nada—, sino por cuánto falta para poder
+    timbrarle. Ordenar de menor a mayor pone arriba lo que está listo; de mayor
+    a menor, lo que más trabajo pide. Las dos preguntas son reales y por eso la
+    columna se ordena en los dos sentidos.
+  */
+  fiscal: (c: ClientListRow) => {
+    if (c.rfcFiscal) return c.validacion === "valido" ? 0 : 1;
+    return c.taxId ? 2 : 3;
+  },
+  // El RFC ordena como texto: agrupa por las tres o cuatro letras iniciales,
+  // que es como se busca a una empresa cuando se tiene el RFC a mano.
+  rfc: (c: ClientListRow) => c.rfcFiscal ?? c.taxId,
 } as const;
 
 type CampoCliente = keyof typeof VALORES;
@@ -239,15 +255,28 @@ export function ClientsList({
                     Cliente
                   </ThLocal>
                   {/*
-                    Segunda columna, pegada al nombre y antes que el teléfono.
+                    DOS COLUMNAS, NO UNA CELDA CON CUATRO DATOS DENTRO.
 
-                    El orden de las columnas es una declaración de qué importa.
-                    El RFC vivía escondido bajo el nombre, concatenado con el
-                    giro y separado por un punto medio: estaba, y nadie lo veía.
-                    Para un ERP mexicano el estado fiscal de un cliente no es un
-                    detalle de su ficha, es lo que decide si se le puede cobrar.
+                    La primera versión metía estado, RFC, código postal y régimen
+                    en la misma celda, separados por puntos medios — que es
+                    exactamente el defecto que esta columna vino a corregir: el
+                    RFC estaba antes escondido bajo el nombre como «giro · RFC».
+                    Cambiar un empaquetado por otro no arregla nada.
+
+                    Una tabla es una rejilla: cada dato en su columna se puede
+                    ordenar, comparar en vertical y leer de un vistazo. Empaquetados
+                    en una celda no se puede hacer ninguna de las tres.
+
+                    Régimen y CP se van a la FICHA. Nadie recorre una lista de
+                    clientes buscando por régimen fiscal; son datos del
+                    expediente, y en la lista solo ocupan ancho.
                   */}
-                  <th className="px-4 py-3 font-medium">Fiscal</th>
+                  <ThLocal campo="fiscal" orden={orden} onPulsar={pulsar}>
+                    Estado fiscal
+                  </ThLocal>
+                  <ThLocal campo="rfc" orden={orden} onPulsar={pulsar}>
+                    RFC
+                  </ThLocal>
                   <th className="px-4 py-3 font-medium">Teléfono</th>
                   <ThLocal campo="contactos" orden={orden} onPulsar={pulsar} inicial="desc">
                     Contactos
@@ -321,47 +350,39 @@ export function ClientsList({
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="whitespace-nowrap px-4 py-3">
                       {(() => {
                         const e = estadoFiscal(c);
                         return (
-                          <div className="space-y-1" title={e.ayuda}>
+                          // `title` en el envoltorio: `Badge` no lo acepta, y
+                          // ampliar su API para una pantalla sería cambiarle la
+                          // forma a un componente que usan otras diez.
+                          <span title={e.ayuda}>
                             <Badge className={e.clase}>{e.texto}</Badge>
-                            {/*
-                              El RFC del expediente y el del padrón viejo se
-                              enseñan distinto A PROPÓSITO. El segundo va en
-                              gris y con nota: que exista un RFC no significa
-                              que se pueda facturar con él, y presentarlos igual
-                              es exactamente cómo alguien da por bueno un
-                              expediente que no lo está.
-                            */}
-                            {c.rfcFiscal ? (
-                              <p className="font-mono text-xs tabular-nums">
-                                {c.rfcFiscal}
-                                {c.cpFiscal && (
-                                  <span className="text-muted-foreground">
-                                    {" · CP "}
-                                    {c.cpFiscal}
-                                  </span>
-                                )}
-                                {c.regimenFiscal && (
-                                  <span className="text-muted-foreground">
-                                    {" · "}
-                                    {c.regimenFiscal}
-                                  </span>
-                                )}
-                              </p>
-                            ) : c.taxId ? (
-                              <p className="font-mono text-xs text-muted-foreground tabular-nums">
-                                {c.taxId}
-                                <span className="ml-1 font-sans not-italic">(del padrón)</span>
-                              </p>
-                            ) : (
-                              <p className="text-xs text-muted-foreground">Sin RFC</p>
-                            )}
-                          </div>
+                          </span>
                         );
                       })()}
+                    </td>
+                    {/*
+                      El RFC en su columna, y `tabular-nums` SÍ es lo correcto
+                      aquí: es una columna de códigos de la misma longitud que se
+                      leen en vertical, que es justo el caso para el que existen
+                      las cifras tabulares. Lo que no las quiere es un número
+                      grande y suelto, como el valor de una tarjeta de indicador.
+                    */}
+                    <td className="whitespace-nowrap px-4 py-3 font-mono text-xs tabular-nums">
+                      {c.rfcFiscal ? (
+                        c.rfcFiscal
+                      ) : c.taxId ? (
+                        // El del padrón, en gris: que exista un RFC no significa
+                        // que se pueda facturar con él, y presentarlos igual es
+                        // cómo alguien da por bueno un expediente que no lo está.
+                        <span className="text-muted-foreground" title="Del padrón de SAE, sin expediente fiscal">
+                          {c.taxId}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
                       {c.phone ? (
