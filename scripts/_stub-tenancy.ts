@@ -111,19 +111,30 @@ export async function logTenantAccess(_args: unknown) {
 }
 
 /**
- * El permiso, siempre concedido.
+ * El permiso. Concedido por omisión, denegable a propósito.
  *
  * Lo llaman TODAS las acciones de servidor antes de tocar nada, así que sin
- * esto ninguna se puede ejercitar desde un probe — que es la razón de que las
- * veintitantas acciones del repositorio no tengan una sola prueba.
+ * esto ninguna se puede ejercitar desde un probe.
  *
- * Devolver `true` a secas es correcto AQUÍ y sería un desastre en producción:
- * lo que un probe de acción comprueba es qué ESCRIBE, no a quién deja entrar.
- * Quién puede entrar se prueba contra la aplicación de verdad, con una sesión
- * de verdad, que es como se encontró el hueco de la pantalla de Usuarios.
+ * ── POR QUÉ SE PUEDE APAGAR ────────────────────────────────────────────────
+ *
+ * Porque un probe que solo puede correr con permiso comprueba media guardia. La
+ * mitad que importa —que la acción NO escriba cuando el permiso falta— exige
+ * poder decir que no, y una acción a la que nunca se le dice que no es una
+ * acción cuyo `if` del principio nadie ha ejecutado nunca.
+ *
+ *     PROBE_PUEDE=false   deniega TODO
+ *
+ * El valor por omisión no cambia: sin la variable, concede, que es lo que
+ * esperan los probes que ya existían.
+ *
+ * Sigue sin ser un modelo de permisos, y no debe serlo: quién puede entrar de
+ * verdad se prueba contra la aplicación con una sesión real, que es como se
+ * encontró el hueco de la pantalla de Usuarios. Esto solo da las dos respuestas
+ * que una acción necesita oír para que sus dos caminos se ejerciten.
  */
 export async function puedeEn(_modulo: string, _nivel: string): Promise<boolean> {
-  return true;
+  return process.env.PROBE_PUEDE !== "false";
 }
 
 /** El techo de conexiones, tal cual lo calcula el módulo real. */

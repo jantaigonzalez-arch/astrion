@@ -10,7 +10,16 @@ config({ path: ".env.local" });
 const { RUTAS_DE_PRIMER_NIVEL, esRutaDePlataforma } = await import("./src/lib/tenancy/host.ts");
 const { RESERVED_SLUGS } = await import("./src/lib/db/platform.ts");
 
-const ok = (l: string, c: boolean, e = "") => console.log(`${c ? "✓" : "✗"} ${l}${e ? ` — ${e}` : ""}`);
+/*
+  CUENTA los fallos. Antes solo los imprimía, y el `process.exit(0)` del final
+  corría igual hubiera cruces o no: una comprobación roja salía con éxito y el
+  CI la daba por buena. Se midió inyectando un fallo deliberado — salida 0.
+*/
+let fallos = 0;
+const ok = (l: string, c: boolean, e = "") => {
+  if (!c) fallos++;
+  console.log(`${c ? "✓" : "✗"} ${l}${e ? ` — ${e}` : ""}`);
+};
 
 // Las rutas REALES del árbol de `app`, leídas del disco: si mañana alguien
 // agrega una sección de primer nivel y no la declara, esto lo dice.
@@ -46,4 +55,5 @@ ok("los nombres de Postgres siguen reservados", RESERVED_SLUGS.has("public") && 
 // Las dos listas ya no pueden desalinearse: la de slugs deriva de la de rutas.
 const sinReservar = declaradas.filter((r) => !RESERVED_SLUGS.has(r.replaceAll("-", "_")));
 ok("toda ruta declarada tiene su slug reservado", sinReservar.length === 0, sinReservar.join(", ") || "");
-process.exit(0);
+console.log(fallos ? `\n❌ ${fallos} comprobación(es) fallaron\n` : "");
+process.exit(fallos ? 1 : 0);

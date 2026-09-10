@@ -24,8 +24,19 @@ const { eq, sql } = await import("drizzle-orm");
 
 const db = tenantDbFor(SCHEMA);
 
-const ok = (label: string, cond: boolean, extra = "") =>
+/*
+  CUENTA los fallos, no solo los imprime.
+
+  Durante meses esto solo hacía `console.log`, y el `process.exit(0)` del final
+  corría igual hubiera cruces o no: una comprobación podía ponerse roja en la
+  salida y el probe seguía saliendo con éxito, o sea que el CI la daba por
+  buena. Se midió inyectando un fallo deliberado — salida 0.
+*/
+let fallos = 0;
+const ok = (label: string, cond: boolean, extra = "") => {
+  if (!cond) fallos++;
   console.log(`${cond ? "✓" : "✗"} ${label}${extra ? ` — ${extra}` : ""}`);
+};
 
 // ---- montaje ----
 const [sup] = await db.insert(suppliers).values({
@@ -140,6 +151,10 @@ try {
   if (fallo) {
     console.error(`\n✗ el probe se interrumpió: ${fallo.message}`);
     console.error(fallo.stack);
+    process.exit(1);
+  }
+  if (fallos) {
+    console.error(`\n❌ ${fallos} comprobación(es) fallaron.`);
     process.exit(1);
   }
   process.exit(0);

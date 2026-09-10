@@ -18,7 +18,16 @@ const { getMonthlyClosed } = await import("./src/lib/data/crm-insights.ts");
 const { sql } = await import("drizzle-orm");
 
 const db = tenantDbFor(SCHEMA);
-const ok = (l: string, c: boolean, e = "") => console.log(`${c ? "✓" : "✗"} ${l}${e ? ` — ${e}` : ""}`);
+/*
+  CUENTA los fallos. Antes solo los imprimía, y el `process.exit(0)` del final
+  corría igual hubiera cruces o no: una comprobación roja salía con éxito y el
+  CI la daba por buena. Se midió inyectando un fallo deliberado — salida 0.
+*/
+let fallos = 0;
+const ok = (l: string, c: boolean, e = "") => {
+  if (!c) fallos++;
+  console.log(`${c ? "✓" : "✗"} ${l}${e ? ` — ${e}` : ""}`);
+};
 
 /** ¿La lista de `YYYY-MM` es consecutiva, sin saltos? */
 function consecutivos(meses: string[]): boolean {
@@ -66,4 +75,5 @@ if (!pipe) {
        filas.every((f) => Number(f.wonValue) >= 0 && Number.isInteger(f.wonCount)));
   }
 }
-process.exit(0);
+console.log(fallos ? `\n❌ ${fallos} comprobación(es) fallaron\n` : "");
+process.exit(fallos ? 1 : 0);
