@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { estadoFiscal } from "@/lib/cliente-fiscal";
 import { Link } from "@/lib/nav";
 import { Telefono } from "@/components/portal/telefono";
+import { ColumnasVisibles } from "@/components/portal/columnas-visibles";
 import { money } from "@/lib/crm";
 import { cn } from "@/lib/utils";
 
@@ -228,6 +229,24 @@ export function ClientsList({
               Sin cuenta de portal ({sinPortal})
             </button>
           )}
+
+          {/*
+            El selector de columnas, al final de la fila de filtros y separado
+            por `ml-auto`.
+
+            Va aquí y no sobre la tabla porque es lo mismo que los filtros: una
+            decisión sobre QUÉ se ve. Un control de la tabla flotando aparte
+            obliga a buscarlo, y el sitio donde alguien busca «ver menos» es
+            donde ya está eligiendo «ver solo los que tienen tickets».
+
+            Son doce columnas y no caben en una pantalla normal. La tabla se
+            desplaza —con su barra a la vista, que es una decisión anotada en
+            `globals.css`, no un descuido— y esto es el control para quien
+            prefiera menos columnas a más desplazamiento.
+          */}
+          <div className="ml-auto">
+            <ColumnasVisibles tabla="clientes" />
+          </div>
         </div>
       </Card>
 

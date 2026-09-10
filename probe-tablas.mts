@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 const { densidadGuardada, DENSIDADES } = await import("./src/lib/densidad.ts");
 const { reglasDeAncho } = await import("./src/components/portal/anchos-de-columna.tsx");
+const { reglasDeColumnas } = await import("./src/components/portal/columnas-visibles.tsx");
 
 let fallos = 0;
 const check = (l: string, c: boolean, e = "") => { if (!c) fallos++; console.log(`${c ? "✓" : "✗"} ${l}${e ? ` — ${e}` : ""}`); };
@@ -180,6 +181,28 @@ check("un nombre de tabla que no es un identificador no produce selector",
 const conTirador = sh(
   `grep -rho 'data-tabla="[a-z]*"' src/app --include='*.tsx' | sort -u | wc -l`);
 check("las tablas de trabajo lo piden", Number(conTirador) >= 8, `${conTirador} tablas`);
+
+/* ── Elegir columnas ───────────────────────────────────────────────────── */
+/*
+  Se comprueba sobre el CSS que produce la función, no sobre el archivo, por la
+  misma razón que los anchos: ahí vive la decisión y se puede ejercitar sin DOM.
+
+  El `nth-child` es 1-basado y el índice de columna 0-basado. Equivocarse en ese
+  desfase oculta la columna DE AL LADO, que es un fallo silencioso: la tabla se
+  ve bien, solo que falta otra cosa.
+*/
+console.log("\n── elegir qué columnas se ven ──");
+const cols = reglasDeColumnas("clientes", [2, 5]);
+check("la columna 2 se oculta como nth-child(3)", cols.includes("th:nth-child(3)"));
+check("y también su celda", cols.includes("td:nth-child(3)"));
+check("la columna 5 se oculta como nth-child(6)", cols.includes("th:nth-child(6)"));
+check("se oculta con display:none", cols.includes("display:none"));
+check("sin columnas ocultas no se produce ninguna regla",
+  reglasDeColumnas("clientes", []) === "");
+check("la primera columna nunca entra: es la identidad de la fila",
+  !reglasDeColumnas("clientes", [1, 2]).includes("nth-child(1)"));
+check("un nombre de tabla que no es un identificador no produce selector",
+  reglasDeColumnas('x"] , body {display:none} [z="', [1]) === "");
 
 console.log(fallos === 0 ? "\n✅ sin discrepancias" : `\n✗ ${fallos} fallos`);
 process.exit(fallos === 0 ? 0 : 1);
