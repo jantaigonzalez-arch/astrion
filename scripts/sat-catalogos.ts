@@ -181,14 +181,41 @@ async function main() {
   /**
    * Salta el preámbulo hasta dar con la fila de encabezados.
    *
-   * Las hojas del SAT traen a veces un título y una fila en blanco antes de los
-   * encabezados de verdad. Se busca la primera fila que contenga la columna
-   * clave en vez de suponer que es la primera: suponerlo cargaría el título
-   * como si fuera un renglón del catálogo.
+   * Las hojas del SAT traen un título, la versión del catálogo y una fila en
+   * blanco antes de los encabezados de verdad. Se busca la primera fila que
+   * contenga la columna clave en vez de suponer que es la primera: suponerlo
+   * cargaría el título como si fuera un renglón del catálogo.
+   *
+   * ── Y LA CABECERA PUEDE OCUPAR DOS FILAS ────────────────────────────────
+   *
+   * `c_UsoCFDI` pone «Aplica para tipo persona» en una fila y «Física / Moral»
+   * en la de abajo; `c_CodigoPostal` hace lo mismo con el huso horario. Leyendo
+   * solo la primera, esas columnas no se encuentran y el catálogo entero se
+   * queda sin cargar.
+   *
+   * Se detecta por la PRIMERA CELDA: en una sub-cabecera está vacía —la clave
+   * ya se escribió arriba— y en una fila de datos lleva el valor. Con esa regla
+   * las cuatro hojas que importan caen del lado correcto, y una hoja de una sola
+   * fila de cabecera no se ve afectada.
    */
   const encabezar = (filas: string[][], clave: string) => {
     const i = filas.findIndex((f) => columna(f, clave) >= 0);
-    return i < 0 ? null : { cab: filas[i], cuerpo: filas.slice(i + 1) };
+    if (i < 0) return null;
+
+    const siguiente = filas[i + 1] ?? [];
+    const esSubCabecera = !(siguiente[0] ?? "").trim() && siguiente.some((c) => (c ?? "").trim());
+
+    if (!esSubCabecera) return { cab: filas[i], cuerpo: filas.slice(i + 1) };
+
+    /*
+      Se fusionan las dos, y gana la de ABAJO cuando dice algo: es la específica
+      —«Física» bajo «Aplica para tipo persona»— y es la que hay que casar.
+    */
+    const ancho = Math.max(filas[i].length, siguiente.length);
+    const cab = Array.from({ length: ancho }, (_, j) =>
+      (siguiente[j] ?? "").trim() || (filas[i][j] ?? "").trim(),
+    );
+    return { cab, cuerpo: filas.slice(i + 2) };
   };
 
   const registrar = async (nombre: string, filas: number, origen: string, hash: string) => {
@@ -382,7 +409,12 @@ async function main() {
       const iE = columna(h.cab, "c_Estado");
       const iM = columna(h.cab, "c_Municipio");
       const iL = columna(h.cab, "c_Localidad");
-      const iH = columna(h.cab, "Huso Horario");
+      const iH = columna(
+        h.cab,
+        "Descripción del Huso Horario",
+        "Referencias del Huso Horario",
+        "Huso Horario",
+      );
       const iF = columna(h.cab, "Estímulo Franja Fronteriza", "Estimulo Franja Fronteriza");
 
       const vistos = new Set<string>();
