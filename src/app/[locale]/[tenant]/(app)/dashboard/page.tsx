@@ -10,6 +10,9 @@ import {
 } from "@/lib/data/tickets";
 import { getContracts } from "@/lib/data/contracts";
 import { Card } from "@/components/ui/card";
+import { FranjaAlertas, TarjetaKpi } from "@/components/portal/panel/panel-inicio";
+import { getPanelEjecutivo } from "@/lib/data/panel";
+import { MonthlyTrend } from "@/components/portal/charts";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
 import { StatusBadge, PriorityBadge } from "@/components/portal/badges";
@@ -177,9 +180,33 @@ export default async function DashboardPage({
         </Suspense>
       )}
 
-      <Suspense fallback={<StatCardsSkeleton />}>
-        <StatCards role={role} userId={session!.user.id} />
-      </Suspense>
+      {/*
+        ── EL ORDEN ES LA MITAD DEL DISEÑO ──────────────────────────────────
+
+        1. ALERTAS   lo que está mal AHORA y tiene dueño
+        2. INDICADORES   la salud del negocio, con tendencia y comparación
+        3. TENDENCIA   de dónde viene el número de arriba
+        4. TRABAJO   lo mío y lo que no es de nadie
+
+        Antes esto empezaba por cuatro contadores de tickets —«Total: 634»— que
+        es el ejemplo de libro de una métrica de vanidad: solo sube, nadie puede
+        moverla y ante ella no hay nada que hacer. Ocupaba el renglón más visible
+        de la pantalla.
+
+        La regla que decide qué entra es una sola: «si este número cambia,
+        ¿alguien hace algo?». Lo que no la contesta baja a su pantalla.
+      */}
+      {!isClient && (
+        <Suspense fallback={<StatCardsSkeleton />}>
+          <PanelEjecutivo />
+        </Suspense>
+      )}
+
+      {isClient && (
+        <Suspense fallback={<StatCardsSkeleton />}>
+          <StatCards role={role} userId={session!.user.id} />
+        </Suspense>
+      )}
 
       {!isClient && (
         <Suspense
@@ -214,6 +241,56 @@ export default async function DashboardPage({
    ============================================================
    Cada uno hace su consulta y se dibuja solo. Son componentes de servidor: lo
    que viaja al navegador es el HTML ya resuelto, no la consulta ni los datos. */
+
+/**
+ * El panel de quien opera la empresa: alertas, indicadores y tendencia.
+ *
+ * Una sola lectura para los tres bloques (`getPanelEjecutivo`). Pedir cada
+ * tarjeta por su lado recorrería el histórico cuatro veces para pintar una
+ * pantalla — que es exactamente lo que ya se corrigió en Rentabilidad.
+ */
+async function PanelEjecutivo() {
+  const panel = await getPanelEjecutivo();
+
+  return (
+    <div className="space-y-6">
+      <FranjaAlertas alertas={panel.alertas} />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {panel.kpis.map((k) => (
+          <TarjetaKpi key={k.clave} kpi={k} />
+        ))}
+      </div>
+
+      {/*
+        UNA sola gráfica grande, y es la del dinero.
+
+        La investigación de paneles coincide en un tope de seis a ocho elementos
+        visuales: por encima, nadie los lee todos y el panel deja de contestar en
+        cinco segundos. Aquí ya hay alertas y cuatro indicadores, así que la
+        gráfica tiene que ser la que más decisiones mueve — la utilidad mes a
+        mes— y el resto vive en su pantalla, a un clic.
+      */}
+      <Card className="p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Utilidad mes a mes</h2>
+            <p className="text-xs text-muted-foreground">
+              Últimos 12 meses. Ingreso menos costo de refacciones y mano de obra.
+            </p>
+          </div>
+          <Link
+            href="/admin/rentabilidad"
+            className="shrink-0 text-sm font-medium text-primary hover:underline"
+          >
+            Ver rentabilidad
+          </Link>
+        </div>
+        <MonthlyTrend data={panel.tendencia} />
+      </Card>
+    </div>
+  );
+}
 
 async function StatCards({
   role,
