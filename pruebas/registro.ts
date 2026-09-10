@@ -1,7 +1,7 @@
 /**
  * QUÉ PRUEBA CORRE DÓNDE, Y POR QUÉ.
  *
- * Las cinco listas de este archivo reparten los 56 probes del repositorio. La
+ * Las cinco listas de este archivo reparten los 57 probes del repositorio. La
  * meta-prueba de `cobertura.test.ts` exige que TODOS estén exactamente en una:
  * un probe nuevo que nadie clasifique rompe la suite en vez de quedarse fuera
  * en silencio, que es como se llega a tener catorce pruebas muertas sin que
@@ -139,6 +139,7 @@ export const SOLO_LOCAL: Record<string, string> = {
 export const CON_STUBS = [
   "probe-roles.mts",
   "scripts/_probe-acciones.ts",
+  "scripts/_probe-clientes-accion.ts",
   "scripts/_probe-arq.ts",
   "scripts/_probe-arreglos.ts",
   "scripts/_probe-borrar.ts",
