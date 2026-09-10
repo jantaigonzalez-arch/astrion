@@ -26,10 +26,93 @@ import { cn } from "@/lib/utils";
  * cientos, esto se pagina igual que la cola de tickets.
  */
 
+/**
+ * EL SEMÁFORO FISCAL DE UN CLIENTE, EN CUATRO ESTADOS.
+ *
+ * ── POR QUÉ CUATRO Y NO DOS ────────────────────────────────────────────────
+ *
+ * «Listo / no listo» escondería la distinción que más importa. Un cliente sin
+ * expediente y uno con expediente sin validar están los dos «no listos», pero
+ * lo que hay que hacer con cada uno es distinto: al primero hay que capturarle
+ * el régimen y el código postal, al segundo basta con validarlo. Un solo rojo
+ * para los dos manda a todo el mundo a abrir la ficha para averiguar cuál es.
+ *
+ * Y «validado» NO se pinta de verde alegremente: verde significa que el SAT
+ * dijo que sí, no que los datos se vean bien. Todo lo demás es ámbar o rojo.
+ */
+function estadoFiscal(c: ClientListRow): { texto: string; clase: string; ayuda: string } {
+  if (!c.rfcFiscal) {
+    return {
+      texto: "Sin expediente",
+      clase: "bg-muted/40 text-muted-foreground ring-border",
+      ayuda: c.taxId
+        ? "Tiene RFC del padrón viejo, pero le faltan régimen y código postal fiscal: con eso no se puede timbrar."
+        : "No tiene ni RFC. No se le puede facturar.",
+    };
+  }
+  switch (c.validacion) {
+    case "valido":
+      return {
+        texto: "Validado",
+        clase: "bg-success/10 text-success ring-success/30",
+        ayuda: "El SAT confirmó RFC, nombre y código postal.",
+      };
+    case "no_validado":
+    case null:
+    case undefined:
+      return {
+        texto: "Sin validar",
+        clase: "bg-warning/10 text-warning ring-warning/30",
+        ayuda:
+          "El expediente está completo pero nadie lo ha contrastado contra el padrón del SAT. " +
+          "Nombre y código postal solo los confirma el SAT.",
+      };
+    case "rfc_inexistente":
+      return {
+        texto: "RFC inexistente",
+        clase: "bg-destructive/10 text-destructive ring-destructive/30",
+        ayuda: "El SAT no encuentra ese RFC en su padrón.",
+      };
+    case "nombre_no_coincide":
+      return {
+        texto: "Nombre no coincide",
+        clase: "bg-destructive/10 text-destructive ring-destructive/30",
+        ayuda: "CFDI40147: el nombre no es el de la Constancia de Situación Fiscal.",
+      };
+    case "cp_no_coincide":
+      return {
+        texto: "CP no coincide",
+        clase: "bg-destructive/10 text-destructive ring-destructive/30",
+        ayuda: "CFDI40148: el código postal no es el de la Constancia.",
+      };
+    default:
+      return {
+        texto: "Error al validar",
+        clase: "bg-destructive/10 text-destructive ring-destructive/30",
+        ayuda: "La última validación no se pudo completar.",
+      };
+  }
+}
+
 export type ClientListRow = {
   id: string;
   name: string;
+  /** El RFC que trajo el padrón de SAE: texto suelto, sin validar. Sirve para buscar. */
   taxId: string | null;
+  /*
+    ── EL EXPEDIENTE FISCAL, RESUMIDO EN UNA COLUMNA ──────────────────────
+
+    `taxId` no basta para facturar y nunca bastó: es un RFC sin régimen, sin
+    código postal y sin nadie que lo haya contrastado contra el padrón del SAT.
+    Estos cuatro campos son el expediente de verdad, y viajan a la LISTA porque
+    la pregunta de facturación no es «¿cuál es el RFC de este cliente?» sino
+    «¿a cuáles puedo facturarles?» — que es una pregunta sobre la lista entera.
+  */
+  rfcFiscal: string | null;
+  cpFiscal: string | null;
+  regimenFiscal: string | null;
+  /** `no_validado` | `valido` | `rfc_inexistente` | … | null si no hay expediente. */
+  validacion: string | null;
   industry: string | null;
   /*
     Teléfono y contactos: los DATOS DE LA EMPRESA, no del servicio.
@@ -110,7 +193,13 @@ export function ClientsList({
       if (filter === "sinPortal" && c.hasPortal) return false;
       if (!term) return true;
       return norm(
-        [c.name, c.taxId, c.industry, c.phone].filter(Boolean).join(" "),
+        // Los DOS RFC: quien busca «AAA010101AA1» no sabe —ni tiene por qué
+        // saber— si esa ficha ya tiene expediente fiscal o solo el dato viejo
+        // del padrón. Buscar por uno y no por el otro deja al cliente sin
+        // aparecer justo cuando se le busca por el número que se tiene a mano.
+        [c.name, c.taxId, c.rfcFiscal, c.cpFiscal, c.industry, c.phone]
+          .filter(Boolean)
+          .join(" "),
       ).includes(term);
     });
   }, [clients, q, filter]);
@@ -216,6 +305,16 @@ export function ClientsList({
                   <ThLocal campo="nombre" orden={orden} onPulsar={pulsar}>
                     Cliente
                   </ThLocal>
+                  {/*
+                    Segunda columna, pegada al nombre y antes que el teléfono.
+
+                    El orden de las columnas es una declaración de qué importa.
+                    El RFC vivía escondido bajo el nombre, concatenado con el
+                    giro y separado por un punto medio: estaba, y nadie lo veía.
+                    Para un ERP mexicano el estado fiscal de un cliente no es un
+                    detalle de su ficha, es lo que decide si se le puede cobrar.
+                  */}
+                  <th className="px-4 py-3 font-medium">Fiscal</th>
                   <th className="px-4 py-3 font-medium">Teléfono</th>
                   <ThLocal campo="contactos" orden={orden} onPulsar={pulsar} inicial="desc">
                     Contactos
@@ -272,7 +371,7 @@ export function ClientsList({
                         {c.name}
                       </Link>
                       <p className="text-xs text-muted-foreground">
-                        {[c.industry, c.taxId].filter(Boolean).join(" · ") || "—"}
+                        {c.industry || "—"}
                       </p>
                       {/*
                         Sin cuenta de portal no hay forma de encontrarle equipos
@@ -288,6 +387,48 @@ export function ClientsList({
                           tickets
                         </span>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {(() => {
+                        const e = estadoFiscal(c);
+                        return (
+                          <div className="space-y-1" title={e.ayuda}>
+                            <Badge className={e.clase}>{e.texto}</Badge>
+                            {/*
+                              El RFC del expediente y el del padrón viejo se
+                              enseñan distinto A PROPÓSITO. El segundo va en
+                              gris y con nota: que exista un RFC no significa
+                              que se pueda facturar con él, y presentarlos igual
+                              es exactamente cómo alguien da por bueno un
+                              expediente que no lo está.
+                            */}
+                            {c.rfcFiscal ? (
+                              <p className="font-mono text-xs tabular-nums">
+                                {c.rfcFiscal}
+                                {c.cpFiscal && (
+                                  <span className="text-muted-foreground">
+                                    {" · CP "}
+                                    {c.cpFiscal}
+                                  </span>
+                                )}
+                                {c.regimenFiscal && (
+                                  <span className="text-muted-foreground">
+                                    {" · "}
+                                    {c.regimenFiscal}
+                                  </span>
+                                )}
+                              </p>
+                            ) : c.taxId ? (
+                              <p className="font-mono text-xs text-muted-foreground tabular-nums">
+                                {c.taxId}
+                                <span className="ml-1 font-sans not-italic">(del padrón)</span>
+                              </p>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">Sin RFC</p>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
                       {c.phone ? (

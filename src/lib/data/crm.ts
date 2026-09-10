@@ -4,6 +4,8 @@ import type { Orden } from "@/lib/listado";
 import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
 import {
+  clienteFiscal,
+  clienteValidacionSat,
   contracts,
   crmActivities,
   crmContacts,
@@ -889,12 +891,40 @@ export async function getClients(conexion?: DbOrTx) {
       lastTicketAt: porTicket.ultimo,
       wonDeals: porGanado.n,
       wonValue: porGanado.valor,
+
+      /*
+        ── EL EXPEDIENTE FISCAL, EN LA LISTA ────────────────────────────────
+
+        `taxId` de arriba es el RFC que trajo el padrón de SAE: un texto suelto,
+        sin validar y sin régimen ni código postal que lo acompañen. Sirve para
+        buscar y no sirve para facturar.
+
+        Estos cuatro campos son el expediente de verdad. Se traen a la LISTA —y
+        no solo a la ficha— porque la pregunta que se hace facturación no es
+        «¿cuál es el RFC de este cliente?», sino «¿a cuáles de mis clientes
+        puedo facturarles?». Esa es una pregunta sobre la lista entera, y
+        contestarla abriendo veintitrés fichas de una en una es lo que hace que
+        no se conteste nunca.
+
+        Dos `left join` a tablas 1:1, no subconsultas correlacionadas: aquí no
+        hay nada que agregar, así que no pueden multiplicar filas —que es el
+        motivo por el que las de arriba sí son subconsultas—.
+      */
+      rfcFiscal: clienteFiscal.rfc,
+      cpFiscal: clienteFiscal.cpFiscal,
+      regimenFiscal: clienteFiscal.regimenFiscal,
+      validacion: clienteValidacionSat.resultado,
     })
     .from(crmOrganizations)
     .leftJoin(porContrato, eq(porContrato.clientId, crmOrganizations.clientId))
     .leftJoin(porEquipo, eq(porEquipo.ownerId, crmOrganizations.clientId))
     .leftJoin(porTicket, eq(porTicket.createdById, crmOrganizations.clientId))
     .leftJoin(porGanado, eq(porGanado.organizationId, crmOrganizations.id))
+    .leftJoin(clienteFiscal, eq(clienteFiscal.organizationId, crmOrganizations.id))
+    .leftJoin(
+      clienteValidacionSat,
+      eq(clienteValidacionSat.organizationId, crmOrganizations.id),
+    )
     .where(ES_CLIENTE)
     .orderBy(asc(crmOrganizations.name));
 
