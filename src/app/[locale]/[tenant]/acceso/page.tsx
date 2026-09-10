@@ -2,6 +2,7 @@ import { setRequestLocale } from "next-intl/server";
 import { redirect } from "next/navigation";
 import { tenantBase } from "@/lib/nav-server";
 import { auth } from "@/lib/auth";
+import { getTenantContext } from "@/lib/tenancy/context";
 import { getTenantBrand } from "@/lib/data/platform";
 import { TenantMark } from "@/components/portal/tenant-mark";
 import { LoginForm } from "@/components/portal/login-form";
@@ -23,12 +24,45 @@ export default async function AccesoPage({
   const { locale, tenant } = await params;
   setRequestLocale(locale);
 
-  // Con sesión abierta no tiene sentido volver a pedir credenciales: se pasa
-  // directo al portal de ESTA empresa. El layout de `(app)` comprueba después
-  // si de verdad hay derecho sobre ella y, si no, devuelve a la propia.
+  /*
+    CON SESIÓN ABIERTA SE PASA AL PORTAL — PERO SOLO SI HAY PORTAL AL QUE PASAR.
+
+    ── EL BUCLE QUE ESTO ARREGLA ──────────────────────────────────────────
+
+    Antes bastaba con que hubiera sesión para redirigir al panel, confiando en
+    que el layout de `(app)` comprobara el derecho «y, si no, devolviera a la
+    propia». El supuesto falla cuando la sesión no tiene NINGUNA empresa: no hay
+    «propia» a la que devolver, así que el layout rebota aquí, aquí se ve que
+    hay sesión y se vuelve a mandar al panel. Infinito.
+
+    En el navegador sale como `ERR_TOO_MANY_REDIRECTS`, que no menciona ni la
+    sesión ni las membresías. Y no es un caso raro: le pasa a cualquiera que
+    tenga el portal abierto y corra `npm run sync:prod`, porque la copia de
+    producción reemplaza la base y la sesión del navegador sobrevive apuntando a
+    un usuario que ya no está.
+
+    ── EL ARREGLO ES QUE LAS DOS PUERTAS PREGUNTEN LO MISMO ────────────────
+
+    El layout exige «sesión Y contexto de inquilino»; esto exigía solo «sesión».
+    Una condición más débil que la del sitio al que redirige es un bucle
+    esperando a que alguien cumpla la primera y no la segunda. Ahora se resuelve
+    aquí el mismo contexto que resolverá el layout, y con él hay tres salidas y
+    ninguna vuelve sobre sus pasos:
+
+      · derecho sobre ESTA empresa   → su panel
+      · derecho sobre OTRA           → el panel de la suya, aunque sea otro host
+      · ninguna empresa              → se enseña el formulario, que es la única
+                                       acción que puede sacar a esa sesión del
+                                       atolladero
+  */
   const session = await auth();
   if (session?.user) {
-    redirect(`${await tenantBase(tenant, locale)}/dashboard`);
+    const ctx = await getTenantContext();
+    if (ctx) {
+      redirect(`${await tenantBase(ctx.slug, locale)}/dashboard`);
+    }
+    // Sin contexto se cae al formulario. Entrar de nuevo sustituye la cookie
+    // vieja, así que la propia pantalla es la salida.
   }
 
   // El layout de `[tenant]` ya garantizó que existe; aquí se necesita su marca
