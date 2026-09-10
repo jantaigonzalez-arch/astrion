@@ -123,7 +123,14 @@ validado**. Desde CFDI 4.0 el SAT contrasta el nodo `Receptor` contra su padrón
 al timbrar, así que un dato mal capturado no produce una advertencia — produce
 un rechazo del PAC.
 
-**El contrato de datos completo está en [`docs/CLIENTES.md`](docs/CLIENTES.md).**
+**Toda la documentación del módulo está en
+[`docs/CLIENTES.md`](docs/CLIENTES.md)**: para qué existe, el vocabulario, los
+tres tipos de cliente, el expediente campo por campo, los procesos, los permisos
+y el contrato de datos. Cada sección lleva marca de estado —✅ construido, 📐
+diseñado sin construir— porque es el documento del que sale el manual de usuario
+y un manual que describe pantallas inexistentes pierde la confianza de quien lo
+lee.
+
 Lo esencial:
 
 - La entidad cliente es `crm_organizations`; el expediente fiscal cuelga de ella
