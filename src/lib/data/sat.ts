@@ -9,6 +9,7 @@ import {
 } from "@/lib/db/platform";
 import { eq } from "drizzle-orm";
 import type { CatalogosSat } from "@/lib/domain/cliente";
+import { referenciaCache, referenciaCacheCon } from "@/lib/referencia-compartida";
 
 /**
  * LOS CATÁLOGOS DEL SAT, TAL COMO ESTÁN HOY.
@@ -30,7 +31,7 @@ import type { CatalogosSat } from "@/lib/domain/cliente";
  * publica el SAT para todo México— y viven una sola vez. Pedirlos por inquilino
  * daría la misma respuesta veinte veces.
  */
-export async function getCatalogosSat(): Promise<CatalogosSat> {
+async function leerCatalogosSat(): Promise<CatalogosSat> {
   const db = getDb();
 
   const [regimenes, usos, pares] = await Promise.all([
@@ -90,6 +91,21 @@ export async function getCatalogosSat(): Promise<CatalogosSat> {
 }
 
 /**
+ * Los catálogos, una vez para toda la plataforma y en caché.
+ *
+ * ── POR QUÉ SE PUEDE COMPARTIR LA ENTRADA ENTRE EMPRESAS ──────────────────
+ *
+ * Porque el dato no dice nada de ninguna. El catálogo de regímenes fiscales es
+ * el mismo para Evoelution que para cualquier otro inquilino: no hay versión
+ * «suya» que pudiera filtrarse. Es exactamente la condición que `referenciaCache`
+ * exige, y por eso su clave NO lleva inquilino.
+ *
+ * Ver `lib/referencia-compartida.ts` para las tres condiciones y por qué el
+ * plazo es de una hora en vez de una etiqueta.
+ */
+export const getCatalogosSat = referenciaCache("sat:catalogos", leerCatalogosSat);
+
+/**
  * Deja resuelto un código postal antes de validar.
  *
  * Existe porque `CatalogosSat.cpExiste` es síncrona: el dominio no puede —ni
@@ -117,7 +133,7 @@ export async function precargarCp(
 }
 
 /** Las opciones que puede elegir un receptor de este tipo de persona. */
-export async function getRegimenesPara(persona: "fisica" | "moral" | null) {
+async function leerRegimenesPara(persona: "fisica" | "moral" | null) {
   const db = getDb();
   const filas = await db.select().from(satRegimenFiscal);
   return filas
@@ -138,7 +154,7 @@ export async function getRegimenesPara(persona: "fisica" | "moral" | null) {
  * sabe cuáles son compatibles, y esconderlos todos dejaría el selector vacío
  * como si ninguno valiera.
  */
-export async function getUsosPara(regimen: string | null) {
+async function leerUsosPara(regimen: string | null) {
   const db = getDb();
   const usos = await db.select().from(satUsoCfdi);
   if (!regimen) return usos;
@@ -152,3 +168,19 @@ export async function getUsosPara(regimen: string | null) {
   const permitidos = new Set(pares.map((p) => p.usoCfdi));
   return usos.filter((u) => permitidos.has(u.clave));
 }
+
+/*
+  ── LOS SELECTORES, TAMBIÉN COMPARTIDOS ────────────────────────────────────
+
+  Alimentan los desplegables del formulario fiscal, y su respuesta depende solo
+  del argumento —el tipo de persona, el régimen— nunca de quién pregunta. El
+  argumento entra en la clave, así que «los usos del 601» y «los del 605» son
+  entradas distintas y ninguna sirve por la otra.
+
+  El código postal NO se cachea: se pregunta por uno concreto de entre 95 748, y
+  guardar una entrada por cada código que alguien teclee llenaría la caché de
+  respuestas que no se van a repetir. Es la diferencia entre un catálogo —pocas
+  respuestas, muy repetidas— y una búsqueda.
+*/
+export const getRegimenesPara = referenciaCacheCon("sat:regimenes", leerRegimenesPara);
+export const getUsosPara = referenciaCacheCon("sat:usos", leerUsosPara);

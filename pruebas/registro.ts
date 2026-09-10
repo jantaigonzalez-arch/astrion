@@ -1,7 +1,7 @@
 /**
  * QUÉ PRUEBA CORRE DÓNDE, Y POR QUÉ.
  *
- * Las cinco listas de este archivo reparten los 58 probes del repositorio. La
+ * Las cinco listas de este archivo reparten los 59 probes del repositorio. La
  * meta-prueba de `cobertura.test.ts` exige que TODOS estén exactamente en una:
  * un probe nuevo que nadie clasifique rompe la suite en vez de quedarse fuera
  * en silencio, que es como se llega a tener catorce pruebas muertas sin que
@@ -39,6 +39,7 @@ export const UNITARIAS = [
   "probe-enlaces.mts",
   "probe-formularios.mts",
   "probe-permisos.mts",
+  "probe-referencia.mts",
   "probe-revision.mts",
   "probe-rutas.mts",
   "probe-selector.mts",

@@ -43,6 +43,78 @@ de nadie, va a `public`.
 
 ---
 
+## 1b · La capa de datos compartidos
+
+Hay datos que **no son de nadie**: los catálogos del SAT, el tipo de cambio del
+DOF, la lista 69-B, el catálogo de productos y servicios. Se cargan **una vez para
+toda la plataforma** —en `public`— y cada empresa los va a buscar ahí.
+
+**Las tres condiciones, y tienen que cumplirse las tres:**
+
+1. **No dice nada de nadie.** Si una fila pudiera distinguir a un cliente de otro,
+   no entra aquí.
+2. **Es idéntico para todos.** No hay versión «de Evoelution» del catálogo de
+   códigos postales.
+3. **Cambia pocas veces y desde fuera.** Lo publica un tercero; aquí solo se carga.
+
+**Lo que ahorra, medido:** los catálogos del SAT ocupan 33 MB. Por inquilino, con
+veinte empresas serían **660 MB** de filas idénticas que habría que recargar una
+por una en cada versión del SAT.
+
+### Se leen con caché de plataforma: `referenciaCache`
+
+```ts
+// lib/referencia-compartida.ts
+export const getCatalogosSat = referenciaCache("sat:catalogos", leerCatalogosSat);
+export const getUsosPara = referenciaCacheCon("sat:usos", leerUsosPara);
+```
+
+Es la contraparte de `tenantCache`, y **la diferencia entre las dos es la capa
+entera**:
+
+| | Inquilino en la clave | Si se equivoca |
+|---|---|---|
+| `tenantCache` | **sí** — sin él, la segunda empresa lee lo de la primera | fuga |
+| `referenciaCache` | **no** — y eso es el punto: el dato es el mismo para todos | desperdicio |
+
+Medido contra la aplicación de verdad: **cero lecturas a Postgres** en cinco
+cargas de la pantalla que más usa los catálogos. Se comprobó que el contador sí
+sube cuando alguien lee directamente —tres lecturas, +3—, así que el cero es la
+caché y no un contador muerto.
+
+⚠ **Nunca envuelvas con `referenciaCache` una lectura de inquilino.** La primera
+empresa llenaría la entrada y todas las demás leerían sus clientes, sin error y
+sin aviso. `probe-referencia` lo impide: un archivo que usa la caché compartida
+no puede resolver contexto de inquilino.
+
+**Plazo de una hora, no etiqueta.** Los catálogos los carga `npm run
+sat:catalogos` desde la imagen de scripts, otro contenedor: una etiqueta emitida
+ahí no llega al servidor web. Una hora de desfase tras cargar algo que cambia dos
+veces al año es intrascendente.
+
+**Lo que no se cachea:** la búsqueda de un código postal concreto entre 95 748.
+Una entrada por cada código que alguien teclee llenaría la caché de respuestas
+que no se repiten. Un catálogo —pocas respuestas, muy repetidas— sí; una
+búsqueda, no.
+
+### Y viajan versionados en el repositorio
+
+`datos/sat/*.csv.gz`: los siete catálogos en **1,8 MB** —el de códigos postales
+comprime 43 veces—. Llegan a cualquier entorno con el `git pull` del despliegue,
+no queda un archivo suelto en ningún servidor, y git contesta **contra qué
+versión del catálogo validó producción**.
+
+```bash
+python3 scripts/sat-xls-a-csv.py catCFDI.xls --salida /tmp/sat   # del .xls del SAT
+npm run sat:catalogos                                             # ENSAYO desde datos/sat
+npm run sat:catalogos -- --aplicar
+```
+
+El SAT **no publica una API de catálogos**, solo el `.xls`. Lo único con API son
+PACs comerciales que cobran por servir lo que el SAT regala.
+
+---
+
 ## 2 · Cuándo partir una entidad en 1:1
 
 No por tamaño. **Por dueño, ritmo y consecuencia.**
