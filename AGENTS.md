@@ -63,6 +63,21 @@ carga, qué hacer si un despliegue sale mal— está en
 [`docs/ENTORNOS.md`](docs/ENTORNOS.md). El runbook del servidor, en
 [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
+## Los skills del repositorio
+
+Antes de trabajar en algo que caiga en uno de estos, léelo: llevan lo que ya se
+midió y lo que ya salió mal, para no volver a descubrirlo.
+
+| Skill | Cuándo |
+|---|---|
+| [`modelo-de-datos`](.claude/skills/modelo-de-datos/SKILL.md) | Añadir o cambiar tablas, columnas, índices o migraciones |
+| [`clientes`](.claude/skills/clientes/SKILL.md) | Tocar el expediente fiscal o cualquier cosa que acabe en un CFDI |
+| [`rendimiento`](.claude/skills/rendimiento/SKILL.md) | Antes de desplegar algo que toque listados o consultas |
+
+Y la regla que los mantiene vivos: **lo que costó encontrar se escribe donde se
+decide.** Un hallazgo que solo vive en un mensaje se pierde; en el comentario de
+la función o en el skill, lo encuentra quien vuelva a pasar por ahí.
+
 ## Las pruebas
 
 ```

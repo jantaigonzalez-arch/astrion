@@ -675,25 +675,36 @@ export const crmOrganizations = pgTable("crm_organizations", {
   address: text("address"),
 
   /*
-    ── EL DOMICILIO FISCAL, DESARMADO COMO EL NODO `Domicilio` DEL SAT ──────
+    ── EL DOMICILIO OPERATIVO: A DÓNDE SE VA. NO ES EL FISCAL ──────────────
 
-    Calle, NumeroExterior, NumeroInterior, Colonia, Localidad, Referencia,
-    Municipio, Estado, Pais y CodigoPostal. Los nombres de aquí son los de la
-    casa —inglés, como el resto de columnas—, pero la correspondencia es uno a
-    uno y está anotada campo por campo para que nadie tenga que adivinarla al
-    armar un complemento.
+    ⚠ ESTE COMENTARIO DECÍA «EL DOMICILIO FISCAL» Y ERA CIERTO HASTA QUE DEJÓ
+    DE SERLO. Se corrige aquí, en la definición, porque un comentario que miente
+    sobre un dato fiscal no es un despiste: es alguien timbrando dentro de un año
+    el código postal de una bodega.
 
-    De todos ellos, EL QUE IMPORTA HOY ES `postalCode`. En CFDI 4.0 el único
-    dato de domicilio que viaja del receptor es `DomicilioFiscalReceptor`, que
-    es el código postal, y tiene que coincidir exactamente con el que el SAT
-    tiene registrado en la Constancia de Situación Fiscal. Los demás no se
-    timbran; se capturan porque son los que pide el nodo `Domicilio` de los
-    complementos y porque recapturar 161 fichas después cuesta mucho más.
+    Cuando se escribió, este era el único domicilio que había y llevaba las dos
+    funciones. Desde que existe `cliente_domicilio`, la frontera es:
 
-    Colonia, municipio y estado van como TEXTO y no como clave de catálogo. Para
-    el CFDI da igual —no viajan—; el día que haga falta una Carta Porte habrá
-    que resolverlos contra `c_Colonia`, `c_Municipio` y `c_Estado`, y ese cruce
-    se hace con el código postal en la mano, que es lo que esto guarda.
+      crm_organizations.*        DÓNDE SE OPERA — a dónde viaja el técnico, a
+                                 dónde se entrega. Lo lee `data/viaticos.ts`
+                                 para calcular el destino de un viaje.
+      cliente_domicilio(fiscal)  EL DE LA CONSTANCIA. Es el que se timbra, y su
+                                 código postal SIEMPRE sale de
+                                 `cliente_fiscal.cp_fiscal`.
+
+    NO SON EL MISMO Y NO DEBEN CRUZARSE. `postalCode` de aquí NO alimenta
+    `DomicilioFiscalReceptor` bajo ninguna circunstancia — hay un probe que lo
+    vigila, porque es la confusión que produce el rechazo CFDI40148 y la que
+    nadie ve venir.
+
+    Los nombres son los de la casa —inglés, como el resto de columnas— y la
+    correspondencia con el nodo `Domicilio` del SAT sigue anotada campo por
+    campo: hace falta para los complementos (Carta Porte), que sí describen a
+    dónde va la mercancía.
+
+    Al escribir esto, estas columnas están VACÍAS en producción (0 de 161): el
+    importador de SAE nunca las llenó. Lo que hay es el `address` de una sola
+    línea, que `scripts/domicilios.ts` sabe desarmar.
   */
   /** SAT `Calle`. */
   street: varchar("street", { length: 200 }),

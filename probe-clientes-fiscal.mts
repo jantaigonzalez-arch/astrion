@@ -19,6 +19,7 @@
  * veredicto. Esa distinción es la mitad del valor del módulo y por eso tiene
  * sección propia.
  */
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import {
   validarRfc,
   normalizarNombreFiscal,
@@ -372,6 +373,66 @@ ok(
 ok(
   "y sin haber validado nunca, nada vale",
   !validacionVigente({ hashDatos: null, resultado: "no_validado" }, datos),
+);
+
+/* ── 10 · Los dos domicilios no se cruzan ───────────────────────────────── */
+console.log("\nEL CP DE ENTREGA NUNCA ALIMENTA EL QUE SE TIMBRA");
+
+/*
+  HAY DOS DOMICILIOS Y SE PARECEN DEMASIADO.
+
+    crm_organizations.*        dónde se OPERA: a dónde viaja el técnico
+    cliente_domicilio(fiscal)  el de la CONSTANCIA: lo que se timbra
+
+  Los dos tienen calle, colonia, municipio, estado y código postal. La única
+  diferencia está en para qué sirven, y esa clase de diferencia se pierde en
+  cuanto alguien tiene prisa: coger `org.postalCode` para rellenar `cpFiscal`
+  parece un atajo razonable y produce el rechazo CFDI40148.
+
+  Hasta hace poco el propio comentario del esquema llamaba «domicilio fiscal» al
+  operativo, así que la confusión no era hipotética: estaba escrita.
+
+  Se comprueba leyendo el fuente, sin base de datos: lo que se prohíbe es que el
+  módulo que guarda el expediente conozca siquiera la tabla de organizaciones.
+*/
+const accion = readFileSync("src/lib/actions/clientes.ts", "utf8");
+
+ok(
+  "quien guarda el expediente no importa `crmOrganizations`",
+  !/crmOrganizations/.test(accion),
+  "el CP fiscal debe salir de lo validado, nunca de la ficha comercial",
+);
+ok(
+  "y el CP del domicilio fiscal sale de lo validado, no del formulario",
+  /cp:\s*n\.cpFiscal/.test(accion),
+  "sin esto, un `cp` suelto en el envío separaría los dos",
+);
+
+/*
+  Y en todo `src/`: nadie asigna un campo fiscal desde uno operativo. Se buscan
+  las dos formas en que se escribiría el atajo.
+*/
+const fuentes: string[] = [];
+(function walk(d: string) {
+  for (const e of readdirSync(d)) {
+    const ruta = `${d}/${e}`;
+    if (statSync(ruta).isDirectory()) {
+      if (e !== "node_modules") walk(ruta);
+      continue;
+    }
+    if (/\.tsx?$/.test(e)) fuentes.push(ruta);
+  }
+})("src");
+
+const cruces = fuentes.filter((f) => {
+  const t = readFileSync(f, "utf8");
+  return /cpFiscal\s*[:=][^,;\n]*postalCode/.test(t) || /cp_fiscal[^,;\n]*postal_code/.test(t);
+});
+
+ok(
+  "ningún archivo asigna el CP fiscal desde el CP operativo",
+  cruces.length === 0,
+  cruces.join(", "),
 );
 
 console.log(
