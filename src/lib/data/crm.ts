@@ -528,6 +528,55 @@ export async function getOrganizationById(id: string) {
 }
 
 /**
+ * El expediente fiscal de una organización, o `null` si todavía no tiene.
+ *
+ * ── POR QUÉ APARTE Y NO DENTRO DE `getOrganizationById` ────────────────────
+ *
+ * Aquélla usa la API de relaciones de Drizzle, que exige declarar la relación
+ * en el grafo del esquema. Colgar de ahí dos tablas 1:1 nuevas obligaría a
+ * tocar ese grafo —que lo comparten todas las consultas del CRM— para algo que
+ * solo necesita una pantalla. Dos `left join` sueltos cuestan lo mismo y no le
+ * cambian la forma a nada más.
+ *
+ * `null` significa «no tiene expediente», que NO es lo mismo que «tiene el
+ * expediente vacío». La ficha enseña cosas distintas en cada caso, y por eso se
+ * devuelve la ausencia en vez de una fila de campos nulos.
+ */
+export async function getExpedienteFiscal(organizationId: string) {
+  const db = await tenantDb();
+  const [fila] = await db
+    .select({
+      rfc: clienteFiscal.rfc,
+      nombreFiscal: clienteFiscal.nombreFiscal,
+      nombreCapturado: clienteFiscal.nombreCapturado,
+      regimenFiscal: clienteFiscal.regimenFiscal,
+      cpFiscal: clienteFiscal.cpFiscal,
+      personaTipo: clienteFiscal.personaTipo,
+      rolFiscal: clienteFiscal.rolFiscal,
+      paisResidencia: clienteFiscal.paisResidencia,
+      numRegIdTrib: clienteFiscal.numRegIdTrib,
+      usoCfdiDefault: clienteFiscal.usoCfdiDefault,
+      curp: clienteFiscal.curp,
+      actualizadoEn: clienteFiscal.actualizadoEn,
+      validacion: clienteValidacionSat.resultado,
+      lista69b: clienteValidacionSat.lista69b,
+      validadoEn: clienteValidacionSat.validadoEn,
+      origenValidacion: clienteValidacionSat.origen,
+    })
+    .from(clienteFiscal)
+    .leftJoin(
+      clienteValidacionSat,
+      eq(clienteValidacionSat.organizationId, clienteFiscal.organizationId),
+    )
+    .where(eq(clienteFiscal.organizationId, organizationId))
+    .limit(1);
+
+  return fila ?? null;
+}
+
+export type ExpedienteFiscal = NonNullable<Awaited<ReturnType<typeof getExpedienteFiscal>>>;
+
+/**
  * Vista 360 del laboratorio: lo que ya existe en el resto del portal para la
  * cuenta de cliente enlazada (contratos, equipos y tickets). Devuelve listas
  * vacías si la organización todavía no está vinculada a una cuenta.

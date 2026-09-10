@@ -6,6 +6,7 @@ import { ThLocal, useOrdenLocal } from "@/components/portal/orden-local";
 import { AlertTriangle, Building2, Search, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { estadoFiscal } from "@/lib/cliente-fiscal";
 import { Link } from "@/lib/nav";
 import { Telefono } from "@/components/portal/telefono";
 import { money } from "@/lib/crm";
@@ -25,74 +26,6 @@ import { cn } from "@/lib/utils";
  * números y las tablas se comparan de un vistazo. Son 24 filas; el día que sean
  * cientos, esto se pagina igual que la cola de tickets.
  */
-
-/**
- * EL SEMÁFORO FISCAL DE UN CLIENTE, EN CUATRO ESTADOS.
- *
- * ── POR QUÉ CUATRO Y NO DOS ────────────────────────────────────────────────
- *
- * «Listo / no listo» escondería la distinción que más importa. Un cliente sin
- * expediente y uno con expediente sin validar están los dos «no listos», pero
- * lo que hay que hacer con cada uno es distinto: al primero hay que capturarle
- * el régimen y el código postal, al segundo basta con validarlo. Un solo rojo
- * para los dos manda a todo el mundo a abrir la ficha para averiguar cuál es.
- *
- * Y «validado» NO se pinta de verde alegremente: verde significa que el SAT
- * dijo que sí, no que los datos se vean bien. Todo lo demás es ámbar o rojo.
- */
-function estadoFiscal(c: ClientListRow): { texto: string; clase: string; ayuda: string } {
-  if (!c.rfcFiscal) {
-    return {
-      texto: "Sin expediente",
-      clase: "bg-muted/40 text-muted-foreground ring-border",
-      ayuda: c.taxId
-        ? "Tiene RFC del padrón viejo, pero le faltan régimen y código postal fiscal: con eso no se puede timbrar."
-        : "No tiene ni RFC. No se le puede facturar.",
-    };
-  }
-  switch (c.validacion) {
-    case "valido":
-      return {
-        texto: "Validado",
-        clase: "bg-success/10 text-success ring-success/30",
-        ayuda: "El SAT confirmó RFC, nombre y código postal.",
-      };
-    case "no_validado":
-    case null:
-    case undefined:
-      return {
-        texto: "Sin validar",
-        clase: "bg-warning/10 text-warning ring-warning/30",
-        ayuda:
-          "El expediente está completo pero nadie lo ha contrastado contra el padrón del SAT. " +
-          "Nombre y código postal solo los confirma el SAT.",
-      };
-    case "rfc_inexistente":
-      return {
-        texto: "RFC inexistente",
-        clase: "bg-destructive/10 text-destructive ring-destructive/30",
-        ayuda: "El SAT no encuentra ese RFC en su padrón.",
-      };
-    case "nombre_no_coincide":
-      return {
-        texto: "Nombre no coincide",
-        clase: "bg-destructive/10 text-destructive ring-destructive/30",
-        ayuda: "CFDI40147: el nombre no es el de la Constancia de Situación Fiscal.",
-      };
-    case "cp_no_coincide":
-      return {
-        texto: "CP no coincide",
-        clase: "bg-destructive/10 text-destructive ring-destructive/30",
-        ayuda: "CFDI40148: el código postal no es el de la Constancia.",
-      };
-    default:
-      return {
-        texto: "Error al validar",
-        clase: "bg-destructive/10 text-destructive ring-destructive/30",
-        ayuda: "La última validación no se pudo completar.",
-      };
-  }
-}
 
 export type ClientListRow = {
   id: string;

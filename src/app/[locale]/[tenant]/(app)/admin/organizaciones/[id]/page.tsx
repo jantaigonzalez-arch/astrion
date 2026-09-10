@@ -18,6 +18,7 @@ import {
   User2,
 } from "lucide-react";
 import {
+  getExpedienteFiscal,
   getOrganizationById,
   getOrganizationPortalData,
   kindDeOrganizacion,
@@ -36,6 +37,7 @@ import { SLA_HOURS } from "@/lib/tickets";
 import { domicilioEnUnaLinea } from "@/lib/domicilio";
 import { Telefono } from "@/components/portal/telefono";
 import { Card } from "@/components/ui/card";
+import { estadoFiscal } from "@/lib/cliente-fiscal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/nav";
@@ -57,6 +59,10 @@ export default async function OrganizationDetailPage({
 
   const org = await getOrganizationById(id);
   if (!org) notFound();
+
+  // El expediente fiscal va aparte: son dos tablas 1:1 que no cuelgan del
+  // grafo de relaciones del CRM. Ver `getExpedienteFiscal`.
+  const fiscal = await getExpedienteFiscal(org.id);
 
   /*
     LAS TRES QUE DEPENDEN DE `org` VAN JUNTAS.
@@ -441,6 +447,117 @@ export default async function OrganizationDetailPage({
 
         {/* Lateral */}
         <div className="space-y-6">
+          {/*
+            ── EL EXPEDIENTE FISCAL SIEMPRE SE DIBUJA ──────────────────────
+
+            Antes esto era una línea dentro de la tarjeta «Datos», y se pintaba
+            solo `{(org.taxId || org.postalCode) && …}`. O sea que al cliente
+            SIN ningún dato fiscal —que es justo el que hay que atender— la
+            ficha no le enseñaba nada: la sección entera desaparecía y parecía
+            que ahí no había nada que hacer.
+
+            La ausencia de un expediente fiscal no es la ausencia de una
+            sección. Es el estado más importante que puede tener un cliente en
+            un ERP mexicano, porque significa que no se le puede cobrar.
+          */}
+          <Card className="space-y-3 p-5 text-sm">
+            <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <Receipt className="size-3.5" /> Expediente fiscal
+            </h2>
+
+            {(() => {
+              const e = estadoFiscal({
+                rfcFiscal: fiscal?.rfc ?? null,
+                taxId: org.taxId,
+                validacion: fiscal?.validacion ?? null,
+              });
+              return (
+                <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className={e.clase}>{e.texto}</Badge>
+                    {fiscal?.validadoEn && (
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(fiscal.validadoEn).toLocaleDateString(locale)}
+                      </span>
+                    )}
+                  </div>
+                  {/* La explicación va A LA VISTA y no en un `title`: en la ficha
+                      hay sitio, y lo que hay que hacer con este cliente es
+                      exactamente lo que dice esa frase. */}
+                  <p className="text-xs text-muted-foreground">{e.ayuda}</p>
+                </>
+              );
+            })()}
+
+            {fiscal ? (
+              <dl className="space-y-2 border-t border-border pt-3 text-xs">
+                <Dato etiqueta="RFC" valor={fiscal.rfc} mono />
+                <Dato etiqueta="Nombre fiscal" valor={fiscal.nombreFiscal} />
+                {/* Solo cuando difieren: si son iguales, enseñar los dos sería
+                    ruido. Cuando difieren, es la explicación de por qué se va a
+                    timbrar algo distinto de lo que alguien tecleó. */}
+                {fiscal.nombreCapturado &&
+                  fiscal.nombreCapturado.trim().toUpperCase() !==
+                    fiscal.nombreFiscal.trim().toUpperCase() && (
+                    <div>
+                      <dt className="text-muted-foreground">Se capturó como</dt>
+                      <dd className="text-muted-foreground line-through">
+                        {fiscal.nombreCapturado}
+                      </dd>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        El SAT no lleva el régimen de capital en su padrón: se timbra
+                        el de arriba.
+                      </p>
+                    </div>
+                  )}
+                <Dato etiqueta="Régimen fiscal" valor={fiscal.regimenFiscal} mono />
+                <Dato etiqueta="C.P. fiscal" valor={fiscal.cpFiscal} mono />
+                <Dato etiqueta="Uso de CFDI" valor={fiscal.usoCfdiDefault} mono />
+                {fiscal.paisResidencia !== "MEX" && (
+                  <Dato etiqueta="Residencia" valor={fiscal.paisResidencia} mono />
+                )}
+                {fiscal.numRegIdTrib && (
+                  <Dato etiqueta="Registro tributario" valor={fiscal.numRegIdTrib} mono />
+                )}
+                {fiscal.lista69b !== "no_listado" && (
+                  <div className="rounded-md bg-destructive/10 p-2 text-destructive">
+                    Lista 69-B: {fiscal.lista69b}
+                  </div>
+                )}
+              </dl>
+            ) : (
+              /*
+                SIN EXPEDIENTE. Se enseña lo que HAY —el RFC del padrón viejo—
+                marcado como lo que es, y lo que FALTA, con nombre y apellido.
+
+                Decir «faltan datos» a secas obligaría a ir a buscar cuáles. Los
+                tres que faltan son siempre los mismos y caben en tres renglones.
+              */
+              <div className="space-y-2 border-t border-border pt-3 text-xs">
+                {org.taxId ? (
+                  <p>
+                    <span className="text-muted-foreground">RFC del padrón: </span>
+                    <span className="font-mono">{org.taxId}</span>
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground">No tiene RFC capturado.</p>
+                )}
+                <p className="text-muted-foreground">Para poder facturarle falta:</p>
+                <ul className="list-inside list-disc space-y-0.5 text-muted-foreground">
+                  {!org.taxId && <li>RFC</li>}
+                  <li>Régimen fiscal (obligatorio desde CFDI 4.0)</li>
+                  <li>
+                    Código postal fiscal
+                    {org.postalCode
+                      ? ` — la ficha tiene ${org.postalCode}, hay que confirmar que es el de la Constancia`
+                      : ""}
+                  </li>
+                  <li>Validarlo ante el SAT</li>
+                </ul>
+              </div>
+            )}
+          </Card>
+
           <Card className="space-y-3 p-5 text-sm">
             <h2 className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               <Building2 className="size-3.5" /> Datos
@@ -479,27 +596,6 @@ export default async function OrganizationDetailPage({
             {org.addressReference && (
               <p className="pl-6 text-xs text-muted-foreground">
                 {org.addressReference}
-              </p>
-            )}
-            {/*
-              El RFC y el código postal, juntos y a la vista: son los dos datos
-              que hay que cuadrar contra la Constancia de Situación Fiscal antes
-              de timbrarle nada, y el CP es el que más rechazos causa.
-            */}
-            {(org.taxId || org.postalCode) && (
-              <p className="flex flex-wrap items-center gap-2 border-t border-border pt-3 text-xs">
-                <Receipt className="size-3.5 shrink-0 text-muted-foreground" />
-                <span className="text-muted-foreground">Datos fiscales:</span>
-                {org.taxId ? (
-                  <span className="font-mono font-medium">{org.taxId}</span>
-                ) : (
-                  <span className="text-warning">sin RFC</span>
-                )}
-                {org.postalCode ? (
-                  <span className="font-mono font-medium">C.P. {org.postalCode}</span>
-                ) : (
-                  <span className="text-warning">sin código postal</span>
-                )}
               </p>
             )}
             <p className="border-t border-border pt-3 text-xs text-muted-foreground">
@@ -543,6 +639,32 @@ export default async function OrganizationDetailPage({
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Un par etiqueta/valor del expediente.
+ *
+ * Los ausentes se dibujan como «—» y no se esconden: en un expediente fiscal,
+ * saber QUÉ falta es la mitad del trabajo, y una fila que desaparece obliga a
+ * recordar de memoria cuáles debería haber.
+ */
+function Dato({
+  etiqueta,
+  valor,
+  mono,
+}: {
+  etiqueta: string;
+  valor: string | null;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="shrink-0 text-muted-foreground">{etiqueta}</dt>
+      <dd className={valor ? (mono ? "text-right font-mono" : "text-right") : "text-right text-warning"}>
+        {valor || "—"}
+      </dd>
     </div>
   );
 }
