@@ -181,7 +181,22 @@ export function reglasDeAncho(tabla: string, anchos: Anchos): string {
   const sel = `table.tabla-erp[data-tabla="${tabla}"]`;
   return [
     `${sel}{table-layout:fixed}`,
-    `${sel} th,${sel} td{overflow:hidden;text-overflow:ellipsis}`,
+    /*
+      El recorte NO se aplica a la primera columna.
+
+      Esa columna está fijada a la izquierda (`position: sticky`) para que sirva
+      de ancla al desplazarse. `overflow` distinto de `visible` sobre una celda
+      fijada es, en el mejor de los casos, innecesario, y es el único estilo que
+      la cabecera recibe desde aquí y no de fábrica — o sea, el primer
+      sospechoso de que la celda de cabecera no se fije como sí lo hace la del
+      cuerpo, que es lo que deja «ESTADO FISCAL» encima de la columna del
+      cliente y hace parecer que son la misma.
+
+      Recortarla tampoco haría falta: su techo lo pone `max-width` en
+      `globals.css` y lo que no cabe se parte en dos renglones, que en un nombre
+      es aceptable.
+    */
+    `${sel} th:not(:first-child),${sel} td:not(:first-child){overflow:hidden;text-overflow:ellipsis}`,
     ...entradas.map(
       ([i, w]) => `${sel} thead th:nth-child(${Number(i) + 1}){width:${w}px}`,
     ),

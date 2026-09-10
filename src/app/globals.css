@@ -510,11 +510,31 @@
 /* 1 · LA PRIMERA COLUMNA SE QUEDA.
       Es al desplazamiento horizontal lo que el encabezado pegajoso es al
       vertical: sin ella, tres columnas a la derecha ya no se sabe de qué fila
-      se está leyendo el importe. */
+      se está leyendo el importe.
+
+      ── PERO CON UN TECHO, Y ESO FALTABA ────────────────────────────────
+
+      Sin límite de ancho, el ancla se come la tabla. En Clientes los nombres
+      son razones sociales completas —«CENTRO DE ESTUDIOS CIENTIFICOS Y
+      CLINICOS PHARMA S.A. DE C.V.»— así que la columna medía cerca de
+      novecientos píxeles, se quedaba fija al desplazarse y TAPABA las tres
+      columnas siguientes. Como es opaca a propósito, no se veía que hubiera
+      algo debajo: teléfono, contactos y contratos parecían vacíos.
+
+      Una columna fija sin techo no ancla la tabla: la oculta. Y el síntoma no
+      se parece a la causa —quien lo ve concluye que faltan datos, no que hay
+      una columna encima—.
+
+      El techo va en `ch` y no en píxeles: son anchos de carácter, así que
+      escala con el tamaño de letra de quien mira en lugar de recortar más
+      cuanto más grande lo tenga puesto. Lo que no cabe SE PARTE en dos
+      renglones, que en la primera columna es aceptable: es un nombre, no una
+      cifra que haya que comparar en vertical. */
 .tabla-erp tbody td:first-child,
 .tabla-erp thead th:first-child {
   position: sticky;
   left: 0;
+  max-width: 34ch;
 }
 .tabla-erp tbody td:first-child {
   /* Opaca y del color de la tarjeta que la contiene: si fuera translúcida, las

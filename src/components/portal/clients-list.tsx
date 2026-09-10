@@ -345,6 +345,22 @@ export function ClientsList({
                 {filtered.map((c) => (
                   <tr key={c.id} className="transition-colors hover:bg-secondary/40">
                     <td className="px-4 py-3">
+                      {/*
+                        EL TECHO VA DENTRO DE LA CELDA, no solo en el `max-width`
+                        de `globals.css`.
+
+                        `max-width` sobre un `<td>` lo ignoran varios navegadores
+                        cuando el reparto de la tabla es automático — está así en
+                        la especificación—. Un contenedor DENTRO de la celda sí se
+                        respeta siempre, y es lo que de verdad impide que esta
+                        columna, que está fijada al desplazarse, crezca hasta
+                        tapar las tres siguientes.
+
+                        Los nombres son razones sociales completas y se parten en
+                        dos renglones. Aquí es aceptable: es un nombre, no una
+                        cifra que haya que comparar en vertical.
+                      */}
+                      <div className="max-w-[34ch]">
                       <Link
                         href={`/admin/organizaciones/${c.id}`}
                         className="font-medium hover:text-primary"
@@ -368,6 +384,7 @@ export function ClientsList({
                           tickets
                         </span>
                       )}
+                      </div>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
                       {(() => {

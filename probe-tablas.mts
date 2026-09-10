@@ -171,6 +171,14 @@ check("los anchos van en una hoja propia dentro de head",
 const css3 = reglasDeAncho("tickets", { 0: 200, 2: 90 });
 check("con anchos puestos se fija el reparto", css3.includes("table-layout:fixed"));
 check("y el contenido que no cabe se recorta", css3.includes("overflow:hidden"));
+/*
+  La primera columna queda FUERA del recorte: está fijada a la izquierda y
+  `overflow` sobre una celda fijada no hace falta —su techo lo pone `max-width`—
+  y es el primer sospechoso de que la cabecera no se fije como sí lo hace la
+  celda del cuerpo.
+*/
+check("pero la primera columna, no: está fijada al desplazarse",
+  css3.includes("th:not(:first-child)") && css3.includes("td:not(:first-child)"));
 check("con puntos suspensivos, o un nombre cortado parece corto",
   css3.includes("text-overflow:ellipsis"));
 check("los anchos salen por columna", css3.includes("nth-child(1){width:200px}") && css3.includes("nth-child(3){width:90px}"));
