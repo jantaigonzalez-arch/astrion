@@ -1,20 +1,31 @@
-"use client";
-
-import { useMemo, useState } from "react";
-import { ThLocal, useOrdenLocal } from "@/components/portal/orden-local";
-import { AlertTriangle, PackageX, Search, Truck, X } from "lucide-react";
+import { AlertTriangle, PackageCheck, PackageX, Search, Truck, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Link } from "@/lib/nav";
+import { FormularioGet } from "@/components/portal/formulario-get";
+import { ThOrden } from "@/components/portal/listado-controles";
 import { EditPartRow, type EditablePart } from "@/components/portal/part-forms";
+import type { CampoRefaccion, FiltroExistencia } from "@/lib/data/parts";
+import type { Orden } from "@/lib/listado";
 import { cn } from "@/lib/utils";
+
+/**
+ * EL INVENTARIO SE FILTRA, ORDENA Y PAGINA EN EL SERVIDOR.
+ *
+ * Era un componente de cliente que recibía el catálogo entero y hacía todo en el
+ * navegador. Con una refacción daba igual; con las 6 609 del ERP anterior la
+ * página pesaba 10 MB. Ahora llega una página, y el buscador, los chips y las
+ * columnas son ENLACES: el estado vive en la URL, que además se puede compartir
+ * y sobrevive a recargar. Es el mismo arreglo que se le hizo a Clientes.
+ */
 
 /** Lo pendiente de recibir de esta refacción, de `incomingByPart`. */
 export type Incoming = { quantity: number; expectedAt: string | null };
 
-type Row = EditablePart & { brand: string | null; incoming: Incoming | null };
+type Row = EditablePart & { incoming: Incoming | null };
 
-const mxn = (v: string | null) => {
-  if (!v) return "—";
+const mxn = (v: string | number | null) => {
+  if (v === null || v === "") return "—";
   const n = Number(v);
   if (Number.isNaN(n)) return "—";
   return new Intl.NumberFormat("es-MX", {
@@ -23,19 +34,7 @@ const mxn = (v: string | null) => {
     maximumFractionDigits: 2,
   }).format(n);
 };
-const usd = (v: string | null) => {
-  if (!v) return "—";
-  const n = Number(v);
-  if (Number.isNaN(n)) return "—";
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  }).format(n);
-};
 
-// "over" = sobregiro: se consumió más de lo que había. Antes era imposible de
-// ver porque el descuento se topaba en 0 y el faltante se perdía.
 /** Fecha corta: la orden guarda `date`, sin hora ni zona que interpretar. */
 const fecha = (iso: string) => {
   const [y, m, d] = iso.split("-").map(Number);
@@ -46,97 +45,67 @@ const fecha = (iso: string) => {
   });
 };
 
-type StockFilter = "all" | "low" | "out" | "over" | "incoming";
-
-/**
- * Qué significa ordenar por cada columna del inventario.
- *
- * `margen` se calcula aquí y no se lee de una columna: es precio menos costo, y
- * ordenar por él es la forma de encontrar lo que se está vendiendo por debajo
- * de lo que cuesta. Una refacción sin precio o sin costo capturado no tiene
- * margen que comparar —no es margen cero— y va al final.
- */
-const num = (v: string | null) => {
-  if (!v) return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+export type ResumenInventario = {
+  total: number;
+  con: number;
+  low: number;
+  out: number;
+  incoming: number;
+  sobregiros: Array<{ id: string; partNumber: string; stock: number; incoming: Incoming | null }>;
+  marcas: string[];
 };
 
-const VALORES_PARTE = {
-  parte: (p: Row) => p.partNumber,
-  descripcion: (p: Row) => p.description,
-  marca: (p: Row) => p.brand,
-  costo: (p: Row) => num(p.costMxn),
-  precio: (p: Row) => num(p.priceMxn),
-  margen: (p: Row) => {
-    const c = num(p.costMxn);
-    const v = num(p.priceMxn);
-    return c === null || v === null ? null : v - c;
-  },
-  existencias: (p: Row) => p.stock,
-} as const;
+export function PartsInventory({
+  parts,
+  resumen,
+  filtradas,
+  valor,
+  q,
+  marca,
+  existencia,
+  orden,
+  basePath,
+}: {
+  parts: Row[];
+  resumen: ResumenInventario;
+  /** Cuántas caen en el filtro, en todas las páginas. */
+  filtradas: number;
+  /** Valor en existencia de lo filtrado. */
+  valor: number;
+  q: string;
+  marca?: string;
+  existencia?: FiltroExistencia;
+  orden: Orden<CampoRefaccion>;
+  basePath: string;
+}) {
+  // Lo que se conserva al pulsar cualquier cosa. La página NO: cambiar el filtro
+  // desde la página 40 dejaría una página que ya no existe.
+  const consulta: Record<string, string | undefined> = {
+    q: q || undefined,
+    marca,
+    existencia,
+    orden: orden.campo,
+    dir: orden.dir,
+  };
+  const enlace = (cambios: Record<string, string | undefined>) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries({ ...consulta, ...cambios })) if (v) p.set(k, v);
+    const cola = p.toString();
+    return cola ? `${basePath}?${cola}` : basePath;
+  };
+  // Para las columnas: todo menos el orden, que lo pone cada una.
+  const queryOrden = { q: q || undefined, marca, existencia };
 
-type CampoParte = keyof typeof VALORES_PARTE;
-
-export function PartsInventory({ parts }: { parts: Row[] }) {
-  const [q, setQ] = useState("");
-  const [brand, setBrand] = useState("all");
-  const [stock, setStock] = useState<StockFilter>("all");
-
-  const brands = useMemo(
-    () => Array.from(new Set(parts.map((p) => p.brand).filter(Boolean))).sort(),
-    [parts],
+  const { sobregiros } = resumen;
+  // Lo que de verdad hay que comprar: el SOBREGIRO que no viene en camino.
+  //
+  // Contaba también las que están en cero, y con el catálogo del ERP anterior
+  // eso decía «6 190 sin cubrir»: refacciones que nunca se tuvieron en almacén
+  // no faltan. Un sobregiro sí —se consumió lo que no había—.
+  const descubiertas = sobregiros.filter(
+    (p) => !p.incoming || p.incoming.quantity < Math.abs(p.stock),
   );
-
-  const filtradas = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    return parts.filter((p) => {
-      if (brand !== "all" && p.brand !== brand) return false;
-      if (stock === "low" && !(p.stock > 0 && p.stock <= 3)) return false;
-      if (stock === "out" && p.stock !== 0) return false;
-      if (stock === "over" && p.stock >= 0) return false;
-      if (stock === "incoming" && !p.incoming) return false;
-      if (!term) return true;
-      return `${p.partNumber} ${p.description} ${p.brand ?? ""}`
-        .toLowerCase()
-        .includes(term);
-    });
-  }, [parts, q, brand, stock]);
-
-  /*
-    Arranca por EXISTENCIAS de menor a mayor, y es el único de los tres
-    listados en memoria que no arranca alfabético.
-
-    Un inventario no se abre para buscar una refacción concreta —para eso está
-    el buscador de arriba— sino para ver qué falta. Con el orden por número de
-    parte, lo que está en cero queda repartido por toda la lista y hay que
-    filtrar para verlo; ordenado así, el problema está en la primera fila.
-    Los sobregiros, que son negativos, quedan incluso antes: correcto, porque
-    son peores que un cero.
-  */
-  const { orden, pulsar, ordenadas: filtered } = useOrdenLocal<Row, CampoParte>(
-    filtradas,
-    VALORES_PARTE,
-    { campo: "existencias", dir: "asc" },
-  );
-
-  const lowCount = parts.filter((p) => p.stock > 0 && p.stock <= 3).length;
-  const outCount = parts.filter((p) => p.stock === 0).length;
-  const overParts = parts.filter((p) => p.stock < 0);
-  const incomingParts = parts.filter((p) => p.incoming);
-
-  // Lo que de verdad hay que comprar: falta y NO viene en camino. Sin esta
-  // distinción, una refacción ya pedida sigue apareciendo como pendiente y se
-  // vuelve a comprar — que es exactamente el error que este cruce evita.
-  const descubiertas = parts.filter(
-    (p) => p.stock <= 0 && (!p.incoming || p.incoming.quantity < Math.abs(p.stock)),
-  );
-  // Piezas que hay que reponer para volver a cero: es el faltante real.
-  const shortfall = overParts.reduce((a, p) => a + Math.abs(p.stock), 0);
-  const value = filtered.reduce(
-    (a, p) => a + Number(p.costMxn ?? 0) * p.stock,
-    0,
-  );
+  const shortfall = sobregiros.reduce((a, p) => a + Math.abs(p.stock), 0);
 
   const chip = (active: boolean) =>
     cn(
@@ -145,21 +114,22 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
         ? "bg-primary text-primary-foreground"
         : "bg-secondary text-muted-foreground hover:text-foreground",
     );
+  const nf = new Intl.NumberFormat("es-MX");
 
   return (
     <div className="space-y-4">
       {/* Sobregiro: se usó más de lo que había en existencia. El consumo se
           registró tal cual (refleja la realidad física) y el faltante queda
           aquí visible para compras, en vez de silenciarse topando el stock. */}
-      {overParts.length > 0 && (
+      {sobregiros.length > 0 && (
         <Card className="border-destructive/40 bg-destructive/5 p-4">
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 size-5 shrink-0 text-destructive" />
             <div className="space-y-1">
               <p className="text-sm font-semibold text-destructive">
-                {overParts.length === 1
+                {sobregiros.length === 1
                   ? "1 refacción con existencia negativa"
-                  : `${overParts.length} refacciones con existencia negativa`}{" "}
+                  : `${sobregiros.length} refacciones con existencia negativa`}{" "}
                 · faltan {shortfall} {shortfall === 1 ? "pieza" : "piezas"}
               </p>
               <p className="text-xs text-muted-foreground">
@@ -169,9 +139,8 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
               {/* Cuáles ya están pedidas y cuáles no. Antes la lista era una
                   sola y mandaba a comprar de nuevo algo que ya venía en camino. */}
               <ul className="space-y-0.5 text-xs">
-                {overParts.map((p) => {
-                  const cubre =
-                    p.incoming && p.incoming.quantity >= Math.abs(p.stock);
+                {sobregiros.map((p) => {
+                  const cubre = p.incoming && p.incoming.quantity >= Math.abs(p.stock);
                   return (
                     <li key={p.id} className="flex flex-wrap items-center gap-1.5">
                       <span className="font-mono font-medium text-foreground">
@@ -201,88 +170,104 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
 
       {/* Buscador y filtros */}
       <Card className="p-4">
-        <div className="flex items-center gap-2 rounded-lg border border-input bg-background px-3">
+        {/* A la URL como el resto, y por `FormularioGet` para no perder el
+            prefijo de la empresa. Los filtros puestos viajan en ocultos para
+            no perderlos al buscar. */}
+        <FormularioGet
+          action={basePath}
+          className="flex items-center gap-2 rounded-lg border border-input bg-background px-3"
+        >
           <Search className="size-4 shrink-0 text-muted-foreground" />
+          {marca && <input type="hidden" name="marca" value={marca} />}
+          {existencia && <input type="hidden" name="existencia" value={existencia} />}
+          <input type="hidden" name="orden" value={orden.campo} />
+          <input type="hidden" name="dir" value={orden.dir} />
           <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
+            name="q"
+            defaultValue={q}
             placeholder="Buscar por # parte, descripción o marca…"
             className="h-10 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
           {q && (
-            <button
-              onClick={() => setQ("")}
+            <Link
+              href={enlace({ q: undefined })}
               className="text-muted-foreground hover:text-foreground"
               aria-label="Limpiar"
             >
               <X className="size-4" />
-            </button>
+            </Link>
           )}
-        </div>
+        </FormularioGet>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button onClick={() => setBrand("all")} className={chip(brand === "all")}>
-            Todas las marcas
-          </button>
-          {brands.map((b) => (
-            <button key={b} onClick={() => setBrand(b!)} className={chip(brand === b)}>
-              {b}
-            </button>
-          ))}
+          {resumen.marcas.length > 0 && (
+            <>
+              <Link href={enlace({ marca: undefined })} className={chip(!marca)}>
+                Todas las marcas
+              </Link>
+              {resumen.marcas.map((b) => (
+                <Link key={b} href={enlace({ marca: b })} className={chip(marca === b)}>
+                  {b}
+                </Link>
+              ))}
+              <span className="mx-1 h-5 w-px bg-border" />
+            </>
+          )}
 
-          <span className="mx-1 h-5 w-px bg-border" />
-
-          <button onClick={() => setStock("all")} className={chip(stock === "all")}>
-            Todo el stock
-          </button>
-          <button onClick={() => setStock("low")} className={chip(stock === "low")}>
+          <Link href={enlace({ existencia: undefined })} className={chip(!existencia)}>
+            Todo el catálogo ({nf.format(resumen.total)})
+          </Link>
+          {/* El inventario físico. Ver `FILTROS_EXISTENCIA`. */}
+          <Link href={enlace({ existencia: "con" })} className={chip(existencia === "con")}>
+            <PackageCheck className="mr-1 inline size-3" />
+            Con existencia ({nf.format(resumen.con)})
+          </Link>
+          <Link href={enlace({ existencia: "low" })} className={chip(existencia === "low")}>
             <AlertTriangle className="mr-1 inline size-3" />
-            Bajo ({lowCount})
-          </button>
-          <button onClick={() => setStock("out")} className={chip(stock === "out")}>
+            Bajo ({nf.format(resumen.low)})
+          </Link>
+          <Link href={enlace({ existencia: "out" })} className={chip(existencia === "out")}>
             <PackageX className="mr-1 inline size-3" />
-            Agotado ({outCount})
-          </button>
-          {incomingParts.length > 0 && (
-            <button
-              onClick={() => setStock("incoming")}
+            Agotado ({nf.format(resumen.out)})
+          </Link>
+          {resumen.incoming > 0 && (
+            <Link
+              href={enlace({ existencia: "incoming" })}
               className={cn(
-                chip(stock === "incoming"),
-                stock !== "incoming" && "bg-primary/10 text-primary",
+                chip(existencia === "incoming"),
+                existencia !== "incoming" && "bg-primary/10 text-primary",
               )}
             >
               <Truck className="mr-1 inline size-3" />
-              En camino ({incomingParts.length})
-            </button>
+              En camino ({resumen.incoming})
+            </Link>
           )}
-          {overParts.length > 0 && (
-            <button
-              onClick={() => setStock("over")}
+          {sobregiros.length > 0 && (
+            <Link
+              href={enlace({ existencia: "over" })}
               className={cn(
-                chip(stock === "over"),
-                stock !== "over" && "bg-destructive/10 text-destructive",
+                chip(existencia === "over"),
+                existencia !== "over" && "bg-destructive/10 text-destructive",
               )}
             >
               <AlertTriangle className="mr-1 inline size-3" />
-              Sobregiro ({overParts.length})
-            </button>
+              Sobregiro ({sobregiros.length})
+            </Link>
           )}
         </div>
 
         <p className="mt-3 text-xs text-muted-foreground">
-          Mostrando <span className="font-medium text-foreground">{filtered.length}</span> de{" "}
-          {parts.length} · valor en existencia{" "}
-          <span className="font-medium text-foreground">
-            {mxn(String(value))}
-          </span>
+          <span className="font-medium text-foreground">{nf.format(filtradas)}</span>{" "}
+          {filtradas === 1 ? "refacción" : "refacciones"}
+          {filtradas !== resumen.total && <> de {nf.format(resumen.total)}</>} · valor en
+          existencia <span className="font-medium text-foreground">{mxn(valor)}</span>
           {descubiertas.length > 0 && (
             <>
               {" · "}
               <span className="font-medium text-warning">
-                {descubiertas.length}{" "}
-                {descubiertas.length === 1 ? "sin cubrir" : "sin cubrir"}
+                {descubiertas.length} sin cubrir
               </span>{" "}
-              (falta y no viene en camino)
+              (en sobregiro y no viene en camino)
             </>
           )}
         </p>
@@ -290,11 +275,11 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
 
       {/* Resultados */}
       <Card className="overflow-hidden">
-        {filtered.length === 0 ? (
+        {parts.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-14 text-center">
             <Search className="size-8 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              Sin coincidencias para “{q}”.
+              {q ? `Sin coincidencias para «${q}».` : "Ninguna refacción cumple ese filtro."}
             </p>
           </div>
         ) : (
@@ -302,33 +287,33 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
             <table data-tabla="refacciones" className="tabla-erp w-full text-sm">
               <thead className="border-b border-border bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
-                  <ThLocal campo="parte" orden={orden} onPulsar={pulsar}>
+                  <ThOrden campo="parte" actual={orden} basePath={basePath} query={queryOrden}>
                     # Parte
-                  </ThLocal>
-                  <ThLocal campo="descripcion" orden={orden} onPulsar={pulsar}>
+                  </ThOrden>
+                  <ThOrden campo="descripcion" actual={orden} basePath={basePath} query={queryOrden}>
                     Descripción
-                  </ThLocal>
-                  <ThLocal campo="marca" orden={orden} onPulsar={pulsar}>
+                  </ThOrden>
+                  <ThOrden campo="marca" actual={orden} basePath={basePath} query={queryOrden}>
                     Marca
-                  </ThLocal>
-                  <ThLocal campo="costo" orden={orden} onPulsar={pulsar} inicial="desc">
+                  </ThOrden>
+                  <ThOrden campo="costo" actual={orden} basePath={basePath} query={queryOrden} inicial="desc">
                     Costo actual (MXN)
-                  </ThLocal>
-                  <ThLocal campo="precio" orden={orden} onPulsar={pulsar} inicial="desc">
+                  </ThOrden>
+                  <ThOrden campo="precio" actual={orden} basePath={basePath} query={queryOrden} inicial="desc">
                     Precio venta
-                  </ThLocal>
-                  <ThLocal campo="margen" orden={orden} onPulsar={pulsar} inicial="asc">
+                  </ThOrden>
+                  <ThOrden campo="margen" actual={orden} basePath={basePath} query={queryOrden}>
                     Margen
-                  </ThLocal>
-                  <ThLocal campo="existencias" orden={orden} onPulsar={pulsar} inicial="asc">
+                  </ThOrden>
+                  <ThOrden campo="existencias" actual={orden} basePath={basePath} query={queryOrden} inicial="desc">
                     Existencias
-                  </ThLocal>
+                  </ThOrden>
                   <th className="px-4 py-3 font-medium">Estado</th>
                   <th className="px-4 py-3 font-medium">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filtered.map((p) => (
+                {parts.map((p) => (
                   <tr key={p.id} className="transition-colors hover:bg-secondary/40">
                     <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-semibold">
                       {p.partNumber}
@@ -354,15 +339,13 @@ export function PartsInventory({ parts }: { parts: Row[] }) {
                           p.stock < 0
                             ? "rounded bg-destructive/15 px-1.5 py-0.5 font-bold text-destructive"
                             : p.stock === 0
-                              ? "font-semibold text-destructive"
+                              ? "text-muted-foreground"
                               : p.stock <= 3
                                 ? "font-semibold text-warning"
                                 : ""
                         }
                         title={
-                          p.stock < 0
-                            ? `Sobregiro: faltan ${Math.abs(p.stock)} piezas`
-                            : undefined
+                          p.stock < 0 ? `Sobregiro: faltan ${Math.abs(p.stock)} piezas` : undefined
                         }
                       >
                         {p.stock}

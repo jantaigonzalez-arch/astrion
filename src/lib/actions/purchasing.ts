@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { tenantDb, puedeEn } from "@/lib/tenancy/context";
 import { normalizarTelefono } from "@/lib/telefono";
@@ -308,6 +308,11 @@ export async function createPurchaseOrder(
       error: "Agrega al menos un renglón con refacción y cantidad.",
     };
   }
+  // El id viaja en el formulario: si no tiene forma de uuid no se le pregunta
+  // a la base, que respondería con un error de tipo y no con este mensaje.
+  if (draft.some((l) => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(l.partId))) {
+    return { ok: false, error: "Un renglón apunta a una refacción inexistente." };
+  }
 
   const d = parsed.data;
   try {
@@ -327,7 +332,8 @@ export async function createPurchaseOrder(
 
       // Se leen las refacciones de una sola vez y se copian número y
       // descripción al renglón: la orden debe seguir diciendo lo mismo dentro
-      // de un año aunque el catálogo se corrija mañana.
+      // de un año aunque el catálogo se corrija mañana. Solo las de ESTA
+      // orden: leía el catálogo entero —6 609 filas— para validar tres.
       const parts = await tx
         .select({
           id: spareParts.id,
@@ -336,7 +342,8 @@ export async function createPurchaseOrder(
           costMxn: spareParts.costMxn,
           costUsd: spareParts.costUsd,
         })
-        .from(spareParts);
+        .from(spareParts)
+        .where(inArray(spareParts.id, [...new Set(draft.map((l) => l.partId))]));
       const byId = new Map(parts.map((p) => [p.id, p]));
 
       if (draft.some((l) => !byId.has(l.partId))) {

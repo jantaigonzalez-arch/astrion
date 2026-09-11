@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { estadoFiscal } from "@/lib/cliente-fiscal";
 import type { CampoCartera } from "@/lib/data/crm";
 import { Link } from "@/lib/nav";
+import { FormularioGet } from "@/components/portal/formulario-get";
 import { Telefono } from "@/components/portal/telefono";
 import { ColumnasVisibles } from "@/components/portal/columnas-visibles";
 import { money } from "@/lib/crm";
@@ -191,12 +192,12 @@ export function ClientsList({
           Enter, que además deja la búsqueda en la URL — se comparte, se marca y
           el botón de atrás la deshace.
 
-          `method="get"` y sin JavaScript: el navegador arma la URL solo. Los
-          demás parámetros viajan como campos ocultos para que buscar no borre el
-          orden ni el filtro que ya estaban puestos.
+          Por `FormularioGet` y no un `<form action>` crudo, que en producción
+          perdía el prefijo de la empresa y mandaba a un 404. Los demás
+          parámetros viajan como campos ocultos para que buscar no borre el orden
+          ni el filtro que ya estaban puestos.
         */}
-        <form
-          method="get"
+        <FormularioGet
           action={basePath}
           className="flex items-center gap-2 rounded-lg border border-input bg-background px-3"
         >
@@ -220,7 +221,7 @@ export function ClientsList({
               <X className="size-4" />
             </Link>
           )}
-        </form>
+        </FormularioGet>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {/*

@@ -122,6 +122,7 @@ scripts/_dash.ts
 !probe-permisos-db.mts
 !probe-permisos.mts
 !probe-referencia.mts
+!probe-inventario.mts
 !probe-revision.mts
 !probe-rutas.mts
 !probe-selector.mts

@@ -10,6 +10,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Selector } from "@/components/ui/selector";
+import { buscarRefaccionesAccion } from "@/lib/actions/parts";
+
+/**
+ * La refacción de un renglón se BUSCA en el servidor: el catálogo tiene miles, y
+ * la página lo cargaba entero al abrir cualquier requisición en borrador. Fuera
+ * del componente para que sea estable —`Selector` vuelve a buscar si cambia—.
+ */
+const buscarParte = async (q: string) =>
+  (await buscarRefaccionesAccion(q)).map((p) => ({
+    value: p.id,
+    label: `${p.partNumber} · ${p.description}`,
+  }));
 
 const initial: RequisitionState = { ok: false };
 
@@ -41,12 +53,10 @@ export type Opcion = { id: string; label: string };
  */
 export function RequisitionLines({
   lines,
-  parts,
   suppliers,
   editable,
 }: {
   lines: LineaVista[];
-  parts: Opcion[];
   suppliers: Opcion[];
   /** Solo el borrador se toca. Después, la tabla es de lectura. */
   editable: boolean;
@@ -69,7 +79,6 @@ export function RequisitionLines({
             <Fila
               key={l.id}
               linea={l}
-              parts={parts}
               suppliers={suppliers}
               editable={editable}
             />
@@ -82,12 +91,10 @@ export function RequisitionLines({
 
 function Fila({
   linea,
-  parts,
   suppliers,
   editable,
 }: {
   linea: LineaVista;
-  parts: Opcion[];
   suppliers: Opcion[];
   editable: boolean;
 }) {
@@ -114,8 +121,13 @@ function Fila({
                 <Selector
                   name="partId"
                   defaultValue={linea.partId ?? ""}
-                  placeholder="Sin identificar"
-                  opciones={parts.map((p) => ({ value: p.id, label: p.label }))}
+                  placeholder="Sin identificar — busca por # de parte"
+                  buscar={buscarParte}
+                  inicial={
+                    linea.partId
+                      ? { value: linea.partId, label: linea.partNumber ?? linea.description }
+                      : null
+                  }
                 />
               </div>
             </div>

@@ -13,6 +13,25 @@
 
 /** CSV con comillas dobles, saltos de línea embebidos y BOM. */
 export function parseCsv(text: string): Record<string, string>[] {
+  const [head, ...body] = parseCsvFilas(text).filter((r) =>
+    r.some((x) => x.trim() !== ""),
+  );
+  if (!head) return [];
+  return body.map((r) =>
+    Object.fromEntries(head.map((h, i) => [h.trim(), (r[i] ?? "").trim()])),
+  );
+}
+
+/**
+ * Lo mismo sin encabezado: las filas tal cual, por posición y con las vacías.
+ *
+ * Para los REPORTES que exporta un ERP —«Existencias y costos», por ejemplo—,
+ * que no son una tabla con una fila de títulos arriba sino páginas impresas:
+ * membrete, encabezado repetido en cada hoja, pie con el número de página. Ahí
+ * lo que manda es la posición de la columna y el tipo de fila, y convertir a
+ * objetos por la primera fila mezclaría el membrete con los datos.
+ */
+export function parseCsvFilas(text: string): string[][] {
   const s = text.replace(/^﻿/, "");
   const rows: string[][] = [];
   let row: string[] = [];
@@ -42,11 +61,7 @@ export function parseCsv(text: string): Record<string, string>[] {
     row.push(cell);
     rows.push(row);
   }
-  const [head, ...body] = rows.filter((r) => r.some((x) => x.trim() !== ""));
-  if (!head) return [];
-  return body.map((r) =>
-    Object.fromEntries(head.map((h, i) => [h.trim(), (r[i] ?? "").trim()])),
-  );
+  return rows;
 }
 
 /**

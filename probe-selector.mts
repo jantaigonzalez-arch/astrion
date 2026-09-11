@@ -31,8 +31,25 @@ const umbral = Number(/umbral = (\d+)/.exec(fuente)?.[1]);
 ok(`el umbral por omisión es 12 (leído del fuente: ${umbral})`, umbral === 12);
 ok(
   "la lista corta cae al `<select>` nativo",
-  /if \(opciones\.length <= umbral\)/.test(fuente),
+  /if \(!remoto && lista\.length <= umbral\)/.test(fuente),
 );
+
+/*
+  ── LA BÚSQUEDA EN EL SERVIDOR (`buscar`) ──
+
+  Para catálogos que no caben en la página —el de refacciones, 6 609 desde la
+  carga del ERP anterior—. Lo que no puede faltar: que nunca caiga al nativo
+  (un `<select>` no puede preguntar), que no dispare una consulta por letra, que
+  una respuesta vieja no pise a la nueva, y que el campo recuerde el nombre de
+  lo elegido aunque la lista que lo trajo ya haya cambiado.
+*/
+console.log("\nCON BÚSQUEDA EN EL SERVIDOR");
+ok("con `buscar` siempre es combobox, nunca `<select>`", /!remoto && lista\.length <= umbral/.test(fuente));
+ok("espera a que se deje de teclear antes de preguntar", /filtro \? 180 : 0|q \? 180 : 0/.test(fuente));
+ok("descarta la respuesta de una búsqueda ya vieja", /let vigente = true/.test(fuente) && /vigente = false/.test(fuente));
+ok("recuerda la opción elegida entera", /setElegidaRemota\(o\)/.test(fuente));
+ok("y sabe qué decir de un valor que llega de antes (`inicial`)", /useState<Opcion \| null>\(inicial\)/.test(fuente));
+ok("anuncia que está buscando, también al lector de pantalla", (fuente.match(/Buscando…/g) ?? []).length >= 2);
 ok(
   "y el nativo lleva el `name`, así que envía valor sin JavaScript",
   /<select[\s\S]{0,200}name=\{name\}/.test(fuente),

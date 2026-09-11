@@ -12,7 +12,6 @@ import {
   crmOrganizations,
   crmStages,
   products,
-  spareParts,
 } from "@/lib/db/schema";
 import { users } from "@/lib/db/platform";
 import type { DbOrTx } from "@/lib/db";
@@ -421,27 +420,21 @@ export async function getAutomations() {
   });
 }
 
-/** Catálogo combinado para las líneas de un negocio: productos y refacciones. */
+/**
+ * Los productos para las líneas de un negocio.
+ *
+ * Traía también TODAS las refacciones activas, que el `<select>` pintaba como
+ * opciones: 6 609 desde la carga del ERP anterior, en cada negocio abierto. Las
+ * refacciones las busca ahora el selector al teclear (`buscarRefaccionesAccion`).
+ */
 export async function getCatalogOptions() {
   const db = await tenantDb();
-  const [prods, parts] = await Promise.all([
-    db
-      .select({ id: products.id, name: products.nameEs })
-      .from(products)
-      .where(eq(products.published, true))
-      .orderBy(asc(products.nameEs)),
-    db
-      .select({
-        id: spareParts.id,
-        partNumber: spareParts.partNumber,
-        description: spareParts.description,
-        priceMxn: spareParts.priceMxn,
-      })
-      .from(spareParts)
-      .where(eq(spareParts.active, true))
-      .orderBy(asc(spareParts.partNumber)),
-  ]);
-  return { products: prods, parts };
+  const prods = await db
+    .select({ id: products.id, name: products.nameEs })
+    .from(products)
+    .where(eq(products.published, true))
+    .orderBy(asc(products.nameEs));
+  return { products: prods };
 }
 
 /* ========================= Búsqueda global ========================= */

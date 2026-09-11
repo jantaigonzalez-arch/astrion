@@ -26,20 +26,62 @@ const mxn = (n: number) =>
  * Selector de refacciones con búsqueda incremental.
  * Filtra por número de parte, descripción o marca; permite ajustar cantidad
  * y muestra el subtotal. Emite inputs ocultos partIds/partQtys para el form.
+ *
+ * BUSCA EN EL SERVIDOR. Recibía el catálogo entero y filtraba aquí; con las
+ * 6 609 refacciones del ERP anterior eso era 1.2 MB en cada ticket abierto por
+ * el personal, la pantalla más visitada del sistema. Ahora `buscar` trae veinte
+ * coincidencias, y lo elegido se recuerda aquí (`conocidas`) porque la lista
+ * que lo trajo cambia con la siguiente búsqueda.
  */
 export function PartsPicker({
-  parts,
+  buscar,
   value,
   onChange,
 }: {
-  parts: PartOption[];
+  /** Estable: una acción de servidor. Ver `buscarRefaccionesAccion`. */
+  buscar: (q: string) => Promise<PartOption[]>;
   value: PickedPart[];
   onChange: (next: PickedPart[]) => void;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
+  const [encontradas, setEncontradas] = useState<PartOption[]>([]);
+  // La última consulta RESPONDIDA. «Buscando» se deduce de ella en vez de
+  // guardarse: un `setState` al entrar al efecto encadena renders de más.
+  const [respondida, setRespondida] = useState<string | null>(null);
+  const [conocidas, setConocidas] = useState<Map<string, PartOption>>(() => new Map());
   const boxRef = useRef<HTMLDivElement>(null);
+
+  // Con pausa de 180 ms, y descartando respuestas viejas: si «lam» llega
+  // después de «lamp», no pisa la lista.
+  useEffect(() => {
+    if (!open) return;
+    let vigente = true;
+    const q = query.trim();
+    const t = setTimeout(
+      () => {
+        buscar(q)
+          .then((r) => {
+            if (!vigente) return;
+            setEncontradas(r);
+            setHighlight(0);
+            setRespondida(q);
+          })
+          .catch(() => {
+            if (!vigente) return;
+            setEncontradas([]);
+            setRespondida(q);
+          });
+      },
+      q ? 180 : 0,
+    );
+    return () => {
+      vigente = false;
+      clearTimeout(t);
+    };
+  }, [buscar, open, query]);
+  const buscando = open && respondida !== query.trim();
 
   // Cierra al hacer clic fuera.
   useEffect(() => {
@@ -54,22 +96,13 @@ export function PartsPicker({
 
   const chosen = useMemo(() => new Set(value.map((v) => v.id)), [value]);
 
-  const results = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const base = parts.filter((p) => !chosen.has(p.id));
-    if (!q) return base.slice(0, 8);
-    return base
-      .filter((p) =>
-        `${p.partNumber} ${p.description} ${p.brand ?? ""}`
-          .toLowerCase()
-          .includes(q),
-      )
-      .slice(0, 8);
-  }, [parts, query, chosen]);
-
-  useEffect(() => setHighlight(0), [query, open]);
+  const results = useMemo(
+    () => encontradas.filter((p) => !chosen.has(p.id)).slice(0, 8),
+    [encontradas, chosen],
+  );
 
   function add(p: PartOption) {
+    setConocidas((m) => new Map(m).set(p.id, p));
     onChange([...value, { id: p.id, qty: 1 }]);
     setQuery("");
     setOpen(false);
@@ -80,7 +113,7 @@ export function PartsPicker({
   }
 
   const subtotal = value.reduce((a, v) => {
-    const p = parts.find((x) => x.id === v.id);
+    const p = conocidas.get(v.id);
     return a + Number(p?.costMxn ?? 0) * v.qty;
   }, 0);
 
@@ -90,7 +123,7 @@ export function PartsPicker({
       {value.length > 0 && (
         <ul className="space-y-1.5">
           {value.map((v) => {
-            const p = parts.find((x) => x.id === v.id);
+            const p = conocidas.get(v.id);
             if (!p) return null;
             const over = v.qty > p.stock;
             return (
@@ -164,8 +197,12 @@ export function PartsPicker({
             onChange={(e) => {
               setQuery(e.target.value);
               setOpen(true);
+              setHighlight(0);
             }}
-            onFocus={() => setOpen(true)}
+            onFocus={() => {
+              setOpen(true);
+              setHighlight(0);
+            }}
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
@@ -199,7 +236,11 @@ export function PartsPicker({
           <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-border bg-popover shadow-xl">
             {results.length === 0 ? (
               <p className="px-3 py-4 text-center text-sm text-muted-foreground">
-                {query ? "Sin coincidencias." : "No hay refacciones disponibles."}
+                {buscando
+                  ? "Buscando…"
+                  : query
+                    ? "Sin coincidencias."
+                    : "No hay refacciones disponibles."}
               </p>
             ) : (
               <ul>

@@ -2,7 +2,6 @@ import { setRequestLocale } from "next-intl/server";
 import { ArrowLeft } from "lucide-react";
 import { redirectInTenant } from "@/lib/nav-server";
 import { getSuppliers } from "@/lib/data/purchasing";
-import { getSpareParts } from "@/lib/data/parts";
 import { OrderBuilder } from "@/components/portal/purchasing/order-builder";
 import { Link } from "@/lib/nav";
 import { puedeEn } from "@/lib/tenancy/context";
@@ -19,10 +18,9 @@ export default async function NuevaOrdenPage({
     await redirectInTenant("/dashboard", locale);
   }
 
-  const [suppliers, parts] = await Promise.all([
-    getSuppliers(true, true),
-    getSpareParts(true),
-  ]);
+  // Sin el catálogo de refacciones: cada renglón lo busca al teclear (ver
+  // `OrderBuilder`). Traerlo entero eran 1.2 MB con 6 609 refacciones.
+  const suppliers = await getSuppliers(true, true);
 
   return (
     <div className="space-y-6">
@@ -47,14 +45,6 @@ export default async function NuevaOrdenPage({
           id: s.id,
           name: s.name,
           currency: s.currency,
-        }))}
-        parts={parts.map((p) => ({
-          id: p.id,
-          partNumber: p.partNumber,
-          description: p.description,
-          stock: p.stock,
-          costMxn: p.costMxn,
-          costUsd: p.costUsd,
         }))}
       />
     </div>

@@ -1,8 +1,10 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { createPurchaseOrder, type PurchaseState } from "@/lib/actions/purchasing";
+import { buscarRefaccionesAccion } from "@/lib/actions/parts";
+import type { OpcionRefaccion } from "@/lib/data/parts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,26 +24,11 @@ import { Link, useRouter } from "@/lib/nav";
  * valores viven en el DOM, que es donde el navegador ya sabe cuidarlos.
  */
 
-type Part = {
-  id: string;
-  partNumber: string;
-  description: string;
-  stock: number;
-  costMxn: string | null;
-  costUsd: string | null;
-};
-
 type Supplier = { id: string; name: string; currency: string };
 
 const initial: PurchaseState = { ok: false };
 
-export function OrderBuilder({
-  suppliers,
-  parts,
-}: {
-  suppliers: Supplier[];
-  parts: Part[];
-}) {
+export function OrderBuilder({ suppliers }: { suppliers: Supplier[] }) {
   const [state, action, pending] = useActionState(createPurchaseOrder, initial);
   const router = useRouter();
 
@@ -54,8 +41,6 @@ export function OrderBuilder({
   useEffect(() => {
     if (state.ok && state.orderId) router.push(`/admin/compras/${state.orderId}`);
   }, [state, router]);
-
-  const byId = useMemo(() => new Map(parts.map((p) => [p.id, p])), [parts]);
 
   if (suppliers.length === 0) {
     return (
@@ -146,8 +131,6 @@ export function OrderBuilder({
           {rows.map((key) => (
             <LineRow
               key={key}
-              parts={parts}
-              byId={byId}
               currency={currency}
               onRemove={
                 rows.length > 1 ? () => setRows((r) => r.filter((k) => k !== key)) : undefined
@@ -173,18 +156,24 @@ export function OrderBuilder({
 }
 
 function LineRow({
-  parts,
-  byId,
   currency,
   onRemove,
 }: {
-  parts: Part[];
-  byId: Map<string, Part>;
   currency: string;
   onRemove?: () => void;
 }) {
-  const [partId, setPartId] = useState("");
-  const part = partId ? byId.get(partId) : undefined;
+  /*
+    La refacción se BUSCA en el servidor: el catálogo tiene miles y la página lo
+    recibía entero (1.2 MB). Lo que la búsqueda trae se guarda aquí para que,
+    al elegir, se sepa su existencia y su último costo sin volver a preguntar.
+  */
+  const conocidas = useRef(new Map<string, OpcionRefaccion>());
+  const buscar = useCallback(async (q: string) => {
+    const r = await buscarRefaccionesAccion(q);
+    for (const p of r) conocidas.current.set(p.id, p);
+    return r.map((p) => ({ value: p.id, label: p.partNumber, detalle: p.description }));
+  }, []);
+  const [part, setPart] = useState<OpcionRefaccion | undefined>();
   // El costo del catálogo se propone, no se impone: es el último que se pagó,
   // y quien está capturando la orden tiene la cotización de hoy enfrente.
   const suggested = part
@@ -202,13 +191,9 @@ function LineRow({
         <div className="mt-1">
           <Selector
             name="line-part"
-            placeholder="Elige…"
-            opciones={parts.map((p) => ({
-              value: p.id,
-              label: p.partNumber,
-              detalle: p.description,
-            }))}
-            onChange={setPartId}
+            placeholder="Busca por # de parte o descripción…"
+            buscar={buscar}
+            onChange={(id) => setPart(id ? conocidas.current.get(id) : undefined)}
           />
         </div>
         {part && (
@@ -231,7 +216,7 @@ function LineRow({
         {/* `key` fuerza a recrear el input cuando cambia la sugerencia: sin él,
             React conserva el valor anterior y el precio propuesto no aparece. */}
         <Input
-          key={`${partId}-${currency}`}
+          key={`${part?.id ?? ""}-${currency}`}
           name="line-cost"
           inputMode="decimal"
           defaultValue={suggested ?? ""}

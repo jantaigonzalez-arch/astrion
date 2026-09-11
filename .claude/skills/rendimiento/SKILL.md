@@ -120,6 +120,27 @@ la mecha en la fecha de adopción del cliente. Sobre **tablas de dimensión**
 La pregunta no es «¿tiene `limit`?» sino **«¿qué la acota?»**. Si la respuesta
 es «que hoy hay pocos», es un hallazgo.
 
+**Pasó con el catálogo de refacciones, y no se vio hasta el día de la carga.**
+Con una refacción, cinco pantallas cargaban el catálogo ENTERO —el inventario,
+el buscador de la bitácora del ticket, la orden de compra nueva, la requisición
+y el negocio del CRM— y ninguna lo notaba. Al cargar el reporte del ERP anterior
+(6 609 refacciones), medido en local antes de tocar nada:
+
+```
+                         antes              después
+inventario               10 MB   1,4 s  →  210 KB  0,24 s   (página de 25, en el servidor)
+detalle de ticket        1,2 MB  4,0 s  →  121 KB  0,11 s   (el buscador pregunta al teclear)
+orden de compra nueva    1,2 MB         →   87 KB
+búsqueda de refacción    —              →  ~10 ms en la base, 20 resultados
+```
+
+Lo que quedó como regla: **una lista que la gente elige no viaja entera con la
+página si puede crecer**. Se busca en el servidor —`Selector` con `buscar`,
+`PartsPicker`, la acción `buscarRefaccionesAccion`— con tope de resultados.
+`probe-inventario.mts` comprueba que solo la exportación pida el catálogo
+completo. Antes de cargar datos masivos, busca quién hace `select` sin `where`
+sobre la tabla que vas a llenar: es la lista de pantallas que se van a caer.
+
 ### 5 · Memoización por petición
 
 React `cache()` memoiza **por petición**. Lo que lo aprovecha —`dashboardStates`,

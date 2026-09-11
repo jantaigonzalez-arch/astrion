@@ -6,10 +6,10 @@ import { useFormStatus } from "react-dom";
 import { Clock, Loader2, Package, Send, Wrench } from "lucide-react";
 import {
   PartsPicker,
-  type PartOption,
   type PickedPart,
 } from "@/components/portal/parts-picker";
 import { addComment } from "@/lib/actions/tickets";
+import { buscarRefaccionesAccion } from "@/lib/actions/parts";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -44,14 +44,18 @@ export function CommentForm({
   ticketId,
   canMarkInternal,
   equipment = [],
-  parts = [],
+  hayCatalogo = false,
   defaultEquipmentId = "",
   defaultModuleId = "",
 }: {
   ticketId: string;
   canMarkInternal: boolean;
   equipment?: CommentEquipment[];
-  parts?: PartOption[];
+  /**
+   * Si hay refacciones que buscar. Solo eso: el catálogo ya no viaja con la
+   * página, lo trae el buscador al teclear. Ver `PartsPicker`.
+   */
+  hayCatalogo?: boolean;
   defaultEquipmentId?: string;
   defaultModuleId?: string;
 }) {
@@ -190,7 +194,7 @@ export function CommentForm({
           REFACCIONES UTILIZADAS.
 
           El bloque se pinta para todo el EQUIPO, no solo cuando hay catálogo.
-          Antes colgaba de `parts.length > 0` y con el catálogo vacío
+          Antes colgaba de que hubiera catálogo y con el catálogo vacío
           desaparecía entero: quien buscaba dónde registrar una refacción en un
           servicio no encontraba nada y no había forma de saber si la función no
           existía o si faltaban datos. Un control ausente sin explicación se lee
@@ -205,8 +209,8 @@ export function CommentForm({
             <Label className="flex items-center gap-1.5">
               <Package className="size-3.5 text-primary" /> Refacciones utilizadas
             </Label>
-            {parts.length > 0 ? (
-              <PartsPicker parts={parts} value={used} onChange={setUsed} />
+            {hayCatalogo ? (
+              <PartsPicker buscar={buscarRefaccionesAccion} value={used} onChange={setUsed} />
             ) : (
               <p className="mt-1.5 text-xs text-muted-foreground">
                 No hay refacciones en el catálogo todavía. Se dan de alta en{" "}

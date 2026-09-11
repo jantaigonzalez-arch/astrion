@@ -3,7 +3,6 @@ import { and, eq, sql } from "drizzle-orm";
 import {
   purchaseOrderLines,
   purchaseOrders,
-  spareParts,
   suppliers,
 } from "@/lib/db/schema";
 import type { DbOrTx } from "@/lib/db";
@@ -395,21 +394,6 @@ export const PURCHASE_STATUS_LABEL: Record<PurchaseOrderStatus, string> = {
   received: "Recibida",
   cancelled: "Cancelada",
 };
-
-/** Refacción tal como la necesita el selector de renglones. */
-export async function partsForPicker(db: DbOrTx) {
-  return db
-    .select({
-      id: spareParts.id,
-      partNumber: spareParts.partNumber,
-      description: spareParts.description,
-      stock: spareParts.stock,
-      costMxn: spareParts.costMxn,
-      costUsd: spareParts.costUsd,
-    })
-    .from(spareParts)
-    .orderBy(spareParts.partNumber);
-}
 
 /* ======================= Suspensión de compras ======================= */
 

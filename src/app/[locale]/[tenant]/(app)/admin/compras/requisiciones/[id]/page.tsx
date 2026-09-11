@@ -3,10 +3,9 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { isAdminRole, isSupport } from "@/lib/roles";
 import { redirectInTenant } from "@/lib/nav-server";
-import { currentRole, tenantDb } from "@/lib/tenancy/context";
+import { currentRole } from "@/lib/tenancy/context";
 import { getRequisition } from "@/lib/data/requisitions";
 import { getSuppliers } from "@/lib/data/purchasing";
-import { partsForPicker } from "@/lib/domain/purchasing";
 import { RequisitionStatusBadge } from "@/components/portal/purchasing/requisition-badge";
 import { PurchaseStatusBadge } from "@/components/portal/purchasing/status-badge";
 import { RequisitionActions } from "@/components/portal/purchasing/requisition-actions";
@@ -34,15 +33,11 @@ export default async function RequisicionPage({
   const editable = req.status === "draft";
   const puedeAutorizar = isAdminRole(role);
 
-  // Los catálogos solo se cargan si se van a usar. En una requisición ya
-  // autorizada la tabla es de lectura y traer 800 refacciones sería trabajo
-  // tirado en cada visita.
-  const [parts, suppliers] = editable
-    ? await Promise.all([
-        tenantDb().then((db) => partsForPicker(db)),
-        getSuppliers(true, true),
-      ])
-    : [[], []];
+  // Los proveedores solo se cargan si se van a usar: en una requisición ya
+  // autorizada la tabla es de lectura. Las refacciones no se cargan nunca —el
+  // renglón las busca al teclear—: eran el catálogo entero, 6 609 desde la
+  // carga del ERP anterior, en cada visita a un borrador.
+  const suppliers = editable ? await getSuppliers(true, true) : [];
 
   const pendientes = req.lines.filter(
     (l) => l.quantity > l.orderedQuantity && l.partId && l.supplierId,
@@ -140,10 +135,6 @@ export default async function RequisicionPage({
         <RequisitionLines
           lines={req.lines}
           editable={editable}
-          parts={parts.map((p) => ({
-            id: p.id,
-            label: `${p.partNumber} · ${p.description}`,
-          }))}
           suppliers={suppliers.map((s) => ({ id: s.id, label: s.name }))}
         />
       </Card>

@@ -124,9 +124,12 @@ export function Selector({
   umbral = 12,
   id,
   onChange,
+  buscar,
+  inicial = null,
 }: {
   name: string;
-  opciones: Opcion[];
+  /** La lista. Con `buscar` se ignora: las opciones las trae la búsqueda. */
+  opciones?: Opcion[];
   placeholder?: string;
   defaultValue?: string;
   required?: boolean;
@@ -135,6 +138,25 @@ export function Selector({
   umbral?: number;
   id?: string;
   onChange?: (value: string) => void;
+  /**
+   * Búsqueda EN EL SERVIDOR, para listas que no caben en la página.
+   *
+   * El resto del componente supone que la lista entera llegó con el HTML, y
+   * para los catálogos chicos es lo correcto. El de refacciones no lo es: son
+   * miles, y mandarlas en cada visita pesaba más de un mega por pantalla. Con
+   * `buscar`, lo tecleado se manda —con una pausa de 180 ms, no en cada letra—
+   * y la lista es lo que vuelve. Siempre en modo combobox: un `<select>` no
+   * puede preguntar.
+   *
+   * Tiene que ser una función ESTABLE (una acción de servidor, o envuelta en
+   * `useCallback`): cambiarla vuelve a buscar.
+   */
+  buscar?: (q: string) => Promise<Opcion[]>;
+  /**
+   * Con `buscar`, la opción que corresponde a `defaultValue`. Sin ella el campo
+   * sabría QUÉ valor tiene pero no qué decir: la lista aún no se ha pedido.
+   */
+  inicial?: Opcion | null;
 }) {
   const auto = useId();
   const campoId = id ?? auto;
@@ -149,20 +171,69 @@ export function Selector({
   const entrada = useRef<HTMLInputElement>(null);
   const listaRef = useRef<HTMLUListElement>(null);
 
-  const elegida = opciones.find((o) => o.value === valor) ?? null;
+  const remoto = !!buscar;
+  const [remotas, setRemotas] = useState<Opcion[]>([]);
+  // La última consulta RESPONDIDA: «buscando» se deduce de ella, sin un
+  // `setState` al entrar al efecto.
+  const [respondida, setRespondida] = useState<string | null>(null);
+  // La elegida se guarda entera en modo remoto: la lista que la trajo cambia
+  // con la siguiente búsqueda, y el campo tiene que seguir diciendo su nombre.
+  const [elegidaRemota, setElegidaRemota] = useState<Opcion | null>(inicial);
+  const lista = useMemo(
+    () => (remoto ? remotas : (opciones ?? [])),
+    [remoto, remotas, opciones],
+  );
+
+  const elegida = remoto
+    ? valor && elegidaRemota?.value === valor
+      ? elegidaRemota
+      : null
+    : (lista.find((o) => o.value === valor) ?? null);
+
+  useEffect(() => {
+    if (!buscar || !abierto) return;
+    // `vigente`: si llega la respuesta de «lam» después de la de «lamp», se
+    // descarta. Sin esto la lista enseña a veces lo que ya no está tecleado.
+    let vigente = true;
+    const q = filtro.trim();
+    const t = setTimeout(
+      () => {
+        buscar(q)
+          .then((r) => {
+            if (!vigente) return;
+            setRemotas(r);
+            setActivo(0);
+            setRespondida(q);
+          })
+          .catch(() => {
+            if (!vigente) return;
+            setRemotas([]);
+            setRespondida(q);
+          });
+      },
+      q ? 180 : 0,
+    );
+    return () => {
+      vigente = false;
+      clearTimeout(t);
+    };
+  }, [buscar, abierto, filtro]);
+  const buscando = remoto && abierto && respondida !== filtro.trim();
 
   const visibles = useMemo(() => {
+    // Lo remoto ya viene filtrado, y con el criterio del servidor.
+    if (remoto) return lista;
     const q = normalizar(filtro.trim());
-    if (!q) return opciones;
+    if (!q) return lista;
     // Todas las palabras tienen que aparecer, en cualquier orden y en cualquiera
     // de los tres campos: así «waters monterrey» encuentra el contrato sin que
     // importe cómo esté escrito el renglón.
     const palabras = q.split(/\s+/);
-    return opciones.filter((o) => {
+    return lista.filter((o) => {
       const heno = normalizar(`${o.label} ${o.detalle ?? ""} ${o.buscar ?? ""}`);
       return palabras.every((p) => heno.includes(p));
     });
-  }, [opciones, filtro]);
+  }, [lista, filtro, remoto]);
 
   // Lo que de verdad va al DOM. El resto se cuenta y se anuncia.
   const pintadas = visibles.slice(0, TOPE_PINTADO);
@@ -194,7 +265,7 @@ export function Selector({
     setFiltro("");
     // Arranca sobre lo ya elegido, no en el primero: reabrir para cambiar de
     // idea es el gesto más común y empezar desde arriba obliga a recorrer todo.
-    setActivo(Math.max(0, opciones.findIndex((o) => o.value === valor)));
+    setActivo(Math.max(0, lista.findIndex((o) => o.value === valor)));
   }
 
   function cerrar() {
@@ -204,6 +275,7 @@ export function Selector({
 
   function elegir(o: Opcion) {
     setValor(o.value);
+    setElegidaRemota(o);
     onChange?.(o.value);
     cerrar();
     entrada.current?.focus();
@@ -251,7 +323,7 @@ export function Selector({
   }
 
   /* ── Lista corta: el nativo, que es mejor ── */
-  if (opciones.length <= umbral) {
+  if (!remoto && lista.length <= umbral) {
     return (
       <select
         id={campoId}
@@ -263,7 +335,7 @@ export function Selector({
         onChange={(e) => onChange?.(e.target.value)}
       >
         <option value="">{placeholder}</option>
-        {opciones.map((o) => (
+        {lista.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
             {o.detalle ? ` · ${o.detalle}` : ""}
@@ -324,7 +396,9 @@ export function Selector({
 
       {/* Cuántos resultados quedan, para quien no ve la lista. */}
       <span aria-live="polite" className="sr-only">
-        {abierto
+        {abierto && buscando
+          ? "Buscando…"
+          : abierto
           ? `${visibles.length} ${visibles.length === 1 ? "resultado" : "resultados"}` +
           (ocultas > 0 ? `, se muestran los primeros ${pintadas.length}` : "")
           : ""}
@@ -339,7 +413,11 @@ export function Selector({
         >
           {visibles.length === 0 ? (
             <li className="px-3 py-6 text-center text-sm text-muted-foreground">
-              Nada coincide con «{filtro}».
+              {buscando
+                ? "Buscando…"
+                : filtro
+                  ? `Nada coincide con «${filtro}».`
+                  : "No hay opciones."}
             </li>
           ) : (
             pintadas.map((o, i) => {

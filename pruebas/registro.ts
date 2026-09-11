@@ -38,6 +38,7 @@ export const UNITARIAS = [
   "probe-clientes-fiscal.mts",
   "probe-enlaces.mts",
   "probe-formularios.mts",
+  "probe-inventario.mts",
   "probe-permisos.mts",
   "probe-referencia.mts",
   "probe-revision.mts",

@@ -3,7 +3,9 @@
 import { z } from "zod";
 import { revalidateTenant } from "@/lib/revalidate";
 import { eq } from "drizzle-orm";
-import { tenantDb, puedeEn } from "@/lib/tenancy/context";
+import { currentRole, tenantDb, puedeEn } from "@/lib/tenancy/context";
+import { isInternal } from "@/lib/roles";
+import { buscarRefacciones, type OpcionRefaccion } from "@/lib/data/parts";
 import { spareParts } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
 import { applyInventoryMovement } from "@/lib/domain/inventory";
@@ -186,4 +188,17 @@ export async function updatePart(
     console.error("[part] update error:", e);
     return { ok: false, error: "server" };
   }
+}
+
+/**
+ * El buscador de refacciones de los formularios —bitácora del ticket, orden de
+ * compra, requisición, negocio—. Devuelve veinte coincidencias en vez de que
+ * cada pantalla mande el catálogo entero al navegador; ver `buscarRefacciones`.
+ *
+ * Solo para el personal: el catálogo lleva costos, y un cliente del portal no
+ * tiene ningún formulario que lo pida.
+ */
+export async function buscarRefaccionesAccion(q: string): Promise<OpcionRefaccion[]> {
+  if (!isInternal(await currentRole())) return [];
+  return buscarRefacciones(String(q ?? "").slice(0, 80));
 }

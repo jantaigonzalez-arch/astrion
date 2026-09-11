@@ -1,8 +1,11 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useCallback, useRef, useState, useTransition } from "react";
 import { Loader2, Mail, Plus, Tag, Trash2 } from "lucide-react";
 import { addDealItem, deleteDealItem, toggleDealLabel } from "@/lib/actions/crm-extras";
+import { buscarRefaccionesAccion } from "@/lib/actions/parts";
+import type { OpcionRefaccion } from "@/lib/data/parts";
+import { Selector } from "@/components/ui/selector";
 import { LABEL_STYLES, lineTotal, money, renderTemplate } from "@/lib/crm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,14 +23,12 @@ export type DealItem = {
   discountPct: string;
 };
 
+/**
+ * Solo los productos. Las refacciones ya no viajan con la página: son miles
+ * desde la carga del ERP anterior y el selector las busca al teclear.
+ */
 export type CatalogOptions = {
   products: { id: string; name: string }[];
-  parts: {
-    id: string;
-    partNumber: string;
-    description: string;
-    priceMxn: string | null;
-  }[];
 };
 
 export function DealItemsPanel({
@@ -45,6 +46,36 @@ export function DealItemsPanel({
   const [pending, startTransition] = useTransition();
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+  // Cambia tras cada alta para volver a montar el selector vacío: su valor vive
+  // en estado de React, y `form.reset()` no lo alcanza.
+  const [vuelta, setVuelta] = useState(0);
+
+  /*
+    Productos y refacciones en un solo buscador, como en el `<select>` de
+    antes. Los productos son pocos y se filtran aquí; las refacciones se piden
+    al servidor, y lo que vuelve se guarda para saber su precio al elegirla.
+  */
+  const refacciones = useRef(new Map<string, OpcionRefaccion>());
+  const buscarCatalogo = useCallback(
+    async (q: string) => {
+      const t = q.trim().toLowerCase();
+      const productos = catalog.products
+        .filter((p) => !t || p.name.toLowerCase().includes(t))
+        .slice(0, 10)
+        .map((p) => ({ value: `product:${p.id}`, label: p.name, detalle: "Producto" }));
+      const partes = await buscarRefaccionesAccion(q);
+      for (const p of partes) refacciones.current.set(p.id, p);
+      return [
+        ...productos,
+        ...partes.map((p) => ({
+          value: `part:${p.id}`,
+          label: p.partNumber,
+          detalle: `Refacción · ${p.description}`,
+        })),
+      ];
+    },
+    [catalog.products],
+  );
 
   const total = items.reduce((a, i) => a + lineTotal(i), 0);
 
@@ -56,7 +87,7 @@ export function DealItemsPanel({
       const p = catalog.products.find((x) => x.id === id);
       if (p) setName(p.name);
     } else {
-      const p = catalog.parts.find((x) => x.id === id);
+      const p = refacciones.current.get(id);
       if (p) {
         setName(`${p.partNumber} — ${p.description}`);
         if (p.priceMxn) setPrice(p.priceMxn);
@@ -139,39 +170,20 @@ export function DealItemsPanel({
             formRef.current?.reset();
             setName("");
             setPrice("");
+            setVuelta((v) => v + 1);
           })
         }
         className="grid gap-3 rounded-xl border border-border bg-secondary/30 p-3"
       >
         <input type="hidden" name="dealId" value={dealId} />
 
-        <select
+        <Selector
+          key={vuelta}
           name="catalogRef"
-          className={selectCls}
-          defaultValue=""
-          onChange={(e) => pickCatalog(e.target.value)}
-          aria-label="Elegir del catálogo"
-        >
-          <option value="">— Del catálogo o escribe abajo —</option>
-          {catalog.products.length > 0 && (
-            <optgroup label="Productos">
-              {catalog.products.map((p) => (
-                <option key={p.id} value={`product:${p.id}`}>
-                  {p.name}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {catalog.parts.length > 0 && (
-            <optgroup label="Refacciones">
-              {catalog.parts.map((p) => (
-                <option key={p.id} value={`part:${p.id}`}>
-                  {p.partNumber} — {p.description}
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
+          placeholder="Del catálogo —busca un producto o # de parte— o escribe abajo"
+          buscar={buscarCatalogo}
+          onChange={pickCatalog}
+        />
 
         <Input
           name="name"

@@ -17,7 +17,7 @@ import { isSupport, ROLE_LABELS } from "@/lib/roles";
 import { getTicketById, getAgents } from "@/lib/data/tickets";
 import { rolesByUser } from "@/lib/data/people";
 import { getEquipmentTree } from "@/lib/data/equipment";
-import { getSpareParts } from "@/lib/data/parts";
+import { hayRefacciones } from "@/lib/data/parts";
 import { getSettings } from "@/lib/data/settings";
 import { computeProfit } from "@/lib/profit";
 import { ProfitCard } from "@/components/portal/profit-card";
@@ -63,12 +63,15 @@ export default async function TicketDetailPage({
 
     Es la pantalla más abierta del sistema, y por eso es la que más rinde.
   */
-  const [ticket, agents, partsRaw, appSettings] = await Promise.all([
+  const [ticket, agents, hayCatalogo, appSettings] = await Promise.all([
     getTicketById(id),
     // Solo el staff asigna y registra consumos; para un cliente no hay nada que
     // pedir y la lista se queda vacía sin tocar la base.
     isStaff ? getAgents() : Promise.resolve([]),
-    isStaff ? getSpareParts(true) : Promise.resolve([]),
+    // Solo SI hay catálogo, no el catálogo: el buscador de la bitácora lo
+    // pide al teclear. Traerlo entero eran 1.2 MB por ticket con 6 609
+    // refacciones. Ver `PartsPicker`.
+    isStaff ? hayRefacciones() : Promise.resolve(false),
     getSettings(),
   ]);
 
@@ -83,14 +86,6 @@ export default async function TicketDetailPage({
     recibir su «no existe». Nunca vio los datos, pero los pedía.
   */
   if (!isStaff && ticket.createdById !== session!.user.id) notFound();
-
-  const partOptions = partsRaw.map((p) => ({
-    id: p.id,
-    partNumber: p.partNumber,
-    description: p.description,
-    costMxn: p.costMxn,
-    stock: p.stock,
-  }));
 
   // Utilidad del servicio: ingresos (venta refacciones + horas×tarifa)
   // menos costos (costo refacciones + horas×costo interno).
@@ -295,7 +290,7 @@ export default async function TicketDetailPage({
               ticketId={ticket.id}
               canMarkInternal={isStaff}
               equipment={commentEquipment}
-              parts={partOptions}
+              hayCatalogo={hayCatalogo}
               defaultEquipmentId={ticket.equipmentId ?? ""}
               defaultModuleId={ticket.moduleId ?? ""}
             />
