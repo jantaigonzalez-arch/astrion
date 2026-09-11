@@ -173,8 +173,17 @@ export default async function TicketDetailPage({
               </Link>
             </Button>
           )}
+          {/*
+            A la COLA si es del equipo, a «Mis tickets» si es cliente.
+
+            Iba siempre a `/tickets`, que es «Mis tickets»: los que la persona
+            CREÓ. Para un cliente es su lista; para un administrador que venía
+            de la cola era una pantalla vacía —«No tienes tickets todavía»—,
+            porque los tickets los abren los clientes, no él. Es la misma
+            distinción que ya hace «Ver todos» en el panel.
+          */}
           <Button asChild variant="outline" size="sm">
-            <Link href="/tickets">← Volver</Link>
+            <Link href={isStaff ? "/admin/tickets" : "/tickets"}>← Volver</Link>
           </Button>
         </div>
       </div>
