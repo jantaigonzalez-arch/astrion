@@ -4,7 +4,6 @@ import { getSettings } from "@/lib/data/settings";
 import { getTenantBrand } from "@/lib/data/platform";
 import { SettingsForm } from "@/components/portal/settings-form";
 import { BrandForm } from "@/components/portal/brand-form";
-import { CurrencyForm } from "@/components/portal/currency-form";
 import { DocumentoForm } from "@/components/portal/documento-form";
 import { CorreoForm } from "@/components/portal/correo-form";
 import { getCorreoDeLaEmpresa } from "@/lib/data/correo";
@@ -49,8 +48,6 @@ export default async function SettingsPage({
         laborCostPerHour={s.laborCostPerHour}
         laborRatePerHour={s.laborRatePerHour}
       />
-
-      <CurrencyForm usdRate={s.usdRate} />
     </div>
   );
 }

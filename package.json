@@ -27,7 +27,8 @@
     "db:seed:orders": "tsx --tsconfig tsconfig.scripts.json scripts/seed-orders.ts",
     "sync:prod": "bash scripts/sync-desde-prod.sh",
     "deploy:prod": "bash scripts/desplegar-prod.sh",
-    "sat:catalogos": "tsx --tsconfig tsconfig.scripts.json scripts/sat-catalogos.ts"
+    "sat:catalogos": "tsx --tsconfig tsconfig.scripts.json scripts/sat-catalogos.ts",
+    "tipo-de-cambio": "tsx --tsconfig tsconfig.scripts.json scripts/tipo-de-cambio.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",

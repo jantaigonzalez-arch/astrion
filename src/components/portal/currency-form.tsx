@@ -11,7 +11,11 @@ import { Label } from "@/components/ui/label";
 const initial: SettingsState = { ok: false };
 
 /**
- * Configuración → Moneda.
+ * Configuración → Moneda: el tipo de cambio MANUAL.
+ *
+ * Desde que el automático (Banxico) es lo normal, este es el de quien lo apaga
+ * —una paridad pactada con un cliente— y el respaldo si un día no hubiera dato
+ * de Banxico. Ver `tipoDeCambioDeLaEmpresa`.
  *
  * Una sección propia y no un campo más entre las tarifas de mano de obra: son
  * decisiones distintas, con dueños distintos y ritmos distintos. La tarifa se
@@ -22,14 +26,21 @@ const initial: SettingsState = { ok: false };
  * lo edita: "¿se me van a mover los informes del mes pasado?". No — el tipo de
  * cambio se copia dentro de cada negocio al guardarlo.
  */
-export function CurrencyForm({ usdRate }: { usdRate: number | null }) {
+export function CurrencyForm({
+  usdRate,
+  automatico = false,
+}: {
+  usdRate: number | null;
+  /** Con el automático encendido, este solo se usa de respaldo. */
+  automatico?: boolean;
+}) {
   const [state, action, pending] = useActionState(updateFxRate, initial);
 
   return (
     <Card className="p-6 sm:p-8">
       <div className="mb-5 flex items-center gap-2">
         <Coins className="size-5 text-primary" />
-        <h2 className="text-lg font-semibold">Moneda</h2>
+        <h2 className="text-lg font-semibold">Tipo de cambio manual</h2>
       </div>
 
       <form action={action} className="grid gap-5">
@@ -43,8 +54,9 @@ export function CurrencyForm({ usdRate }: { usdRate: number | null }) {
             placeholder="Ej. 18.20"
           />
           <p className="mt-1 text-xs text-muted-foreground">
-            Con qué paridad se convierten a pesos los negocios capturados en
-            dólares, para poder sumarlos en el embudo y en los informes.
+            {automatico
+              ? "Con el automático encendido, este solo se usa si un día no hay dato de Banxico. Déjalo vacío si prefieres que, sin dato, los negocios en dólares queden sin convertir."
+              : "Con qué paridad se convierten a pesos los negocios capturados en dólares, para poder sumarlos en el embudo y en los informes."}
           </p>
         </div>
 

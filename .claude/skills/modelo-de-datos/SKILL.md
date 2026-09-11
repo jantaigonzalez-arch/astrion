@@ -113,6 +113,28 @@ npm run sat:catalogos -- --aplicar
 El SAT **no publica una API de catálogos**, solo el `.xls`. Lo único con API son
 PACs comerciales que cobran por servir lo que el SAT regala.
 
+### El tipo de cambio: la misma capa, pero con API y un servicio que lo carga
+
+`public.tipo_de_cambio`, desde la **API del SIE de Banxico** (token gratuito,
+`BANXICO_TOKEN`, nunca en el repo). Lo carga el servicio `tipo-de-cambio` del
+compose cada seis horas —mismo bucle `while … sleep` que `backup`, porque el
+servidor no tiene cron— y se cura solo: cada vuelta pide desde diez días antes
+del último dato. Histórico desde 2023 en 0,3 s.
+
+Lo que costó y conviene no redescubrir:
+
+- **La serie es SF43718**, FIX por fecha de *determinación*. SF60653 se llama
+  casi igual y va por fecha de *liquidación*: trae los fines de semana rellenos
+  y su último dato siempre es futuro (medido: el 10/09 devolvía el 14/09).
+- **Se guarda la fecha real y la regla se aplica al leer** (`lib/tipo-de-cambio.ts`):
+  el FIX se publica en el DOF el día hábil siguiente, y para una operación vale
+  el publicado el día ANTERIOR (art. 20 del CFF). Un día de desfase da una cifra
+  creíble y equivocada; `probe-tipo-de-cambio` lo prueba con fin de semana y
+  festivo.
+- **Lo que cada empresa decide** (automático o manual) vive aparte, en
+  `tipoDeCambioDeLaEmpresa` de `data/settings.ts`: el archivo con la caché
+  compartida no puede saber de empresas.
+
 ---
 
 ## 2 · Cuándo partir una entidad en 1:1

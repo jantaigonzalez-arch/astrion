@@ -884,3 +884,23 @@ export const satPais = pgTable("sat_pais", {
   clave: varchar("clave", { length: 3 }).primaryKey(),
   descripcion: text("descripcion").notNull(),
 });
+
+/**
+ * El tipo de cambio de Banxico, por fecha de DETERMINACIÓN. Una copia para toda
+ * la plataforma: ver la migración 0033 de `drizzle/`, que explica por qué SF43718
+ * y no SF60653. Lo que vale en una fecha dada lo calcula `vigenteEn`.
+ */
+export const tipoDeCambio = pgTable(
+  "tipo_de_cambio",
+  {
+    /** `USD` o `EUR`. */
+    moneda: varchar("moneda", { length: 3 }).notNull(),
+    fecha: date("fecha").notNull(),
+    /** Pesos por unidad de la moneda. */
+    valor: numeric("valor", { precision: 12, scale: 6 }).notNull(),
+    /** La serie del SIE de la que salió: `SF43718`, `SF46410`. */
+    serie: varchar("serie", { length: 12 }).notNull(),
+    cargadoEn: timestamp("cargado_en", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ name: "tipo_de_cambio_pk", columns: [t.moneda, t.fecha] })],
+);

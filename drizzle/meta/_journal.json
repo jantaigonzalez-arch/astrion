@@ -232,6 +232,13 @@
       "when": 1789004950054,
       "tag": "0032_catalogos_sat",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1789098548646,
+      "tag": "0033_tipo_de_cambio",
+      "breakpoints": true
     }
   ]
 }

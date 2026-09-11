@@ -4,6 +4,8 @@ import { eq } from "drizzle-orm";
 import { tenantDb } from "@/lib/tenancy/context";
 import { settings } from "@/lib/db/schema";
 import { membershipRole, type MembershipRole } from "@/lib/db/platform";
+import { getTipoDeCambio } from "@/lib/data/tipo-de-cambio";
+import { hoyEnMexico } from "@/lib/tipo-de-cambio";
 
 /** Descarta lo que no sea un rol conocido. Ver la nota de `getSettings`. */
 function rolesGuardados(v: unknown): MembershipRole[] {
@@ -25,6 +27,8 @@ export type AppSettings = {
    * pantallas lo informan aparte en vez de sumar un número inventado.
    */
   usdRate: number | null;
+  /** Si el tipo de cambio sale de Banxico. Ver `tipoDeCambioDeLaEmpresa`. */
+  tipoCambioAutomatico: boolean;
   /**
    * QUÉ ROLES pueden pedir un viaje a quien todavía no es cliente.
    *
@@ -39,6 +43,8 @@ const DEFAULTS: AppSettings = {
   laborCostPerHour: 0,
   laborRatePerHour: 0,
   usdRate: null,
+  // Automático también sin fila de ajustes: es lo que se decidió para todas.
+  tipoCambioAutomatico: true,
   viaticosProspectosRoles: [],
 };
 
@@ -58,6 +64,7 @@ export async function getSettings(conexion?: DbOrTx): Promise<AppSettings> {
     laborCostPerHour: Number(row.laborCostPerHour ?? 0),
     laborRatePerHour: Number(row.laborRatePerHour ?? 0),
     usdRate: rate > 0 ? rate : null,
+    tipoCambioAutomatico: row.tipoCambioAutomatico,
     /*
       Se SANEA lo que viene, no se confía en el tipo.
 
@@ -68,4 +75,37 @@ export async function getSettings(conexion?: DbOrTx): Promise<AppSettings> {
     */
     viaticosProspectosRoles: rolesGuardados(row.viaticosProspectosRoles),
   };
+}
+
+export type TipoDeCambioEfectivo = {
+  valor: number;
+  fuente: "banxico" | "manual";
+  /** Con Banxico: el FIX que se usó y cuándo lo publicó el Diario Oficial. */
+  fix?: string;
+  publicado?: string;
+} | null;
+
+/**
+ * EL TIPO DE CAMBIO QUE ESTA EMPRESA USA HOY. El único sitio que lo decide.
+ *
+ *  · automático (lo normal) → el de Banxico para operaciones del día: el FIX
+ *    publicado en el Diario Oficial el día anterior (art. 20 del CFF).
+ *  · manual → el que la empresa escribió en Configuración → Moneda.
+ *  · automático SIN dato de Banxico —el cargador lleva días sin correr, o es
+ *    una instalación nueva— → el manual, si hay. Mejor el tipo que la empresa
+ *    fijó que ninguno; y si tampoco hay manual, `null`: no se inventa una
+ *    paridad y el negocio queda «sin convertir», como siempre.
+ */
+export async function tipoDeCambioDeLaEmpresa(
+  conexion?: DbOrTx,
+  dia = hoyEnMexico(),
+): Promise<TipoDeCambioEfectivo> {
+  const s = await getSettings(conexion);
+  if (s.tipoCambioAutomatico) {
+    const { paraHoy } = await getTipoDeCambio(`USD|${dia}`);
+    if (paraHoy) {
+      return { valor: paraHoy.valor, fuente: "banxico", fix: paraHoy.fecha, publicado: paraHoy.publicado };
+    }
+  }
+  return s.usdRate ? { valor: s.usdRate, fuente: "manual" } : null;
 }

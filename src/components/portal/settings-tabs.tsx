@@ -10,6 +10,7 @@ import {
   Telescope,
   Orbit,
   Plane,
+  Coins,
   type LucideIcon,
 } from "lucide-react";
 import { Link, usePathname } from "@/lib/nav";
@@ -33,6 +34,9 @@ type Tab = {
  */
 const TABS: Tab[] = [
   { href: "/admin/configuracion", label: "Marca y tarifas", Icon: Palette, exact: true },
+  // Pegada a Marca y tarifas: es de lo que se decide al montar la empresa, y
+  // afecta a cuánto suma cada negocio en dólares desde el primer día.
+  { href: "/admin/configuracion/moneda", label: "Moneda", Icon: Coins },
   { href: "/admin/configuracion/usuarios", label: "Usuarios", Icon: Users },
   { href: "/admin/configuracion/catalogo", label: "Catálogo", Icon: Boxes },
   { href: "/admin/configuracion/embudos", label: "Embudos y etapas", Icon: Settings2 },

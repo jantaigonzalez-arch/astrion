@@ -63,6 +63,38 @@ export async function updateFxRate(
   }
 }
 
+/**
+ * Tipo de cambio automático (Banxico) o manual.
+ *
+ * Solo cambia de dónde sale el tipo de los negocios que se guarden A PARTIR DE
+ * AHORA: los ya guardados conservan el suyo, estampado con su fecha. El manual
+ * no se borra al encender el automático —ver `tipoDeCambioDeLaEmpresa`—.
+ */
+export async function updateTipoCambioAutomatico(
+  _prev: SettingsState,
+  formData: FormData,
+): Promise<SettingsState> {
+  if (!(await puedeEn("configuracion", "administrar"))) return { ok: false, error: "auth" };
+
+  // Casilla de verificación: presente es «sí», ausente es «no».
+  const tipoCambioAutomatico = formData.get("automatico") === "on";
+  try {
+    const db = await tenantDb();
+    await db
+      .insert(settings)
+      .values({ id: "global", tipoCambioAutomatico })
+      .onConflictDoUpdate({
+        target: settings.id,
+        set: { tipoCambioAutomatico, updatedAt: new Date() },
+      });
+    revalidateTenant();
+    return { ok: true };
+  } catch (e) {
+    console.error("[settings] tipo de cambio automático:", e);
+    return { ok: false, error: "server" };
+  }
+}
+
 export async function updateSettings(
   _prev: SettingsState,
   formData: FormData,

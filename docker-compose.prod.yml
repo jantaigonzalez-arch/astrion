@@ -239,6 +239,40 @@ services:
       sleep 24h;
       done"
 
+  # El tipo de cambio de Banxico (API del SIE), cada seis horas.
+  #
+  # Misma imagen que `migrate`, que es la que corre los scripts. El FIX se
+  # determina una vez al día hábil; cuatro vueltas al día sobran y dejan que un
+  # fallo aislado de Banxico se reponga solo en la siguiente. Cada vuelta pide
+  # desde diez días antes del último dato, así que un apagón del servidor
+  # también se rellena solo. Ver `scripts/tipo-de-cambio.ts`.
+  #
+  # Sin BANXICO_TOKEN en deploy/.env el script lo dice y reintenta en seis
+  # horas: la aplicación sigue funcionando con el tipo manual de cada empresa.
+  #
+  # Misma nota de indentación que `backup`: todas las líneas del bloque plegado
+  # al mismo nivel.
+  tipo-de-cambio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-evoelution}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-evoelution}
+      BANXICO_TOKEN: ${BANXICO_TOKEN:-}
+      TZ: ${TZ:-America/Mexico_City}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    entrypoint: >
+      sh -c "while :; do
+      npx tsx --tsconfig tsconfig.scripts.json scripts/tipo-de-cambio.ts --aplicar || echo '[tipo-de-cambio] FALLÓ';
+      sleep 6h;
+      done"
+
   # Copia los dumps FUERA del servidor.
   #
   # Sin esto, `backup` escribe a un volumen del mismo host: un disco perdido se

@@ -12,10 +12,12 @@ import { revalidateTenant } from "@/lib/revalidate";
 import { redirectAfterAction } from "@/lib/nav-server";
 import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { tenantDb, puedeEn } from "@/lib/tenancy/context";
-import { crmActivities, crmAutomations, crmContacts, crmDealEvents, crmDeals, crmNotes, crmOrganizations, crmStages, leads, settings } from "@/lib/db/schema";
+import { crmActivities, crmAutomations, crmContacts, crmDealEvents, crmDeals, crmNotes, crmOrganizations, crmStages, leads } from "@/lib/db/schema";
 import { auth } from "@/lib/auth";
 import { isSalesRole } from "@/lib/roles";
 import { getTenantMember } from "@/lib/data/people";
+import { tipoDeCambioDeLaEmpresa } from "@/lib/data/settings";
+import { hoyEnMexico } from "@/lib/tipo-de-cambio";
 import { nextDealReference } from "@/lib/domain/references";
 import { recordDeletion, recordEvent } from "@/lib/domain/events";
 
@@ -115,8 +117,9 @@ function revalidateCrm() {
  * como «—» en su tarjeta y aportaba cero al pipeline. Un error silencioso y
  * siempre en la misma dirección: el pronóstico quedaba corto.
  *
- * La conversión se hace copiando aquí el tipo de cambio que la empresa fijó en
- * Configuración → Moneda, junto con la fecha. No se lee la configuración al
+ * La conversión se hace copiando aquí el tipo de cambio del día —el de Banxico,
+ * o el que la empresa fijó en Configuración → Moneda si apagó el automático—,
+ * junto con la fecha. No se lee la configuración al
  * pintar los informes, y esa es la decisión de fondo: si los informes leyeran el
  * tipo de cambio de hoy, tocarlo reescribiría el cierre de meses ya reportados y
  * dos personas mirando el mismo trimestre en semanas distintas verían números
@@ -136,21 +139,18 @@ async function stampFx(
     return { currency: values.valueMxn ? "MXN" : null, fxRate: null, fxDate: null };
   }
 
-  const [row] = await db
-    .select({ usdRate: settings.usdRate })
-    .from(settings)
-    .where(eq(settings.id, "global"))
-    .limit(1);
-
-  const rate = Number(row?.usdRate ?? 0);
-  if (!(rate > 0)) return { currency: "USD", fxRate: null, fxDate: null };
+  // Automático (Banxico) o manual, según la empresa: lo decide
+  // `tipoDeCambioDeLaEmpresa`, que es el único sitio que lo sabe.
+  const hoy = hoyEnMexico();
+  const tc = await tipoDeCambioDeLaEmpresa(db, hoy);
+  if (!tc) return { currency: "USD", fxRate: null, fxDate: null };
 
   return {
     currency: "USD",
-    fxRate: rate.toFixed(4),
-    // Fecha local del servidor: es el día que la empresa dirá que pactó esa
-    // paridad, no el día UTC.
-    fxDate: new Date().toLocaleDateString("en-CA"),
+    fxRate: tc.valor.toFixed(4),
+    // El día en la Ciudad de México: es el día que la empresa dirá que pactó
+    // esa paridad, no el día UTC.
+    fxDate: hoy,
   };
 }
 

@@ -580,6 +580,15 @@ export const settings = pgTable("settings", {
     .notNull()
     .default([]),
 
+  /**
+   * Si el tipo de cambio sale de Banxico (`true`, lo normal) o de `usdRate`.
+   *
+   * El manual no desaparece al encender el automático: es el de quien pactó una
+   * paridad con un cliente, y el respaldo si un día no hay dato de Banxico. Ver
+   * la migración 0036 y `tipoDeCambioDeLaEmpresa`.
+   */
+  tipoCambioAutomatico: boolean("tipo_cambio_automatico").notNull().default(true),
+
 
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

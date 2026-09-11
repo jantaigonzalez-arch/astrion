@@ -47,6 +47,7 @@ export const UNITARIAS = [
   "probe-stubs.mts",
   "probe-suscripcion.mts",
   "probe-tablas.mts",
+  "probe-tipo-de-cambio.mts",
 ] as const;
 
 /**

@@ -123,6 +123,7 @@ scripts/_dash.ts
 !probe-permisos.mts
 !probe-referencia.mts
 !probe-inventario.mts
+!probe-tipo-de-cambio.mts
 !probe-revision.mts
 !probe-rutas.mts
 !probe-selector.mts
