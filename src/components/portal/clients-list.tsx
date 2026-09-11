@@ -363,8 +363,15 @@ export function ClientsList({
               <tbody className="divide-y divide-border">
                 {filtered.map((c) => (
                   <tr key={c.id} className="transition-colors hover:bg-secondary/40">
-                    <td className="px-4 py-3">
+                    <td className="min-w-[26ch] px-4 py-3">
                       {/*
+                        Y UN PISO, `min-w-[26ch]`: las columnas de la derecha no
+                        se parten, así que la tabla le deja a ésta solo su mínimo.
+                        Sin piso, medido: 158 px y la razón social más larga en 7
+                        renglones; con él, 230 px y 5. Va en la celda y no en
+                        `globals.css` porque muchas primeras columnas son un folio
+                        o una fecha, y el piso les regalaría el mismo ancho.
+
                         EL TECHO VA DENTRO DE LA CELDA, no solo en el `max-width`
                         de `globals.css`.
 

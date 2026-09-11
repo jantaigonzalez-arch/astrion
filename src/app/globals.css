@@ -535,6 +535,40 @@
   position: sticky;
   left: 0;
   max-width: 34ch;
+  /*
+    ── EL TECHO SIN ESTAS LÍNEAS DERRAMABA EL TEXTO ─────────────────────
+
+    El techo solo parte lo que PUEDE partirse. Usuarios le ponía
+    `whitespace-nowrap` al nombre, así que con la columna topada a 34ch el
+    nombre largo SE SALÍA de su celda y se pintaba encima del correo: medido
+    en un navegador de verdad, 8 de 34 filas invadían la columna vecina, la
+    peor por 234 px. Cualquier tabla cuya primera celda no se parta tenía el
+    mismo defecto esperando.
+
+      · `overflow: hidden` + `text-overflow: ellipsis` — lo que no cabe se
+        corta DENTRO de su celda, con puntos suspensivos, igual que el resto
+        de columnas. Nunca más se pinta sobre la de al lado. Recortar una
+        celda fijada no le quita lo pegajoso: eso lo rompe el `overflow` de
+        un ANTEPASADO, no el suyo.
+      · `overflow-wrap: break-word` — si la celda sí se parte, una palabra
+        sin espacios (un correo, un folio) se parte SOLO cuando no cabe
+        entera. Y NO `anywhere`, que se probó primero: además de permitir
+        partir, le dice a la tabla que la columna puede encogerse hasta una
+        letra, y con correos largos a la derecha la apretó a 102 px y partió
+        los nombres a mitad de palabra —«Administr / ador»—. `break-word` no
+        toca el ancho mínimo de la columna; `anywhere` sí.
+
+    Lo que NO va aquí, aunque se probó: forzar `white-space: normal` y un
+    piso de `min-width: 26ch` para todas. Arreglaba Usuarios, pero la primera
+    columna de muchas tablas es corta —un número de renglón, una fecha, un
+    mes, un número de parte— y el piso les regalaba 235 px, y el `normal`
+    partía en tres renglones las fechas que llevan `whitespace-nowrap` a
+    propósito. Si una pantalla quiere que su nombre se parta, lo dice en su
+    celda: ver Usuarios.
+  */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: break-word;
 }
 .tabla-erp tbody td:first-child {
   /* Opaca y del color de la tarjeta que la contiene: si fuera translúcida, las

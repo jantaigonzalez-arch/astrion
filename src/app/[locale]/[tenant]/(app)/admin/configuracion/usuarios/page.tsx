@@ -197,7 +197,16 @@ export default async function AdminUsersPage({
             <tbody className="divide-y divide-border">
               {users.map((u) => (
                 <tr key={u.id} className="transition-colors hover:bg-secondary/40">
-                  <td className="whitespace-nowrap px-4 py-3 font-medium">{u.name ?? "—"}</td>
+                  {/*
+                    El nombre SE PARTE y no se corta: aquí es lo que identifica la
+                    fila, y hay nombres de 64 caracteres. Sin `whitespace-nowrap`
+                    —con él se salía de la celda y tapaba el correo—, y con piso
+                    de 26ch, que salió de medir: como el correo y la empresa no se
+                    parten, la tabla le deja a esta columna solo su mínimo, y sin
+                    piso el nombre más largo se apilaba en 6 renglones (18ch, 163
+                    px); con 26ch, en 4 y el resto en 1–3.
+                  */}
+                  <td className="min-w-[26ch] px-4 py-3 font-medium">{u.name ?? "—"}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{u.email}</td>
                   <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{u.company ?? "—"}</td>
                   <td className="px-4 py-3">

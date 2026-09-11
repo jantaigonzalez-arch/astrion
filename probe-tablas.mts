@@ -172,13 +172,26 @@ const css3 = reglasDeAncho("tickets", { 0: 200, 2: 90 });
 check("con anchos puestos se fija el reparto", css3.includes("table-layout:fixed"));
 check("y el contenido que no cabe se recorta", css3.includes("overflow:hidden"));
 /*
-  La primera columna queda FUERA del recorte: está fijada a la izquierda y
-  `overflow` sobre una celda fijada no hace falta —su techo lo pone `max-width`—
-  y es el primer sospechoso de que la cabecera no se fije como sí lo hace la
-  celda del cuerpo.
+  La primera columna queda fuera de ESTE recorte porque lleva el suyo siempre,
+  con o sin anchos guardados, en `globals.css`. Tiene techo de 34ch, y un techo
+  sin recorte es justo lo que derramaba: en Usuarios el nombre, con
+  `whitespace-nowrap`, se salía de su celda y se pintaba encima del correo (8 de
+  34 filas, medido en el navegador). Se comprueba la regla sin comentarios, que
+  un comentario que diga `overflow: hidden` no recorta nada.
 */
-check("pero la primera columna, no: está fijada al desplazarse",
+check("la primera columna no entra aquí…",
   css3.includes("th:not(:first-child)") && css3.includes("td:not(:first-child)"));
+const reglaAncla = css
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .match(/\.tabla-erp tbody td:first-child,\s*\.tabla-erp thead th:first-child\s*\{([^}]*)\}/)?.[1] ?? "";
+check("…porque su recorte va con su techo: nunca se pinta sobre la de al lado",
+  /max-width:\s*34ch/.test(reglaAncla) &&
+  /overflow:\s*hidden/.test(reglaAncla) &&
+  /text-overflow:\s*ellipsis/.test(reglaAncla));
+// Un piso o un `white-space` para TODAS las primeras columnas se probó y se
+// quitó: muchas son un número de renglón o una fecha, y el piso les daba 235 px.
+check("y sin piso ni `white-space` impuestos a todas las tablas",
+  !/min-width/.test(reglaAncla) && !/white-space/.test(reglaAncla));
 check("con puntos suspensivos, o un nombre cortado parece corto",
   css3.includes("text-overflow:ellipsis"));
 check("los anchos salen por columna", css3.includes("nth-child(1){width:200px}") && css3.includes("nth-child(3){width:90px}"));
