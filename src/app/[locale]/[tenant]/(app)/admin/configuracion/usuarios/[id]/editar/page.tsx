@@ -57,7 +57,16 @@ export default async function EditUserPage({
             </Button>
           )}
           <Button asChild variant="outline" size="sm">
-            <Link href="/admin/configuracion/usuarios">← Usuarios</Link>
+            {/* De vuelta al padrón de donde viene: el de clientes o el interno. */}
+            <Link
+              href={
+                user.role === "client"
+                  ? "/admin/configuracion/usuarios?grupo=clientes"
+                  : "/admin/configuracion/usuarios"
+              }
+            >
+              ← Usuarios
+            </Link>
           </Button>
         </div>
       </div>

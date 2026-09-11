@@ -101,7 +101,8 @@ export default async function LabEquipmentPage({
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
-          <Link href="/admin/configuracion/usuarios">← Usuarios</Link>
+          {/* Los equipos son de un laboratorio: se vuelve a los clientes. */}
+          <Link href="/admin/configuracion/usuarios?grupo=clientes">← Usuarios</Link>
         </Button>
       </div>
 

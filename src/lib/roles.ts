@@ -53,13 +53,42 @@ export function isOwner(role: EffectiveRole) {
 
 /** Cualquier perfil interno (accede al área /admin del portal). */
 export function isInternal(role: EffectiveRole) {
-  return (
-    role === "agent" ||
-    role === "admin" ||
-    role === "sales" ||
-    role === "general" ||
-    role === "owner"
-  );
+  return !!role && (ROLES_INTERNOS as readonly MembershipRole[]).includes(role);
+}
+
+/**
+ * Los perfiles internos, en lista. `isInternal` sale de aquí y no de otra copia:
+ * el padrón los separa de los clientes con esta misma lista, y dos listas son
+ * dos listas que un día dicen cosas distintas —que es lo que pasó con el rol
+ * General en el formulario de alta, ver `create-user-form.tsx`—.
+ */
+export const ROLES_INTERNOS = [
+  "owner",
+  "admin",
+  "agent",
+  "sales",
+  "general",
+] as const satisfies readonly MembershipRole[];
+
+/**
+ * Los dos padrones de una empresa: quien trabaja en ella y quien entra al portal
+ * como cliente.
+ *
+ * Es una separación de PANTALLA, no de datos. Las dos son filas de la misma
+ * tabla `memberships`, que distingue por `role`: una persona puede ser cliente
+ * en un laboratorio y agente en otro, y el acceso, la invitación y la baja
+ * funcionan igual para las dos. Partirlas en dos tablas duplicaría todo eso y
+ * obligaría a unir las dos cada vez que se busca a alguien.
+ */
+export const GRUPOS_USUARIO = ["internos", "clientes"] as const;
+export type GrupoUsuario = (typeof GRUPOS_USUARIO)[number];
+
+export function rolesDeGrupo(grupo: GrupoUsuario): readonly MembershipRole[] {
+  return grupo === "clientes" ? ["client"] : ROLES_INTERNOS;
+}
+
+export function grupoDeRol(role: MembershipRole): GrupoUsuario {
+  return isInternal(role) ? "internos" : "clientes";
 }
 
 export const ROLE_LABELS: Record<MembershipRole, string> = {

@@ -6,6 +6,7 @@ import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { memberships, users, type MembershipRole } from "@/lib/db/platform";
 import { requireTenant } from "@/lib/tenancy/context";
+import { grupoDeRol, type GrupoUsuario } from "@/lib/roles";
 
 /**
  * Las personas de la EMPRESA ACTIVA.
@@ -152,6 +153,12 @@ export async function contarMiembros(tenantId: string): Promise<{
   rol: Array<{ k: MembershipRole; n: number }>;
   activos: number;
   bajas: number;
+  /**
+   * Lo mismo, partido en los dos padrones. Sale de la MISMA consulta —ya viene
+   * agrupada por rol— así que separar internos de clientes no cuesta un viaje
+   * más a la base.
+   */
+  grupo: Record<GrupoUsuario, { total: number; activos: number; bajas: number }>;
 }> {
   const db = getDb();
   const filas = await db
@@ -168,15 +175,27 @@ export async function contarMiembros(tenantId: string): Promise<{
   const porRol = new Map<MembershipRole, number>();
   let activos = 0;
   let bajas = 0;
+  const grupo = {
+    internos: { total: 0, activos: 0, bajas: 0 },
+    clientes: { total: 0, activos: 0, bajas: 0 },
+  };
   for (const f of filas) {
     porRol.set(f.rol, (porRol.get(f.rol) ?? 0) + f.n);
-    if (f.vivo) activos += f.n;
-    else bajas += f.n;
+    const g = grupo[grupoDeRol(f.rol)];
+    g.total += f.n;
+    if (f.vivo) {
+      activos += f.n;
+      g.activos += f.n;
+    } else {
+      bajas += f.n;
+      g.bajas += f.n;
+    }
   }
   return {
     rol: [...porRol].map(([k, n]) => ({ k, n })),
     activos,
     bajas,
+    grupo,
   };
 }
 

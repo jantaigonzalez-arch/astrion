@@ -16,8 +16,9 @@ const { getDb } = await import("./src/lib/db/index.ts");
 const { listTenantMembersFor, getTenantMemberFor } = await import(
   "./src/lib/data/people.ts"
 );
-const { isAdminRole, isSupport, isInternal } = await import("./src/lib/roles.ts");
-const { memberships, tenants, users } = await import("./src/lib/db/platform.ts");
+const { isAdminRole, isSupport, isInternal, GRUPOS_USUARIO, ROLES_INTERNOS, rolesDeGrupo, grupoDeRol } =
+  await import("./src/lib/roles.ts");
+const { memberships, membershipRole, tenants, users } = await import("./src/lib/db/platform.ts");
 const { eq, and, sql } = await import("drizzle-orm");
 
 const db = getDb();
@@ -36,6 +37,27 @@ const ok = (label: string, cond: boolean, extra = "") => {
   console.log(`${cond ? "✓" : "✗"} ${label}${extra ? ` — ${extra}` : ""}`);
 };
 
+/*
+  LOS DOS PADRONES DE USUARIOS CUBREN TODOS LOS ROLES, SIN SOLAPARSE.
+
+  La pantalla de Usuarios separa al equipo interno de los clientes del portal
+  filtrando la misma tabla por `role`. Un rol nuevo en el enum que no caiga en
+  ningún grupo sería una persona que no aparece en NINGUNA pestaña —y a la que,
+  por tanto, nadie puede dar de baja—. Esto va antes del montaje porque no
+  necesita base: corre también contra la copia de producción.
+*/
+for (const r of membershipRole.enumValues) {
+  const en = GRUPOS_USUARIO.filter((g) => rolesDeGrupo(g).includes(r));
+  ok(`el rol ${r} está en un solo padrón`, en.length === 1, en.join(", ") || "en ninguno");
+  ok(`y grupoDeRol lo manda al mismo`, en[0] === grupoDeRol(r));
+}
+ok(
+  "isInternal y la lista de internos dicen lo mismo",
+  membershipRole.enumValues.every(
+    (r) => isInternal(r) === (ROLES_INTERNOS as readonly string[]).includes(r),
+  ),
+);
+
 const [evo] = await db
   .select({ id: tenants.id })
   .from(tenants)
@@ -50,7 +72,9 @@ if (!evo || !acme) {
     "· omitida: hace falta el inquilino acme además de evoelution. " +
       "La copia de producción solo trae uno.",
   );
-  process.exit(0);
+  // Las de los padrones, de arriba, ya corrieron: su resultado cuenta aunque
+  // el resto se omita.
+  process.exit(fallos ? 1 : 0);
 }
 
 // ---- montaje: una persona, dos empresas, dos papeles ----
@@ -125,6 +149,41 @@ try {
     "ninguno de los dos es el padrón completo de la plataforma",
     padronEvo.length < totalUsuarios && padronAcme.length < totalUsuarios,
     `${padronEvo.length} + ${padronAcme.length} vs ${totalUsuarios} cuentas`,
+  );
+
+  // ---- 3b. el padrón partido en dos: la misma consulta, filtrada por rol ----
+  const internosAcme = await listTenantMembersFor(acme.id, {
+    includeInactive: true,
+    roles: rolesDeGrupo("internos"),
+  });
+  const clientesAcme = await listTenantMembersFor(acme.id, {
+    includeInactive: true,
+    roles: rolesDeGrupo("clientes"),
+  });
+  ok(
+    "en acme, la administradora sale en el equipo interno y no en clientes",
+    internosAcme.some((m) => m.id === dual.id) && !clientesAcme.some((m) => m.id === dual.id),
+  );
+  ok(
+    "y el cliente, al revés",
+    clientesAcme.some((m) => m.id === soloAcme.id) && !internosAcme.some((m) => m.id === soloAcme.id),
+  );
+  ok(
+    "las dos pestañas suman el padrón completo",
+    internosAcme.length + clientesAcme.length === padronAcme.length,
+    `${internosAcme.length} + ${clientesAcme.length} = ${padronAcme.length}`,
+  );
+  // El filtro de la URL no amplía el del padrón: `?rol=admin` en la pestaña
+  // de clientes no puede sacar a una administradora.
+  ok(
+    "el filtro de rol no se sale del padrón abierto",
+    (
+      await listTenantMembersFor(acme.id, {
+        includeInactive: true,
+        roles: rolesDeGrupo("clientes"),
+        rol: "admin",
+      })
+    ).length === 0,
   );
 
   // ---- 4. una persona de otra empresa no se puede leer ----

@@ -390,7 +390,12 @@ export async function getLeads() {
 // que se reactiva a alguien, así que ocultar a los inactivos la dejaría sin uso.
 export async function getUsers(
   orden?: Orden<CampoOrdenMiembro>,
-  filtros?: { rol?: MembershipRole; activo?: boolean },
+  filtros?: {
+    /** El padrón: equipo interno o clientes. Ver `GRUPOS_USUARIO`. */
+    roles?: readonly MembershipRole[];
+    rol?: MembershipRole;
+    activo?: boolean;
+  },
 ) {
   // `includeInactive`: es la pantalla desde la que se readmite a alguien, así
   // que esconder las bajas la dejaría sin forma de deshacer una. El filtro de

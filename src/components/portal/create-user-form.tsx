@@ -1,6 +1,6 @@
 "use client";
 
-import { ASSIGNABLE_ROLES, ROLE_LABELS } from "@/lib/roles";
+import { ASSIGNABLE_ROLES, ROLE_LABELS, type AssignableRole } from "@/lib/roles";
 
 import { useActionState, useState } from "react";
 import { Boxes, CheckCircle2, Copy, Loader2, RefreshCw, UserPlus } from "lucide-react";
@@ -26,7 +26,7 @@ function randomPassword() {
   return out + sym[s[0] % sym.length] + "9";
 }
 
-export function CreateUserForm() {
+export function CreateUserForm({ rolInicial }: { rolInicial?: AssignableRole } = {}) {
   const [state, action, pending] = useActionState(createUser, initial);
   const [password, setPassword] = useState("");
   const [copied, setCopied] = useState(false);
@@ -75,7 +75,15 @@ export function CreateUserForm() {
             </Button>
           )}
           <Button asChild variant="outline">
-            <Link href="/admin/configuracion/usuarios">Ver usuarios</Link>
+            <Link
+              href={
+                state.createdRole === "client"
+                  ? "/admin/configuracion/usuarios?grupo=clientes"
+                  : "/admin/configuracion/usuarios"
+              }
+            >
+              Ver usuarios
+            </Link>
           </Button>
           <Button variant="ghost" onClick={() => location.reload()}>
             Crear otro
@@ -117,7 +125,7 @@ export function CreateUserForm() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <Label htmlFor="role">Rol</Label>
-          <select id="role" name="role" defaultValue="client" className={selectCls}>
+          <select id="role" name="role" defaultValue={rolInicial ?? "client"} className={selectCls}>
             {/*
             LOS ROLES SALEN DE `ASSIGNABLE_ROLES`, NO ESCRITOS A MANO.
 
