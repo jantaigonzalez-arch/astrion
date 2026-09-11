@@ -131,12 +131,33 @@ echo "▸ Reconstruyendo y levantando…"
 # contra el esquema viejo, que es el estado correcto en el que quedarse.
 ssh "$SERVIDOR" "cd $RUTA && $C up -d --build"
 
+# ── nginx tiene que volver a buscar a `web` ──────────────────────────────────
+#
+# `upstream web_app { server web:3000; }` resuelve el nombre UNA vez, cuando
+# nginx arranca, y nginx lleva semanas arriba. Al recrear `web` Docker le puede
+# dar otra IP, y nginx sigue mandando a la vieja: 502 en todo el sitio con la
+# aplicación sana. El `resolver` de la plantilla no lo evita: solo aplica a los
+# `proxy_pass` con variables, y el de la aplicación no lo es.
+#
+# Pasó el 2026-09-11: el servicio nuevo `tipo-de-cambio` arrancó antes que
+# `web` y se quedó con su IP (172.18.0.5); `web` salió en la .8. Minuto y medio
+# de 502 hasta recargar nginx a mano. Recargar no corta conexiones ni reinicia
+# el contenedor, y antes se comprueba la configuración para no tumbarlo.
+ssh "$SERVIDOR" "cd $RUTA && $C exec -T nginx nginx -t -q && $C exec -T nginx nginx -s reload"
+
 # ── Comprobar de verdad ──────────────────────────────────────────────────────
 echo
 echo "▸ Estado:"
 ssh "$SERVIDOR" 'docker ps --format "    {{.Names}}  {{.Status}}"'
 
-codigo="$(curl -sS -o /dev/null -w '%{http_code}' -m 30 "$SITIO/api/health" || echo 000)"
+# Con reintentos: `web` tarda unos segundos en quedar listo después de `up`, y
+# una sola consulta en ese hueco daba por fallido un despliegue sano.
+codigo=000
+for _ in $(seq 1 12); do
+  codigo="$(curl -sS -o /dev/null -w '%{http_code}' -m 10 "$SITIO/api/health" || echo 000)"
+  [ "$codigo" = "200" ] && break
+  sleep 5
+done
 echo
 if [ "$codigo" = "200" ]; then
   echo "✅ $SITIO responde 200. Desplegado $(git rev-parse --short HEAD)."

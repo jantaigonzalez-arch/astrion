@@ -319,6 +319,23 @@ cualquiera falla, `web` no arranca.
 > `drizzle-kit migrate`, que aplica los `.sql` versionados y registra cuáles ya
 > corrieron.
 
+### 502 en todo el sitio con `web` sano: recargar nginx
+
+Si `web` sale `healthy` pero el sitio da **502** y el log de nginx dice
+`connect() failed (111: Connection refused) while connecting to upstream` hacia
+una IP concreta, nginx está mandando a la IP VIEJA de `web`. El `upstream`
+resuelve el nombre una sola vez, al arrancar nginx, y al recrear `web` Docker le
+puede dar otra. Pasó el 2026-09-11, cuando un servicio nuevo se quedó con la IP
+que tenía `web`.
+
+```bash
+C="docker compose -f docker-compose.prod.yml --env-file deploy/.env"
+$C exec -T nginx nginx -t && $C exec -T nginx nginx -s reload
+```
+
+Recargar no corta conexiones ni reinicia el contenedor. `npm run deploy:prod` ya
+lo hace después de cada `up`; esto es para cuando se levanta a mano.
+
 ---
 
 ## Respaldos
