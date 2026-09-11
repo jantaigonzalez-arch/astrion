@@ -13,6 +13,7 @@ export function Topbar({
   email,
   brand,
   campana,
+  novedades,
   densidad,
 }: {
   name?: string | null;
@@ -27,6 +28,8 @@ export function Topbar({
    * barra tenga que saber nada de notificaciones.
    */
   campana?: React.ReactNode;
+  /** Lo nuevo de la aplicación, ya filtrado en el servidor. Ver `lib/novedades.ts`. */
+  novedades?: React.ReactNode;
   /** Densidad guardada, para que el menú nazca marcando la vigente. */
   densidad: Densidad;
 }) {
@@ -66,6 +69,7 @@ export function Topbar({
       <div className="ml-auto flex items-center gap-3">
         {/* Sitio fijo en toda la aplicación: es lo que lo vuelve costumbre. */}
         <AnalysisAssistant />
+        {novedades}
         {campana}
         {/* Junto al tema: los dos son cómo se VE el sistema, no qué hace. */}
         <DensidadToggle inicial={densidad} />

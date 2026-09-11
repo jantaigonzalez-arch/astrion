@@ -11,6 +11,8 @@ import { SoloLectura } from "@/components/portal/solo-lectura";
 import { Topbar } from "@/components/portal/topbar";
 import { TenantBar } from "@/components/portal/tenant-bar";
 import { Campana } from "@/components/portal/campana";
+import { Novedades } from "@/components/portal/novedades";
+import { novedadesParaMi } from "@/lib/data/novedades";
 import { AnchosDeColumna } from "@/components/portal/anchos-de-columna";
 import { CapaInteligencia } from "@/components/portal/capa-inteligencia";
 import { DENSIDAD_COOKIE, densidadGuardada } from "@/lib/densidad";
@@ -86,7 +88,7 @@ export default async function TenantAppLayout({
   // Las dos en paralelo: son independientes y encadenarlas sumaría sus tiempos
   // en cada navegación. Las dos están en caché por empresa, así que en una
   // navegación normal ninguna toca la base.
-  const [marca, tableros, avisosCrudos, sinLeer] = await Promise.all([
+  const [marca, tableros, avisosCrudos, sinLeer, novedades] = await Promise.all([
     getTenantBrand(tenant),
     tablerosDelMenu(),
     // Los avisos NO están en caché ni pueden estarlo: son de cada persona y
@@ -97,6 +99,9 @@ export default async function TenantAppLayout({
     // avisos, así que preguntarlos sería una consulta que siempre devuelve nada.
     ctx!.impersonated ? Promise.resolve([]) : misAvisos(),
     ctx!.impersonated ? Promise.resolve(0) : contarSinLeer(),
+    // Lo nuevo de la aplicación: sin base, solo permisos que ya están en caché
+    // por petición. De visita tampoco: un operador no es quien estrena nada.
+    ctx!.impersonated ? Promise.resolve([]) : novedadesParaMi(),
   ]);
 
   /*
@@ -177,6 +182,11 @@ export default async function TenantAppLayout({
               ctx!.impersonated ? undefined : (
                 <Campana avisos={avisos} sinLeer={sinLeer} />
               )
+            }
+            novedades={
+              novedades.length > 0 ? (
+                <Novedades novedades={novedades} usuario={session!.user.id} />
+              ) : undefined
             }
           />
           {/* Una sola vez para toda la aplicación: busca las tablas que

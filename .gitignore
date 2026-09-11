@@ -124,6 +124,7 @@ scripts/_dash.ts
 !probe-referencia.mts
 !probe-inventario.mts
 !probe-tipo-de-cambio.mts
+!probe-novedades.mts
 !probe-revision.mts
 !probe-rutas.mts
 !probe-selector.mts
