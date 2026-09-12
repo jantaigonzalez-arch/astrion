@@ -41,9 +41,10 @@ se cargan dentro de Next (`scripts/_stub-guardia.ts`), y con eso se cerró.
 `_probe-perf.ts` sigue fuera a propósito: mide contra el volumen REAL y vive en
 `SOLO_LOCAL`. Si no lo tenés, es que no sincronizaste producción.
 
-`--conditions` va **antes** de `--tsconfig`. Al revés, tsx le pasa el segundo a
+`--tsconfig` va **antes** de `--conditions`. Al revés, tsx le pasa el primero a
 node y node contesta «bad option: --tsconfig» sin decir de quién es la culpa.
-Ha costado encontrarlo dos veces.
+Ha costado encontrarlo tres veces: la tercera, porque este mismo párrafo lo
+decía al revés (corregido el 2026-09-12, comprobado con `node` 24).
 
 Los dos probes contestan preguntas distintas y hacen falta los dos: una pantalla
 puede hacer **dos** consultas y tardar 400 ms, o **cuarenta** y tardar 12.
@@ -173,6 +174,32 @@ nota es un índice que nadie se atreverá a borrar dentro de un año.
 Y las migraciones **se escriben a mano en las dos carpetas** — `drizzle/` y
 `drizzle-tenant/`. Ver la regla 4 de `AGENTS.md`: `drizzle-kit generate` compara
 contra un snapshot de hace seis migraciones y produce una que las rehace todas.
+
+### 6 · Una subconsulta por fila donde hay `OFFSET`, y un `OR` que apaga los índices
+
+Los dos los trajo la 0037 (viáticos a varios destinos) y los cazó la medición
+contra volumen, no la lectura del código:
+
+- **Una subconsulta correlacionada en el `select` se evalúa también para las
+  filas que el `OFFSET` tira.** El listado de viáticos armaba los destinos de cada
+  fila con un `json_agg` en la lista del `select`: la página 80 del archivo pasó
+  de 11,7 a 35,3 ms. La salida es traer primero la página y después, en UNA
+  consulta con `inArray`, lo de esas filas (`destinosPorViatico`): 8,6 ms.
+- **Un `OR` entre dos caminos dentro de un `EXISTS` no usa índices**: cruza las
+  dos tablas. `TIENE_CONTRATO_VIGENTE` tardaba 4-5 ms con 88 organizaciones y
+  crecía como organizaciones × contratos; partido en dos `EXISTS`, 0,3 ms.
+
+**Y la trampa del instrumento:** con el stub de inquilino viejo (`tenantId` de
+ceros) «miembros del inquilino» se medía devolviendo **0 filas**, y organizaciones
+y la cola de tickets salían más rápidas de lo que son. Antes de comparar dos
+números, comparar cuántas filas devolvió cada uno.
+
+Para una comparación antes/después de verdad: `git worktree` en el commit de
+antes, su propia base (`DATABASE_URL=…/evoelution_antes_ci bash
+scripts/base-de-pruebas.sh`), la MISMA carga de volumen en las dos, y el mismo
+script midiendo mediana de 15 corridas. El informe de `_probe-rendimiento` mide
+una corrida por consulta: sirve para ver el orden de magnitud, no para decidir
+por un milisegundo.
 
 ## Lo que NO es un problema de rendimiento
 

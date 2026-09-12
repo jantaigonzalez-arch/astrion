@@ -369,16 +369,28 @@ export const ES_CLIENTE = sql<boolean>`(
  * visita se podía pedir y `visitasParaViatico` salía vacía. Lo encontró
  * `scripts/_probe-acciones-viaticos.ts`. `ES_CLIENTE` no lo sufre porque su
  * `client_id` va fuera de toda subconsulta.
+ *
+ * ── DOS `EXISTS`, NO UN `OR` DENTRO DE UNO ─────────────────────────────────
+ *
+ * La primera versión juntaba los dos caminos con un `OR` dentro de un solo
+ * `exists`, y ese `OR` no deja usar ningún índice: Postgres cruzaba cada
+ * organización con cada contrato vigente. Medido en `evoelution_ci` (88
+ * organizaciones, 624 contratos): 3 528 vueltas y 4-5 ms; partido en dos
+ * `exists`, 0,3-0,4 ms, y cada tabla se lee una sola vez. La diferencia importa
+ * por cómo crece: con el `OR` es organizaciones × contratos.
  */
-export const TIENE_CONTRATO_VIGENTE = sql<boolean>`exists (
-  select 1 from ${contracts} vig
-   where (vig.end_date is null or vig.end_date >= current_date)
-     and (
-       (${crmOrganizations}.client_id is not null and vig.client_id = ${crmOrganizations}.client_id)
-       or vig.deal_id in (
-         select d.id from ${crmDeals} d where d.organization_id = ${crmOrganizations}.id
-       )
-     )
+export const TIENE_CONTRATO_VIGENTE = sql<boolean>`(
+  (${crmOrganizations}.client_id is not null and exists (
+    select 1 from ${contracts} vig
+     where vig.client_id = ${crmOrganizations}.client_id
+       and (vig.end_date is null or vig.end_date >= current_date)
+  ))
+  or exists (
+    select 1 from ${crmDeals} d
+      join ${contracts} vig on vig.deal_id = d.id
+     where d.organization_id = ${crmOrganizations}.id
+       and (vig.end_date is null or vig.end_date >= current_date)
+  )
 )`;
 
 /**

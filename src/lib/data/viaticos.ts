@@ -121,7 +121,6 @@ export async function listViaticos(
       returnsOn: viaticos.returnsOn,
       estimatedMxn: viaticos.estimatedMxn,
       authorizedMxn: viaticos.authorizedMxn,
-      destinos: RESUMEN_DE_DESTINOS,
       solicitante: users.name,
       solicitanteId: viaticos.requestedById,
       aprobadorId: viaticos.approverId,
@@ -158,31 +157,63 @@ export async function listViaticos(
     // una siembra— pueden intercambiarse entre páginas sin él.
     .orderBy(desc(viaticos.createdAt), desc(viaticos.id));
 
-  return page ? q.limit(page.limit).offset(page.offset) : q;
+  const filas = await (page ? q.limit(page.limit).offset(page.offset) : q);
+  const destinos = await destinosPorViatico(
+    filas.map((f) => f.id),
+    db,
+  );
+  return filas.map((f) => ({ ...f, destinos: destinos.get(f.id) ?? [] }));
 }
 
 /**
- * LOS DESTINOS DE CADA VIÁTICO, en una sola columna JSON.
+ * LOS DESTINOS DE LOS VIÁTICOS QUE SE VAN A PINTAR, en UNA consulta.
  *
- * Subconsulta correlacionada y no `join`: con el join, un viaje de tres
- * destinos saldría tres veces en el listado —y el importe gastado, que también
- * es una subconsulta, se leería bien pero la fila no—. `json_agg` los devuelve
- * ya en orden de visita, y el contrato por su número y la empresa por su nombre
- * en el mismo campo, que es lo único que el listado enseña.
+ * ── ERA UNA SUBCONSULTA POR FILA, Y SE PAGABA TAMBIÉN POR LAS QUE NO SALÍAN ──
+ *
+ * La primera versión (0037) los armaba con un `json_agg` correlacionado en la
+ * lista del `select`. Postgres evalúa esa lista para cada fila que recorre —
+ * incluidas las que el `OFFSET` tira después—, así que el costo crecía con la
+ * página y no con lo que se enseña. Medido contra 4 000 viáticos y 20 000
+ * gastos (`evoelution_ci` con carga), mediana de 15:
+ *
+ *                                    antes de 0037   json_agg   así
+ *   listado de abiertos (1 600)          15,3 ms      34,8 ms    22,9 ms
+ *   archivo, página 80 (offset 2000)     11,7 ms      35,3 ms     8,6 ms
+ *
+ * Lo que queda por encima en los abiertos es traer los destinos de 1 600
+ * filas (~6 ms en la base): el costo real de enseñarlos. Con los abiertos de
+ * verdad —unas decenas, ver la nota de `listViaticos`— no llega a un milisegundo.
+ *
+ * Ahora la lista sale sin destinos y aquí se piden los de ESAS filas, en una
+ * consulta agrupada por `viatico_id` que usa `viatico_destinos_viatico_idx`.
+ * Es el patrón del repositorio para esto —`inArray` y un `Map`, como
+ * `modulosPorContrato`—: dos viajes a la base en vez de uno por fila.
  */
-const RESUMEN_DE_DESTINOS = sql<DestinoResumen[]>`(
-  select coalesce(
-    json_agg(
-      json_build_object('tipo', d.tipo, 'nombre', coalesce(c.number, o.name, '—'))
-      order by d.position, d.created_at
-    ),
-    '[]'::json
-  )
-    from ${viaticoDestinos} d
-    left join ${contracts} c on c.id = d.contract_id
-    left join ${crmOrganizations} o on o.id = d.organization_id
-   where d.viatico_id = ${viaticos.id}
-)`;
+async function destinosPorViatico(
+  ids: string[],
+  db: DbOrTx,
+): Promise<Map<string, DestinoResumen[]>> {
+  const out = new Map<string, DestinoResumen[]>();
+  if (ids.length === 0) return out;
+  const filas = await db
+    .select({
+      viaticoId: viaticoDestinos.viaticoId,
+      tipo: viaticoDestinos.tipo,
+      nombre: sql<string>`coalesce(${contracts.number}, ${crmOrganizations.name}, '—')`,
+    })
+    .from(viaticoDestinos)
+    // `left` los dos: cada destino usa solo una de las llaves.
+    .leftJoin(contracts, eq(contracts.id, viaticoDestinos.contractId))
+    .leftJoin(crmOrganizations, eq(crmOrganizations.id, viaticoDestinos.organizationId))
+    .where(inArray(viaticoDestinos.viaticoId, ids))
+    .orderBy(asc(viaticoDestinos.viaticoId), asc(viaticoDestinos.position), asc(viaticoDestinos.createdAt));
+  for (const f of filas) {
+    const lista = out.get(f.viaticoId) ?? [];
+    lista.push({ tipo: f.tipo, nombre: f.nombre });
+    out.set(f.viaticoId, lista);
+  }
+  return out;
+}
 
 /** Cuántos hay, para el paginador del archivo. Misma condición que la lista. */
 export async function countViaticos(
