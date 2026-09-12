@@ -73,6 +73,7 @@ midió y lo que ya salió mal, para no volver a descubrirlo.
 | [`modelo-de-datos`](.claude/skills/modelo-de-datos/SKILL.md) | Añadir o cambiar tablas, columnas, índices o migraciones |
 | [`clientes`](.claude/skills/clientes/SKILL.md) | Tocar el expediente fiscal o cualquier cosa que acabe en un CFDI |
 | [`rendimiento`](.claude/skills/rendimiento/SKILL.md) | Antes de desplegar algo que toque listados o consultas |
+| [`decisiones-configurables`](.claude/skills/decisiones-configurables/SKILL.md) | Antes de escribir una regla de negocio —quién puede, a quién, cuántos, si se bloquea—: va como ajuste por empresa, no fija en el código |
 
 Y la regla que los mantiene vivos: **lo que costó encontrar se escribe donde se
 decide.** Un hallazgo que solo vive en un mensaje se pierde; en el comentario de

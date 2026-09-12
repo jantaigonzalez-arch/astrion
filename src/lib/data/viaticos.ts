@@ -8,6 +8,7 @@ import {
   crmDeals,
   crmOrganizations,
   viaticoRubros,
+  viaticoDestinos,
   equipment,
   equipmentModules,
   tickets,
@@ -18,6 +19,10 @@ import {
 import { users } from "@/lib/db/platform";
 import { alias } from "drizzle-orm/pg-core";
 import type { ViaticoEstado } from "@/lib/viaticos";
+
+/** Cómo viaja un destino a la interfaz. Ver la 0037. */
+export type TipoDestino = "contrato" | "visita" | "prospecto";
+export type DestinoResumen = { tipo: TipoDestino; nombre: string };
 
 /**
  * `users` otra vez, con otro nombre.
@@ -57,14 +62,10 @@ export type ViaticoFila = {
   estimatedMxn: string;
   authorizedMxn: string | null;
   /**
-   * EL ASUNTO, en las dos formas que puede tener.
-   *
-   * Exactamente uno de los dos viene con valor —lo garantiza el CHECK de la
-   * 0028—, y por eso la pantalla puede pintar el que no sea nulo sin preguntar
-   * por un tercer campo que diga cuál mirar.
+   * A DÓNDE VA, en orden: el número de cada contrato y el nombre de cada
+   * empresa. Uno o varios desde la 0037; nunca vacío, porque el alta lo exige.
    */
-  contractNumber: string | null;
-  prospecto: string | null;
+  destinos: DestinoResumen[];
   solicitante: string | null;
   /** Para saber si le toca mover a quien mira. Ver la lista. */
   solicitanteId: string;
@@ -120,8 +121,7 @@ export async function listViaticos(
       returnsOn: viaticos.returnsOn,
       estimatedMxn: viaticos.estimatedMxn,
       authorizedMxn: viaticos.authorizedMxn,
-      contractNumber: contracts.number,
-      prospecto: crmOrganizations.name,
+      destinos: RESUMEN_DE_DESTINOS,
       solicitante: users.name,
       solicitanteId: viaticos.requestedById,
       aprobadorId: viaticos.approverId,
@@ -143,19 +143,7 @@ export async function listViaticos(
       )`,
     })
     .from(viaticos)
-    /*
-      LOS TRES `left` NO SON PRUDENCIA, SON EL MODELO.
-
-      El contrato era `inner` cuando era obligatorio. Desde la 0028 un viático
-      puede ser de un PROSPECTO, y con el `inner` esos desaparecían del listado
-      sin dejar rastro: ni error ni renglón, simplemente no salían. Es la peor
-      forma de fallar que hay, porque la pantalla se ve perfecta.
-
-      El prospecto va `left` por lo mismo desde el otro lado, y el aprobador
-      porque las filas anteriores a la 0028 no tienen ninguno.
-    */
-    .leftJoin(contracts, eq(contracts.id, viaticos.contractId))
-    .leftJoin(crmOrganizations, eq(crmOrganizations.id, viaticos.organizationId))
+    // El aprobador va `left` porque las filas anteriores a la 0028 no tienen.
     .leftJoin(users, eq(users.id, viaticos.requestedById))
     .leftJoin(aprobador, eq(aprobador.id, viaticos.approverId))
     .where(
@@ -172,6 +160,29 @@ export async function listViaticos(
 
   return page ? q.limit(page.limit).offset(page.offset) : q;
 }
+
+/**
+ * LOS DESTINOS DE CADA VIÁTICO, en una sola columna JSON.
+ *
+ * Subconsulta correlacionada y no `join`: con el join, un viaje de tres
+ * destinos saldría tres veces en el listado —y el importe gastado, que también
+ * es una subconsulta, se leería bien pero la fila no—. `json_agg` los devuelve
+ * ya en orden de visita, y el contrato por su número y la empresa por su nombre
+ * en el mismo campo, que es lo único que el listado enseña.
+ */
+const RESUMEN_DE_DESTINOS = sql<DestinoResumen[]>`(
+  select coalesce(
+    json_agg(
+      json_build_object('tipo', d.tipo, 'nombre', coalesce(c.number, o.name, '—'))
+      order by d.position, d.created_at
+    ),
+    '[]'::json
+  )
+    from ${viaticoDestinos} d
+    left join ${contracts} c on c.id = d.contract_id
+    left join ${crmOrganizations} o on o.id = d.organization_id
+   where d.viatico_id = ${viaticos.id}
+)`;
 
 /** Cuántos hay, para el paginador del archivo. Misma condición que la lista. */
 export async function countViaticos(
@@ -224,13 +235,6 @@ export async function getViatico(id: string, soloDe: string | null) {
       id: viaticos.id,
       reference: viaticos.reference,
       status: viaticos.status,
-      contractId: viaticos.contractId,
-      contractNumber: contracts.number,
-      contractAmountMxn: contracts.amountMxn,
-      organizationId: viaticos.organizationId,
-      prospecto: crmOrganizations.name,
-      dealId: viaticos.dealId,
-      negocio: crmDeals.title,
       requestedById: viaticos.requestedById,
       approverId: viaticos.approverId,
       destination: viaticos.destination,
@@ -251,13 +255,6 @@ export async function getViatico(id: string, soloDe: string | null) {
       createdAt: viaticos.createdAt,
     })
     .from(viaticos)
-    // `left` los tres, y por lo mismo que en el listado: el asunto es de uno de
-    // los dos tipos, así que el `inner` al contrato devolvía `null` —no un
-    // viático de prospecto— y la pantalla enseñaba un 404 de un documento que
-    // sí existe.
-    .leftJoin(contracts, eq(contracts.id, viaticos.contractId))
-    .leftJoin(crmOrganizations, eq(crmOrganizations.id, viaticos.organizationId))
-    .leftJoin(crmDeals, eq(crmDeals.id, viaticos.dealId))
     .where(
       and(
         eq(viaticos.id, id),
@@ -268,10 +265,31 @@ export async function getViatico(id: string, soloDe: string | null) {
 
   if (!v) return null;
 
-  const [gastos, modulos, gente] = await Promise.all([
+  const [destinos, gastos, modulos, gente] = await Promise.all([
+    db
+      .select({
+        id: viaticoDestinos.id,
+        tipo: viaticoDestinos.tipo,
+        contractId: viaticoDestinos.contractId,
+        contractNumber: contracts.number,
+        contractAmountMxn: contracts.amountMxn,
+        organizationId: viaticoDestinos.organizationId,
+        organizacion: crmOrganizations.name,
+        dealId: viaticoDestinos.dealId,
+        negocio: crmDeals.title,
+      })
+      .from(viaticoDestinos)
+      // `left` los tres: cada destino usa solo una de las llaves.
+      .leftJoin(contracts, eq(contracts.id, viaticoDestinos.contractId))
+      .leftJoin(crmOrganizations, eq(crmOrganizations.id, viaticoDestinos.organizationId))
+      .leftJoin(crmDeals, eq(crmDeals.id, viaticoDestinos.dealId))
+      .where(eq(viaticoDestinos.viaticoId, id))
+      .orderBy(asc(viaticoDestinos.position), asc(viaticoDestinos.createdAt)),
     db
       .select({
         id: viaticoExpenses.id,
+        /** A qué destino del viaje va. Nulo = gasto general. Ver la 0037. */
+        destinoId: viaticoExpenses.destinoId,
         rubroId: viaticoExpenses.rubroId,
         rubro: viaticoRubros.name,
         rubroPresupuesto: viaticoRubros.dailyBudgetMxn,
@@ -323,6 +341,7 @@ export async function getViatico(id: string, soloDe: string | null) {
 
   return {
     ...v,
+    destinos,
     gastos,
     modulos,
     solicitante: gente.get(v.requestedById) ?? null,
@@ -503,6 +522,43 @@ export async function prospectosParaViatico() {
     })
     .from(crmOrganizations)
     .where(sql`not ${ES_CLIENTE}`)
+    .orderBy(asc(crmOrganizations.name));
+
+  return filas.map((f) => ({
+    id: f.id,
+    name: f.name,
+    domicilio: armarDomicilio(f),
+  }));
+}
+
+/**
+ * CLIENTES QUE SE PUEDEN VISITAR: los que ya compraron y NO tienen contrato
+ * vigente (0037).
+ *
+ * `ES_CLIENTE` y no `TIENE_CONTRATO_VIGENTE`, las dos expresiones con las que el
+ * dominio valida el destino (`vetoClasificacion`): si la lista y la validación
+ * se escribieran por separado, el formulario ofrecería clientes que el servidor
+ * después rechaza. Al que sí tiene contrato vigente se le viaja por su
+ * contrato, que es donde su gasto se mide.
+ */
+export async function visitasParaViatico() {
+  const db = await tenantDb();
+  const { ES_CLIENTE, TIENE_CONTRATO_VIGENTE } = await import("@/lib/data/crm");
+  const filas = await db
+    .select({
+      id: crmOrganizations.id,
+      name: crmOrganizations.name,
+      street: crmOrganizations.street,
+      extNumber: crmOrganizations.extNumber,
+      neighborhood: crmOrganizations.neighborhood,
+      municipality: crmOrganizations.municipality,
+      state: crmOrganizations.state,
+      postalCode: crmOrganizations.postalCode,
+      addressReference: crmOrganizations.addressReference,
+      address: crmOrganizations.address,
+    })
+    .from(crmOrganizations)
+    .where(and(ES_CLIENTE, sql`not ${TIENE_CONTRATO_VIGENTE}`))
     .orderBy(asc(crmOrganizations.name));
 
   return filas.map((f) => ({
@@ -828,11 +884,15 @@ export async function viaticosPorNegocio(
 }
 
 /**
- * Costo de viaje de un PROSPECTO: todo lo que se gastó yendo a verlo.
+ * Costo de viaje de una EMPRESA —prospecto o cliente visitado—: todo lo que se
+ * gastó yendo a verla.
  *
- * A diferencia del negocio, aquí sí se suma el viático entero —incluido lo
- * comercial suelto—, porque la pregunta es otra: cuánto llevamos invertido en
- * esta empresa, sin importar a qué oportunidad se le apuntó cada cena.
+ * A diferencia del negocio, aquí entra también lo que no se apuntó a ninguna
+ * oportunidad, porque la pregunta es otra: cuánto llevamos invertido en esta
+ * empresa. Desde la 0037 se suma POR DESTINO y no por viaje: de una gira a tres
+ * empresas, a ésta le toca lo que se le cargó a ella, no el viaje entero; el
+ * gasto general de la gira no es de ninguna. Los viajes de un solo destino dan
+ * lo mismo que antes, porque la 0037 pasó todos sus gastos a ese destino.
  */
 export async function viaticosDelProspecto(
   organizationId: string,
@@ -847,9 +907,10 @@ export async function viaticosDelProspecto(
       })
       .from(viaticoExpenses)
       .innerJoin(viaticos, eq(viaticos.id, viaticoExpenses.viaticoId))
+      .innerJoin(viaticoDestinos, eq(viaticoDestinos.id, viaticoExpenses.destinoId))
       .where(
         and(
-          eq(viaticos.organizationId, organizationId),
+          eq(viaticoDestinos.organizationId, organizationId),
           eq(viaticos.status, "cerrado"),
         ),
       ),
@@ -860,10 +921,11 @@ export async function viaticosDelProspecto(
       })
       .from(viaticoExpenses)
       .innerJoin(viaticos, eq(viaticos.id, viaticoExpenses.viaticoId))
+      .innerJoin(viaticoDestinos, eq(viaticoDestinos.id, viaticoExpenses.destinoId))
       .innerJoin(viaticoRubros, eq(viaticoRubros.id, viaticoExpenses.rubroId))
       .where(
         and(
-          eq(viaticos.organizationId, organizationId),
+          eq(viaticoDestinos.organizationId, organizationId),
           eq(viaticos.status, "cerrado"),
         ),
       )
@@ -885,11 +947,12 @@ export async function viaticosDelProspecto(
  * distintas: esto incluye TODOS los gastos del viático, y la suma por ticket
  * solo cubriría los que se cargaron a un ticket que además siga existiendo.
  *
- * Dejaron de dar lo mismo en la 0028, y por eso estaba bien escrito así: el
- * ticket ya no es obligatorio en cada gasto. Un viático DE CONTRATO sigue
- * exigiéndolo —lo hace cumplir `destinoValido()`—, así que esta cifra no cambia
- * hoy; el día que se admita un gasto suelto en un viaje de servicio, esta la
- * cuenta y la suma por ticket no, que es la diferencia que se quería conservar.
+ * Desde la 0037 se suma lo cargado AL DESTINO de este contrato, no el viaje
+ * entero: una gira que pasó por dos contratos le carga a cada uno lo suyo, y el
+ * gasto general del viaje no entra en ninguno —repartirlo sería inventar un
+ * costo—. Un destino de contrato sigue exigiendo ticket en cada gasto (lo hace
+ * cumplir `resolverDestino()`), así que para los viajes de un solo contrato la
+ * cifra es la misma de antes.
  */
 export async function viaticosDelContrato(contractId: string, conexion?: DbOrTx) {
   const db = conexion ?? (await tenantDb());
@@ -901,7 +964,8 @@ export async function viaticosDelContrato(contractId: string, conexion?: DbOrTx)
       })
       .from(viaticoExpenses)
       .innerJoin(viaticos, eq(viaticos.id, viaticoExpenses.viaticoId))
-      .where(and(eq(viaticos.contractId, contractId), eq(viaticos.status, "cerrado"))),
+      .innerJoin(viaticoDestinos, eq(viaticoDestinos.id, viaticoExpenses.destinoId))
+      .where(and(eq(viaticoDestinos.contractId, contractId), eq(viaticos.status, "cerrado"))),
     db
       .select({
         k: viaticoRubros.name,
@@ -909,8 +973,9 @@ export async function viaticosDelContrato(contractId: string, conexion?: DbOrTx)
       })
       .from(viaticoExpenses)
       .innerJoin(viaticos, eq(viaticos.id, viaticoExpenses.viaticoId))
+      .innerJoin(viaticoDestinos, eq(viaticoDestinos.id, viaticoExpenses.destinoId))
       .innerJoin(viaticoRubros, eq(viaticoRubros.id, viaticoExpenses.rubroId))
-      .where(and(eq(viaticos.contractId, contractId), eq(viaticos.status, "cerrado")))
+      .where(and(eq(viaticoDestinos.contractId, contractId), eq(viaticos.status, "cerrado")))
       .groupBy(viaticoRubros.name)
       .orderBy(desc(sql`sum(${viaticoExpenses.amountMxn})`)),
   ]);
@@ -920,4 +985,76 @@ export async function viaticosDelContrato(contractId: string, conexion?: DbOrTx)
     costo: Number(total?.total ?? 0),
     porCategoria: porCategoria.map((c) => ({ k: c.k, total: Number(c.total) })),
   };
+}
+
+/**
+ * A QUÉ SE PUEDE CARGAR UN GASTO DE ESTE VIAJE, como opciones de un selector.
+ *
+ * Una sola lista para capturar y para reclasificar, y por destino (0037):
+ *
+ *   ticket:<id>    un ticket de un contrato del viaje
+ *   negocio:<id>   un negocio abierto de una visita o un prospecto del viaje
+ *   destino:<id>   la visita o el prospecto a secas, sin negocio
+ *   general        el gasto general del viaje —solo con varios destinos—
+ *
+ * El valor lleva el tipo delante porque es lo único que la acción necesita para
+ * saber qué es; el dominio vuelve a comprobar que cada cosa sea de este viaje
+ * (`resolverDestino`), así que la lista es una comodidad y no la regla.
+ *
+ * Con un solo destino no se ofrece «general»: el general ES de ese destino, y
+ * ofrecer las dos sería ofrecer dos maneras de decir lo mismo.
+ */
+export async function opcionesDeGasto(
+  destinos: Array<{
+    id: string;
+    tipo: TipoDestino;
+    contractId: string | null;
+    contractNumber: string | null;
+    organizationId: string | null;
+    organizacion: string | null;
+  }>,
+): Promise<Array<{ value: string; label: string; detalle?: string }>> {
+  const deEmpresa = destinos.filter((d) => d.tipo !== "contrato" && d.organizationId);
+  const [ticketsPorContrato, negocios] = await Promise.all([
+    Promise.all(
+      destinos
+        .filter((d) => d.tipo === "contrato" && d.contractId)
+        .map(async (d) => ({ d, tickets: await ticketsDelContrato(d.contractId!) })),
+    ),
+    negociosPorProspecto(deEmpresa.map((d) => d.organizationId!)),
+  ]);
+
+  const opciones: Array<{ value: string; label: string; detalle?: string }> = [];
+  for (const { d, tickets: ts } of ticketsPorContrato) {
+    for (const t of ts) {
+      opciones.push({
+        value: `ticket:${t.id}`,
+        label: t.reference,
+        detalle: `Contrato ${d.contractNumber ?? "—"} · ${t.subject}`,
+      });
+    }
+  }
+  for (const d of deEmpresa) {
+    const tipo = d.tipo === "visita" ? "Visita" : "Prospecto";
+    opciones.push({
+      value: `destino:${d.id}`,
+      label: d.organizacion ?? "—",
+      detalle: `${tipo} · sin negocio concreto`,
+    });
+    for (const n of negocios.get(d.organizationId!) ?? []) {
+      opciones.push({
+        value: `negocio:${n.id}`,
+        label: n.title,
+        detalle: `${d.organizacion ?? "—"} · ${n.reference}`,
+      });
+    }
+  }
+  if (destinos.length > 1) {
+    opciones.push({
+      value: "general",
+      label: "Gasto general del viaje",
+      detalle: "Sirvió para todo el viaje: no se carga a ningún destino",
+    });
+  }
+  return opciones;
 }

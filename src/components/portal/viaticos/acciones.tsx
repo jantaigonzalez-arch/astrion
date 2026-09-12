@@ -369,61 +369,49 @@ export function ReasignarViatico({
  * Estado propio por renglón, igual que `QuitarGasto` y por el mismo motivo:
  * compartirlo dejaría toda la tabla en «cargando» al mover uno solo.
  *
- * Solo aparece en `en_revision` y en viáticos de prospecto; la página decide
- * eso y aquí no se vuelve a preguntar. El dominio lo comprueba de todas formas.
+ * Solo aparece en `en_revision` y cuando hay más de un sitio al que moverlo; la
+ * página decide eso y aquí no se vuelve a preguntar. El dominio lo comprueba de
+ * todas formas.
+ *
+ * Las mismas opciones que tuvo quien capturó (`opcionesDeGasto`): tickets de
+ * los contratos del viaje, negocios y empresas de las visitas y prospectos, y
+ * —con varios destinos— el gasto general del viaje. Una sola lista en vez de un
+ * desplegable por clase de destino: desde la 0037 un viaje junta varias, y
+ * elegir primero la clase y luego la cosa era pedir dos decisiones para una.
  */
 export function ReclasificarGasto({
   gastoId,
-  negocios,
+  opciones,
   actual,
-  dealActual,
 }: {
   gastoId: string;
-  negocios: Array<{ id: string; reference: string; title: string }>;
-  actual: "negocio" | "comercial";
-  dealActual: string | null;
+  opciones: Array<{ value: string; label: string; detalle?: string }>;
+  /** La opción en la que está hoy, con el mismo formato (`ticket:<id>`…). */
+  actual: string;
 }) {
   const [state, action, pending] = useActionState(reclasificarGastoActionRef, initial);
-  const [destino, setDestino] = useState(actual);
+  const [opcion, setOpcion] = useState(actual);
 
   return (
     <form action={action} className="mt-1.5 flex flex-wrap items-center gap-1.5">
       <input type="hidden" name="gastoId" value={gastoId} />
-      <input type="hidden" name="destino" value={destino} />
       <select
+        name="opcion"
         aria-label="Mover este gasto"
-        className="h-7 rounded border border-input bg-background px-1.5 text-xs"
-        value={destino}
-        onChange={(e) => setDestino(e.target.value as "negocio" | "comercial")}
+        className="h-7 max-w-64 rounded border border-input bg-background px-1.5 text-xs"
+        value={opcion}
+        onChange={(e) => setOpcion(e.target.value)}
       >
-        <option value="comercial">Gasto comercial</option>
-        {negocios.length > 0 ? <option value="negocio">A un negocio</option> : null}
+        {opciones.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.detalle ? `${o.label} — ${o.detalle}` : o.label}
+          </option>
+        ))}
       </select>
-
-      {destino === "negocio" ? (
-        <select
-          name="dealId"
-          required
-          defaultValue={dealActual ?? ""}
-          aria-label="A qué negocio"
-          className="h-7 rounded border border-input bg-background px-1.5 text-xs"
-        >
-          {/*
-            Sin opción vacía: si se eligió «a un negocio», hay que decir cuál.
-            Un vacío aquí llegaría al servidor como un error de validación por
-            algo que la pantalla podía impedir.
-          */}
-          {negocios.map((n) => (
-            <option key={n.id} value={n.id}>
-              {n.title}
-            </option>
-          ))}
-        </select>
-      ) : null}
 
       <button
         type="submit"
-        disabled={pending}
+        disabled={pending || opcion === actual}
         className="rounded border border-input px-1.5 py-0.5 text-xs hover:bg-muted disabled:opacity-50"
         title={state.error ?? "Guardar el destino de este gasto"}
       >

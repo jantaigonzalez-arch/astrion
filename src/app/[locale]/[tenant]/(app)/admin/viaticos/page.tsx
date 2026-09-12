@@ -1,4 +1,5 @@
 import { setRequestLocale } from "next-intl/server";
+import { DestinosResumen } from "@/components/portal/viaticos/destinos-resumen";
 import { Plane, Plus } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { Link } from "@/lib/nav";
@@ -88,9 +89,9 @@ function TablaViaticos({
                     <th className="px-4 py-2.5 font-medium">Solicitante</th>
                   ) : null}
                   {/*
-                    «Asunto» y no «Contrato»: desde la 0028 la columna enseña un
-                    contrato o un prospecto, y el rótulo viejo hacía leer los
-                    renglones de prospección como contratos que faltan.
+                    «Asunto» y no «Contrato»: la columna enseña contratos,
+                    visitas y prospectos —uno o varios desde la 0037—, y el
+                    rótulo viejo hacía leer lo comercial como contratos que faltan.
                   */}
                   <th className="px-4 py-2.5 font-medium">Asunto</th>
                   {administra ? (
@@ -120,16 +121,7 @@ function TablaViaticos({
                       </td>
                     ) : null}
                     <td className="px-4 py-2.5 text-xs text-muted-foreground">
-                      {v.contractNumber ? (
-                        <span className="font-mono">{v.contractNumber}</span>
-                      ) : (
-                        <>
-                          {v.prospecto}
-                          <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[11px]">
-                            prospecto
-                          </span>
-                        </>
-                      )}
+                      <DestinosResumen destinos={v.destinos} />
                     </td>
                     {administra ? (
                       <td className="px-4 py-2.5 text-muted-foreground">

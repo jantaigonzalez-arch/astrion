@@ -20,7 +20,9 @@ import { membershipRole, type MembershipRole } from "@/lib/db/platform";
  *
  * Eso ya pasaba con el interruptor de viáticos a prospectos, que nació en la
  * pantalla de Marca y tarifas y por lo tanto era invisible para el único rol
- * que existe para esto. Se mudó aquí de paso.
+ * que existe para esto. Se mudó aquí de paso, y desde la 0037 es la política de
+ * destinos entera: quién viaja a contratos, a visitas y a prospectos, cuántos
+ * destinos caben y si se mezclan.
  *
  * Como en el resto del módulo, estas funciones comprueban el permiso, sanean la
  * entrada y escriben. Lo que NO hacen es decidir reglas de negocio: la de «este
@@ -70,9 +72,45 @@ function claveDesde(nombre: string): string {
   );
 }
 
-/* ─────────────────────── El interruptor de prospectos ─────────────────────── */
+/* ─────────────────────── La política de destinos ─────────────────────── */
 
-export async function guardarViaticosProspectos(
+/**
+ * Los roles marcados de un grupo de casillas: sin repetidos, sin inventados y
+ * sin `client`, que no entra al portal interno.
+ *
+ * `getAll` devuelve solo las casillas marcadas —las vacías no se envían—, así
+ * que desmarcar todas manda una lista vacía y eso APAGA ese tipo de destino. Es
+ * deliberado: la lista vacía es el apagado, y no hay un interruptor aparte que
+ * pueda contradecirla.
+ *
+ * Se filtra contra el enum en vez de confiar: lo que llega de un formulario es
+ * texto, y un rol inventado guardado en `jsonb` no falla al escribir — falla
+ * meses después, al leerlo. Y sin repetidos: una casilla enviada dos veces se
+ * guardaba dos veces (lo encontró `_probe-acciones-viaticos-config`).
+ */
+function rolesMarcados(formData: FormData, campo: string): MembershipRole[] {
+  return [
+    ...new Set(
+      formData
+        .getAll(campo)
+        .map(String)
+        .filter(
+          (r): r is MembershipRole =>
+            r !== "client" && membershipRole.enumValues.includes(r as MembershipRole),
+        ),
+    ),
+  ];
+}
+
+/**
+ * QUIÉN VIAJA A DÓNDE, CUÁNTOS DE CADA TIPO Y SI SE MEZCLAN (0033, 0037).
+ *
+ * Una sola acción para toda la política y no una por perilla: son decisiones
+ * que se toman juntas —encender las visitas y permitir giras suele ser la misma
+ * conversación— y guardarlas por separado dejaría la política a medias entre un
+ * clic y otro. La hace cumplir `vetoDestinos` en `domain/viaticos.ts`.
+ */
+export async function guardarPoliticaViaticos(
   _prev: ConfigState,
   formData: FormData,
 ): Promise<ConfigState> {
@@ -80,43 +118,56 @@ export async function guardarViaticosProspectos(
     return { ok: false, error: "No tienes permiso para configurar viáticos." };
   }
 
+  const viaticosContratosRoles = rolesMarcados(formData, "rolesContrato");
+  const viaticosVisitasRoles = rolesMarcados(formData, "rolesVisita");
+  const viaticosProspectosRoles = rolesMarcados(formData, "rolesProspecto");
+
   /*
-    LO QUE LLEGA MARCADO, Y NADA MÁS.
-
-    `getAll` devuelve solo las casillas marcadas —las vacías no se envían—, así
-    que desmarcar todas manda una lista vacía y eso APAGA la función. Es
-    deliberado: la lista vacía es el apagado, y no hay un interruptor aparte que
-    pueda contradecirla.
-
-    Se filtra contra el enum en vez de confiar: lo que llega de un formulario es
-    texto, y un rol inventado guardado en `jsonb` no falla al escribir — falla
-    meses después, al leerlo.
+    Un tope por TIPO, entero de 1 a 20: el mismo rango que el CHECK de la 0037,
+    dicho antes y con un mensaje que nombra el tipo que está mal. Un campo que
+    no llega vale 1, que es lo de fábrica; uno que llega mal no se «corrige»
+    en silencio.
   */
-  const viaticosProspectosRoles = formData
-    .getAll("roles")
-    .map(String)
-    .filter((r): r is MembershipRole =>
-      membershipRole.enumValues.includes(r as MembershipRole),
-    );
+  const leerTope = (campo: string): number | null => {
+    const n = Number(String(formData.get(campo) ?? "1").trim());
+    return Number.isInteger(n) && n >= 1 && n <= 20 ? n : null;
+  };
+  const viaticosMaxContratos = leerTope("maxContratos");
+  const viaticosMaxVisitas = leerTope("maxVisitas");
+  const viaticosMaxProspectos = leerTope("maxProspectos");
+  if (viaticosMaxContratos === null) return { ok: false, error: "El máximo de contratos por viático va de 1 a 20." };
+  if (viaticosMaxVisitas === null) return { ok: false, error: "El máximo de visitas por viático va de 1 a 20." };
+  if (viaticosMaxProspectos === null) return { ok: false, error: "El máximo de prospectos por viático va de 1 a 20." };
+  const viaticosMezclarDestinos = formData.get("mezclar") === "on";
+
+  const valores = {
+    viaticosContratosRoles,
+    viaticosVisitasRoles,
+    viaticosProspectosRoles,
+    viaticosMaxContratos,
+    viaticosMaxVisitas,
+    viaticosMaxProspectos,
+    viaticosMezclarDestinos,
+  };
 
   try {
     const db = await tenantDb();
     await db
       .insert(settings)
-      .values({ id: "global", viaticosProspectosRoles })
+      .values({ id: "global", ...valores })
       .onConflictDoUpdate({
         target: settings.id,
-        set: { viaticosProspectosRoles, updatedAt: new Date() },
+        set: { ...valores, updatedAt: new Date() },
       });
     revalidateTenant();
+    const nadie =
+      viaticosContratosRoles.length + viaticosVisitasRoles.length + viaticosProspectosRoles.length === 0;
     return {
       ok: true,
-      message: viaticosProspectosRoles.length
-        ? "Guardado."
-        : "Guardado. Sin roles marcados, nadie puede pedir viajes a prospectos.",
+      message: nadie ? "Guardado. Sin ningún rol marcado, nadie puede pedir viáticos." : "Guardado.",
     };
   } catch (e) {
-    console.error("[viaticos-config] prospectos", e);
+    console.error("[viaticos-config] política", e);
     return { ok: false, error: "No se pudo guardar." };
   }
 }

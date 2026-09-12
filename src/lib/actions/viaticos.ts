@@ -18,8 +18,8 @@ import {
   reportViatico,
   returnViatico,
   submitViatico,
-  type AsuntoViatico,
   type DestinoGasto,
+  type DestinoViatico,
 } from "@/lib/domain/viaticos";
 
 /**
@@ -94,35 +94,65 @@ async function quien() {
 type Leido<T> = { valor: T } | { error: string };
 
 /**
- * EL ASUNTO DEL VIÁTICO, tal como llega del formulario.
+ * LOS DESTINOS DEL VIAJE, tal como llegan del formulario.
  *
- * Aquí solo se sanea la forma; que la empresa permita viajar a prospectos y que
- * quien pide pueda hacerlo lo decide `domain/viaticos.ts`. Es la separación de
- * siempre: la acción no toma decisiones de negocio, porque una decisión tomada
- * aquí no vale para el script que escriba alguien en marzo.
+ * Llegan como una lista en JSON (`destinos`), porque el formulario arma una
+ * lista de largo variable —uno o varios contratos, visitas y prospectos—, y
+ * repartirla en campos con índice sería inventar un formato para decir lo que
+ * JSON ya dice. Si no viene, se lee la forma de antes de la 0037 —un solo
+ * asunto en `asunto`, `contractId`, `organizationId` y `dealId`—, que es la que
+ * siguen mandando los enlaces y scripts viejos.
+ *
+ * Aquí solo se sanea la FORMA. Que la empresa permita esos destinos, cuántos y
+ * a quién, lo decide `domain/viaticos.ts`: la acción no toma decisiones de
+ * negocio, porque una decisión tomada aquí no vale para el script que escriba
+ * alguien en marzo.
  */
-function asuntoDelFormulario(formData: FormData): Leido<AsuntoViatico> {
-  const tipo = String(formData.get("asunto") ?? "contrato");
+const DestinoSchema = z.discriminatedUnion("tipo", [
+  z.object({ tipo: z.literal("contrato"), contractId: uuid }),
+  z.object({
+    tipo: z.enum(["visita", "prospecto"]),
+    organizationId: uuid,
+    // Opcional: se prospecta antes de que haya oportunidad abierta. Vacío o
+    // inválido cuenta como «ninguno» —el selector trae la opción vacía—.
+    dealId: z.string().optional().nullable()
+      .transform((v) => (v && uuid.safeParse(v).success ? v : null)),
+  }),
+]);
 
-  if (tipo === "prospecto") {
-    const organizationId = uuid.safeParse(formData.get("organizationId"));
-    if (!organizationId.success) return { error: "Elige un prospecto." };
-    // El negocio es opcional: se prospecta antes de que haya oportunidad
-    // abierta. Un uuid inválido se trata como «ninguno» y no como error —el
-    // selector trae la opción vacía, y esa es la que manda el navegador—.
-    const dealId = uuid.safeParse(formData.get("dealId"));
-    return {
-      valor: {
-        tipo: "prospecto",
-        organizationId: organizationId.data,
-        dealId: dealId.success ? dealId.data : null,
-      },
-    };
+function destinosDelFormulario(formData: FormData): Leido<DestinoViatico[]> {
+  const crudo = formData.get("destinos");
+  if (typeof crudo === "string" && crudo.trim()) {
+    let lista: unknown;
+    try {
+      lista = JSON.parse(crudo);
+    } catch {
+      return { error: "No se entendió la lista de destinos." };
+    }
+    const r = z.array(DestinoSchema).min(1).max(20).safeParse(lista);
+    if (!r.success) {
+      return { error: Array.isArray(lista) && lista.length === 0 ? "Elige al menos un destino." : "Revisa los destinos: a uno le falta el contrato o la empresa." };
+    }
+    return { valor: r.data };
   }
 
+  // La forma de antes de la 0037: un solo asunto.
+  const tipo = String(formData.get("asunto") ?? "contrato");
+  if (tipo === "prospecto" || tipo === "visita") {
+    const organizationId = uuid.safeParse(formData.get("organizationId"));
+    if (!organizationId.success) {
+      return { error: tipo === "prospecto" ? "Elige un prospecto." : "Elige al cliente que se visita." };
+    }
+    const dealId = uuid.safeParse(formData.get("dealId"));
+    return {
+      valor: [
+        { tipo, organizationId: organizationId.data, dealId: dealId.success ? dealId.data : null },
+      ],
+    };
+  }
   const contractId = uuid.safeParse(formData.get("contractId"));
   if (!contractId.success) return { error: "Elige un contrato." };
-  return { valor: { tipo: "contrato", contractId: contractId.data } };
+  return { valor: [{ tipo: "contrato", contractId: contractId.data }] };
 }
 
 /**
@@ -134,9 +164,30 @@ function asuntoDelFormulario(formData: FormData): Leido<AsuntoViatico> {
  * diferencia es justo la que quien revisa necesita ver.
  */
 function destinoDelFormulario(formData: FormData): Leido<DestinoGasto> {
+  /*
+    La forma de la 0037: UNA opción con el tipo delante —`ticket:<id>`,
+    `negocio:<id>`, `destino:<id>` o `general`—, que es lo que manda el
+    selector único de captura y de reclasificación (ver `opcionesDeGasto`).
+    Sin ella se lee la forma de antes, en tres campos.
+  */
+  const opcion = String(formData.get("opcion") ?? "");
+  if (opcion) {
+    if (opcion === "general") return { valor: { tipo: "comercial", destinoId: null } };
+    const [clase, id] = opcion.split(":");
+    if (!uuid.safeParse(id).success) return { error: "Elige a qué se carga el gasto." };
+    if (clase === "ticket") return { valor: { tipo: "ticket", ticketId: id } };
+    if (clase === "negocio") return { valor: { tipo: "negocio", dealId: id } };
+    if (clase === "destino") return { valor: { tipo: "comercial", destinoId: id } };
+    return { error: "Elige a qué se carga el gasto." };
+  }
+
   const tipo = String(formData.get("destino") ?? "ticket");
 
-  if (tipo === "comercial") return { valor: { tipo: "comercial" } };
+  if (tipo === "comercial") {
+    // De qué destino del viaje es; vacío = gasto general (o el único destino).
+    const destinoId = uuid.safeParse(formData.get("destinoId"));
+    return { valor: { tipo: "comercial", destinoId: destinoId.success ? destinoId.data : null } };
+  }
 
   if (tipo === "negocio") {
     const dealId = uuid.safeParse(formData.get("dealId"));
@@ -163,8 +214,8 @@ export async function crearViaticoAction(
     return { ok: false, error: "No tienes permiso para pedir viáticos." };
   }
 
-  const asunto = asuntoDelFormulario(formData);
-  if ("error" in asunto) return { ok: false, error: asunto.error };
+  const destinos = destinosDelFormulario(formData);
+  if ("error" in destinos) return { ok: false, error: destinos.error };
 
   const approverId = uuid.safeParse(formData.get("approverId"));
   if (!approverId.success) {
@@ -195,7 +246,7 @@ export async function crearViaticoAction(
     const db = await tenantDb();
     const res = await db.transaction((tx) =>
       createViatico(tx, {
-        asunto: asunto.valor,
+        destinos: destinos.valor,
         requestedById: userId,
         approverId: approverId.data,
         destination,

@@ -260,6 +260,13 @@
       "when": 1789098548649,
       "tag": "0036_tipo_de_cambio_automatico",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1789242797664,
+      "tag": "0037_viaticos_varios_destinos",
+      "breakpoints": true
     }
   ]
 }

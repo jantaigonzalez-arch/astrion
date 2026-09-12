@@ -342,6 +342,46 @@ export const ES_CLIENTE = sql<boolean>`(
 )`;
 
 /**
+ * ¿Tiene esta organización un contrato VIGENTE hoy?
+ *
+ * Vigente = sin fecha de fin o con la de fin de hoy en adelante. El contrato se
+ * le reconoce por los dos caminos por los que llega a una organización: su
+ * cuenta de portal (`client_id`, como lo busca `contratosParaViatico`) o el
+ * negocio del que salió (como lo cuenta `ES_CLIENTE`).
+ *
+ * Existe por los viáticos (0037): una VISITA es a un cliente SIN contrato
+ * vigente; al que sí tiene, se le viaja por su contrato y el gasto entra en su
+ * utilidad. Vive aquí, junto a `ES_CLIENTE`, por la misma razón que ella: la
+ * lista del formulario y la validación del dominio tienen que usar la misma
+ * expresión, o una ofrecería lo que la otra rechaza.
+ *
+ * Escrita contra el nombre real de la tabla, como `ES_CLIENTE`: solo sirve en
+ * una consulta cuyo `from` sea `crm_organizations` sin alias.
+ *
+ * ── LA CUENTA DE LA ORGANIZACIÓN VA CON LA TABLA ESCRITA, NO COMO COLUMNA ──
+ *
+ * Se escribía `${crmOrganizations.clientId}`, y en un `select … from
+ * crm_organizations` Drizzle lo pinta SIN tabla: `"client_id"`. Dentro de esta
+ * subconsulta, que lee `contracts vig`, ese nombre suelto lo resuelve Postgres
+ * contra la tabla más cercana —`vig.client_id`—, y la condición quedaba en
+ * `vig.client_id = vig.client_id`: cualquier organización «tenía contrato
+ * vigente» en cuanto la empresa tuviera uno con cualquier cliente. Ninguna
+ * visita se podía pedir y `visitasParaViatico` salía vacía. Lo encontró
+ * `scripts/_probe-acciones-viaticos.ts`. `ES_CLIENTE` no lo sufre porque su
+ * `client_id` va fuera de toda subconsulta.
+ */
+export const TIENE_CONTRATO_VIGENTE = sql<boolean>`exists (
+  select 1 from ${contracts} vig
+   where (vig.end_date is null or vig.end_date >= current_date)
+     and (
+       (${crmOrganizations}.client_id is not null and vig.client_id = ${crmOrganizations}.client_id)
+       or vig.deal_id in (
+         select d.id from ${crmDeals} d where d.organization_id = ${crmOrganizations}.id
+       )
+     )
+)`;
+
+/**
  * Cliente o prospecto, para UNA organización.
  *
  * ── POR QUÉ NO VA COMO `extras` DE LA CONSULTA RELACIONAL ─────────────────

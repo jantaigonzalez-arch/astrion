@@ -4,7 +4,7 @@ import { puedeEn } from "@/lib/tenancy/context";
 import { listRubros } from "@/lib/data/viaticos";
 import { getSettings } from "@/lib/data/settings";
 import {
-  ProspectosCard,
+  PoliticaDestinosCard,
   RubrosCard,
 } from "@/components/portal/viaticos/config-viaticos";
 
@@ -45,7 +45,19 @@ export default async function ConfigViaticosPage({
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <RubrosCard rubros={rubros} />
-      <ProspectosCard roles={ajustes.viaticosProspectosRoles} />
+      <PoliticaDestinosCard
+        politica={{
+          contratos: ajustes.viaticosContratosRoles,
+          visitas: ajustes.viaticosVisitasRoles,
+          prospectos: ajustes.viaticosProspectosRoles,
+          max: {
+            contratos: ajustes.viaticosMaxPorTipo.contrato,
+            visitas: ajustes.viaticosMaxPorTipo.visita,
+            prospectos: ajustes.viaticosMaxPorTipo.prospecto,
+          },
+          mezclar: ajustes.viaticosMezclarDestinos,
+        }}
+      />
     </div>
   );
 }

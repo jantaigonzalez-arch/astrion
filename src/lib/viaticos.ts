@@ -209,3 +209,21 @@ export const mxnViatico = (n: number) =>
     currency: "MXN",
     maximumFractionDigits: 2,
   }).format(n);
+
+/* ═══════════════ Los destinos del viaje (0037) ═══════════════ */
+
+export type TipoDestinoViatico = "contrato" | "visita" | "prospecto";
+
+/** Cómo se llama cada tipo de destino en una etiqueta. */
+export const DESTINO_LABELS: Record<TipoDestinoViatico, string> = {
+  contrato: "Contrato",
+  visita: "Visita",
+  prospecto: "Prospecto",
+};
+
+/** Qué significa cada tipo, para quien elige. */
+export const DESTINO_AYUDA: Record<TipoDestinoViatico, string> = {
+  contrato: "El gasto va a su utilidad",
+  visita: "Cliente sin contrato vigente",
+  prospecto: "Todavía no nos ha comprado",
+};

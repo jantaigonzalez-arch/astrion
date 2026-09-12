@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { CheckCircle2, Loader2, MapPin, Plane, Plus } from "lucide-react";
+import { CheckCircle2, Loader2, MapPin, Plane, Plus, X } from "lucide-react";
 import { crearViaticoAction, type ViaticoState } from "@/lib/actions/viaticos";
 import { Link } from "@/lib/nav";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Selector } from "@/components/ui/selector";
 import { createOrganization } from "@/lib/actions/crm";
 import { ROLE_LABELS } from "@/lib/roles";
+import { DESTINO_AYUDA, DESTINO_LABELS, type TipoDestinoViatico } from "@/lib/viaticos";
 
 const initial: ViaticoState = { ok: false };
 
@@ -37,13 +38,16 @@ export type Domicilio = {
   seña: string | null;
 };
 
-export type ProspectoOpcion = {
+/** Una empresa a la que se puede viajar: un cliente sin contrato o un prospecto. */
+export type EmpresaOpcion = {
   id: string;
   name: string;
   domicilio: Domicilio;
   /** Sus oportunidades abiertas, ya cargadas. Puede ir vacío. */
   negocios: Array<{ id: string; reference: string; title: string }>;
 };
+/** Se conserva el nombre de antes de la 0037, cuando solo había prospectos. */
+export type ProspectoOpcion = EmpresaOpcion;
 
 export type ContratoOpcion = {
   id: string;
@@ -59,53 +63,93 @@ export type ContratoOpcion = {
     equipmentName: string;
   }>;
 };
+
+/** Un destino ya elegido, tal como viaja a la acción en `destinos` (JSON). */
+type Elegido =
+  | { tipo: "contrato"; contractId: string }
+  | { tipo: "visita" | "prospecto"; organizationId: string; dealId: string | null };
+
+const esComercial = (t: TipoDestinoViatico) => t !== "contrato";
+
 /**
  * Pedir viáticos.
  *
- * ── EL ASUNTO MANDA SOBRE TODO LO DEMÁS ────────────────────────────────────
+ * ── A DÓNDE SE VIAJA MANDA SOBRE TODO LO DEMÁS ─────────────────────────────
  *
- * Un viaje es a un CONTRATO —ir a atender lo que ya se vendió— o a un
- * PROSPECTO —ir a ver a quien todavía no compra—, y de esa elección cuelga el
- * resto del formulario: los módulos solo existen del lado del contrato, el
- * negocio solo del lado del prospecto.
+ * Un viaje va a CONTRATOS —atender lo que ya se vendió—, a VISITAS —clientes
+ * que ya compraron y no tienen contrato vigente— o a PROSPECTOS —quien todavía
+ * no compra—, y de esa elección cuelga el resto del formulario: los módulos
+ * solo existen del lado del contrato, el negocio solo del lado de la empresa.
  *
- * Se pinta como dos pestañas y no como un desplegable con dos opciones porque
- * no es un dato más: es la pregunta que cambia el formulario entero, y esconder
- * eso dentro de un `<select>` hace que la mitad de los campos aparezca y
- * desaparezca sin que se vea por qué.
+ * Se pinta como pestañas y no como un desplegable porque no es un dato más: es
+ * la pregunta que cambia el formulario, y esconderla dentro de un `<select>`
+ * hace que la mitad de los campos aparezca y desaparezca sin que se vea por qué.
  *
- * La pestaña de prospectos solo está cuando la empresa lo permite Y quien mira
- * tiene acceso a Ventas. Cuando no, el formulario es exactamente el de antes:
- * ni una pestaña sola ni una opción deshabilitada que invite a preguntar por
- * qué no se puede.
+ * ── LO QUE SE OFRECE LO DECIDE LA EMPRESA ──────────────────────────────────
+ *
+ * Todo lo que cambia esta pantalla es configuración (Configuración → Viáticos,
+ * y ver `.claude/skills/decisiones-configurables`):
+ *
+ *   · `tipos`: solo las pestañas que el rol de quien mira puede pedir. Con una
+ *     sola, no hay pestañas: ni una pestaña sola ni una opción deshabilitada
+ *     que invite a preguntar por qué no se puede.
+ *   · `maxPorTipo`: cuántos contratos, clientes y prospectos caben en un
+ *     viático. Si en total no cabe más de uno, el formulario es el de siempre;
+ *     si caben más, aparece la GIRA —la lista de destinos del viaje— y se
+ *     agregan uno a uno, y cada pestaña desaparece cuando su tipo se llena.
+ *   · `mezclar`: si está apagado, en cuanto la gira tiene un contrato solo se
+ *     ofrecen contratos, y al revés. El viaje de servicio y el comercial se
+ *     piden por separado.
+ *
+ * Esto solo PINTA la regla: la que decide es `vetoDestinos` en
+ * `domain/viaticos.ts`, que la vuelve a comprobar al guardar. Si la pantalla no
+ * preguntara, enseñaría opciones que revientan al enviar; si el dominio se
+ * fiara de la pantalla, bastaría un `curl` para saltársela.
+ *
+ * ── LO QUE ESTÁ ELEGIDO EN EL EDITOR TAMBIÉN CUENTA ────────────────────────
+ *
+ * Con varios destinos, el contrato o la empresa que está elegida y todavía no
+ * se agregó a la gira se envía igual. Obligar a pulsar «agregar» antes de
+ * guardar un viaje de un solo destino sería un paso que no pide nadie, y el
+ * error que produce —«elige al menos un destino» con uno elegido en pantalla—
+ * no se entiende.
  *
  * ── LO CARGADO POR ADELANTADO ──────────────────────────────────────────────
  *
- * Módulos y negocios viajan YA CARGADOS con cada contrato y cada prospecto en
- * vez de pedirse al cambiar el desplegable: son unos cientos en total para toda
- * la empresa, caben de sobra en la respuesta, y así el segundo campo se llena
- * sin esperar a la red. Es el mismo trato que hace el formulario de ticket
- * nuevo con equipos y módulos.
+ * Módulos y negocios viajan YA CARGADOS con cada contrato y cada empresa en vez
+ * de pedirse al cambiar el desplegable: son unos cientos en total, caben de
+ * sobra en la respuesta, y así el segundo campo se llena sin esperar a la red.
  */
 export function NuevoViaticoForm({
   contratos,
+  visitas,
   prospectos,
   aprobadores,
-  permiteProspectos,
+  tipos,
+  maxPorTipo,
+  mezclar,
   puedeCrearProspectos,
 }: {
   contratos: ContratoOpcion[];
-  prospectos: ProspectoOpcion[];
+  /** Clientes sin contrato vigente. Vacío si el rol no puede visitarlos. */
+  visitas: EmpresaOpcion[];
+  prospectos: EmpresaOpcion[];
   aprobadores: Array<{ id: string; name: string | null; role: string }>;
-  /** La empresa lo permite y quien mira puede ver Ventas. Ver `domain/viaticos.ts`. */
-  permiteProspectos: boolean;
-  /** Además puede dar de alta uno sin salir de aquí (`ventas: editar`). */
+  /** Qué tipos de destino puede pedir quien mira, según su empresa. Al menos uno. */
+  tipos: TipoDestinoViatico[];
+  /** Cuántos destinos de cada tipo caben en una solicitud. */
+  maxPorTipo: Record<TipoDestinoViatico, number>;
+  /** Si una solicitud junta contratos con visitas o prospectos. */
+  mezclar: boolean;
+  /** Además puede dar de alta un prospecto sin salir de aquí (`ventas: editar`). */
   puedeCrearProspectos: boolean;
 }) {
   const [state, action, pending] = useActionState(crearViaticoAction, initial);
-  const [asunto, setAsunto] = useState<"contrato" | "prospecto">("contrato");
+  const [tipo, setTipo] = useState<TipoDestinoViatico>(tipos[0]);
   const [contractId, setContractId] = useState("");
   const [organizationId, setOrganizationId] = useState("");
+  const [dealId, setDealId] = useState("");
+  const [gira, setGira] = useState<Elegido[]>([]);
   const [destino, setDestino] = useState("");
   /*
     Los prospectos dados de alta aquí mismo, sin recargar.
@@ -115,39 +159,111 @@ export function NuevoViaticoForm({
     cuenta a media captura de que la empresa no estaba dada de alta. Ese es el
     momento en que ocurre de verdad.
   */
-  const [reciennacidos, setReciennacidos] = useState<ProspectoOpcion[]>([]);
-
-  const todosLosProspectos = [...reciennacidos, ...prospectos];
-  const contrato = contratos.find((c) => c.id === contractId);
-  const prospecto = todosLosProspectos.find((p) => p.id === organizationId);
-  const modulos = contrato?.modulos ?? [];
+  const [reciennacidos, setReciennacidos] = useState<EmpresaOpcion[]>([]);
 
   /*
-    El domicilio y el nombre salen del asunto elegido, sea cual sea.
-
-    Antes esto leía `elegido.domicilio` del contrato directamente. Con dos tipos
-    de asunto, la alternativa era duplicar el bloque de domicilio entero; y dos
-    copias de esa lógica —que ya tiene tres casos— es donde una se queda sin
-    arreglar cuando alguien corrige la otra.
+    ¿CABE MÁS DE UN DESTINO? Con lo que su rol puede pedir y los topes de su
+    empresa. Sin mezclar, un viaje es de servicio o comercial, así que cuenta el
+    mayor de los dos lados, no la suma.
   */
-  const dom = asunto === "contrato" ? contrato?.domicilio : prospecto?.domicilio;
-  const aQuien =
-    asunto === "contrato" ? (contrato?.cliente ?? "El cliente") : prospecto?.name;
-  const hayAsunto = asunto === "contrato" ? Boolean(contrato) : Boolean(prospecto);
+  const topeDe = (t: TipoDestinoViatico) => (tipos.includes(t) ? maxPorTipo[t] : 0);
+  const comercialTotal = topeDe("visita") + topeDe("prospecto");
+  const unico =
+    (mezclar ? topeDe("contrato") + comercialTotal : Math.max(topeDe("contrato"), comercialTotal)) <= 1;
+  const todosLosProspectos = [...reciennacidos, ...prospectos];
+  const empresasDe = (t: TipoDestinoViatico) => (t === "visita" ? visitas : todosLosProspectos);
+
+  /*
+    QUÉ TIPOS TODAVÍA CABEN en una lista de destinos: los que no llegaron a su
+    tope y, sin mezclar, los del mismo lado que lo ya elegido —con un contrato,
+    solo contratos; con una visita o un prospecto, solo lo comercial—.
+  */
+  const conCupo = (lista: Elegido[]) =>
+    tipos.filter((t) => {
+      if (lista.filter((d) => d.tipo === t).length >= maxPorTipo[t]) return false;
+      if (!mezclar && lista.some((d) => d.tipo === "contrato") && esComercial(t)) return false;
+      if (!mezclar && lista.some((d) => esComercial(d.tipo)) && t === "contrato") return false;
+      return true;
+    });
+  const hayContrato = gira.some((d) => d.tipo === "contrato");
+  const hayComercial = gira.some((d) => esComercial(d.tipo));
+  const tiposVisibles = unico ? tipos : conCupo(gira);
+  const tipoActual = tiposVisibles.includes(tipo) ? tipo : (tiposVisibles[0] ?? tipos[0]);
+
+  const contrato = tipoActual === "contrato" ? contratos.find((c) => c.id === contractId) : undefined;
+  const empresa =
+    tipoActual !== "contrato" ? empresasDe(tipoActual).find((o) => o.id === organizationId) : undefined;
+
+  const borrador: Elegido | null =
+    tipoActual === "contrato"
+      ? contrato
+        ? { tipo: "contrato", contractId: contrato.id }
+        : null
+      : empresa
+        ? { tipo: tipoActual, organizationId: empresa.id, dealId: dealId || null }
+        : null;
+
+  const yaEsta = (e: Elegido) =>
+    gira.some((d) =>
+      d.tipo === "contrato" && e.tipo === "contrato"
+        ? d.contractId === e.contractId
+        : d.tipo !== "contrato" && e.tipo !== "contrato" && d.organizationId === e.organizationId,
+    );
+  const lleno = !unico && tiposVisibles.length === 0;
+  /** ¿Quedaría sitio para otro destino si se agrega el que está elegido? */
+  const cabeOtroTrasAgregar = (e: Elegido) => conCupo([...gira, e]).length > 0;
+  /** «Hasta 3 prospectos y 1 contrato»: los topes de lo que este rol puede pedir. */
+  const topesEnPalabras = tipos
+    .map((t) =>
+      t === "contrato"
+        ? `${maxPorTipo[t]} ${maxPorTipo[t] === 1 ? "contrato" : "contratos"}`
+        : t === "visita"
+          ? `${maxPorTipo[t]} ${maxPorTipo[t] === 1 ? "cliente a visitar" : "clientes a visitar"}`
+          : `${maxPorTipo[t]} ${maxPorTipo[t] === 1 ? "prospecto" : "prospectos"}`,
+    )
+    .join(", ");
+
+  /** Lo que se envía: la gira, más lo elegido en el editor si aún no se agregó. */
+  const destinos: Elegido[] = unico
+    ? borrador
+      ? [borrador]
+      : []
+    : [...gira, ...(borrador && !yaEsta(borrador) && !lleno ? [borrador] : [])];
+
+  /*
+    Los MÓDULOS, de todos los contratos del viaje. Con un solo contrato, sin
+    encabezado —es el formulario de siempre—; con varios, agrupados por
+    contrato, porque un módulo se reconoce por el equipo y el equipo por el
+    contrato.
+  */
+  const contratosDelViaje = destinos
+    .filter((d): d is Extract<Elegido, { tipo: "contrato" }> => d.tipo === "contrato")
+    .map((d) => contratos.find((c) => c.id === d.contractId))
+    .filter((c): c is ContratoOpcion => Boolean(c));
+
+  /*
+    El domicilio y el nombre salen de lo que está elegido en el editor, sea
+    contrato o empresa. Una sola copia de esa lógica —que ya tiene tres casos—,
+    en vez de una por tipo que se quede sin arreglar cuando alguien corrija la
+    otra.
+  */
+  const dom = contrato?.domicilio ?? empresa?.domicilio;
+  const aQuien = contrato ? (contrato.cliente ?? "El cliente") : empresa?.name;
 
   /**
-   * Elegir asunto propone el destino, y NO pisa lo que ya se escribió.
+   * Elegir a dónde se viaja propone el destino, y NO pisa lo que ya se escribió.
    *
    * El destino de un viático es casi siempre donde está la empresa, así que
    * teclearlo a mano es copiar un dato que el sistema ya tiene — y cada copia a
    * mano es una ciudad mal escrita que después no agrupa en ningún informe.
    *
    * Solo se rellena si el campo está VACÍO o si lo que hay es la sugerencia
-   * anterior. Es la diferencia entre ayudar y estorbar: quien viaja a un sitio
-   * distinto al domicilio fiscal —una planta, otra sucursal— lo escribe, y
-   * cambiar de contrato no se lo borra.
+   * anterior. Quien viaja a un sitio distinto al domicilio —una planta, otra
+   * sucursal— lo escribe, y cambiar de contrato no se lo borra. En una gira, lo
+   * propone el PRIMER destino: es por donde empieza el viaje.
    */
   function proponerDestino(previa: string | null | undefined, nueva: string | null) {
+    if (!unico && gira.length > 0) return;
     setDestino((actual) =>
       actual.trim() === "" || actual === previa ? (nueva ?? "") : actual,
     );
@@ -167,24 +283,46 @@ export function NuevoViaticoForm({
    * Cuando esto se llama desde el alta rápida, el prospecto nuevo todavía NO
    * está en `todosLosProspectos`: `setReciennacidos` no ha vuelto a pintar.
    * Buscarlo en la lista devolvía `undefined` y el destino se quedaba vacío
-   * justo en el caso en que más ayuda —acabas de teclear el municipio dos
-   * campos más arriba—.
+   * justo en el caso en que más ayuda.
    */
-  function elegirProspecto(id: string, recien?: ProspectoOpcion) {
+  function elegirEmpresa(id: string, recien?: EmpresaOpcion) {
     proponerDestino(
-      prospecto?.domicilio.sugerencia,
-      (recien ?? todosLosProspectos.find((p) => p.id === id))?.domicilio.sugerencia ??
-        null,
+      empresa?.domicilio.sugerencia,
+      (recien ?? empresasDe(tipoActual).find((p) => p.id === id))?.domicilio.sugerencia ?? null,
     );
     setOrganizationId(id);
+    setDealId("");
   }
 
   /** Cambiar de pestaña limpia la elección de la otra, no la conserva escondida. */
-  function cambiarAsunto(nuevo: "contrato" | "prospecto") {
-    if (nuevo === asunto) return;
-    setAsunto(nuevo);
+  function cambiarTipo(nuevo: TipoDestinoViatico) {
+    if (nuevo === tipoActual) return;
+    setTipo(nuevo);
     setContractId("");
     setOrganizationId("");
+    setDealId("");
+  }
+
+  /** Pasa lo elegido a la gira y deja el editor limpio para el siguiente. */
+  function agregar() {
+    if (!borrador || yaEsta(borrador) || lleno || !cabeOtroTrasAgregar(borrador)) return;
+    if (gira.length === 0 && dom?.sugerencia) {
+      setDestino((actual) => (actual.trim() === "" ? dom.sugerencia! : actual));
+    }
+    setGira((g) => [...g, borrador]);
+    setContractId("");
+    setOrganizationId("");
+    setDealId("");
+  }
+
+  function nombreDe(e: Elegido): { titulo: string; detalle: string | null } {
+    if (e.tipo === "contrato") {
+      const c = contratos.find((x) => x.id === e.contractId);
+      return { titulo: c?.number ?? "—", detalle: c?.cliente ?? null };
+    }
+    const o = empresasDe(e.tipo).find((x) => x.id === e.organizationId);
+    const n = o?.negocios.find((x) => x.id === e.dealId);
+    return { titulo: o?.name ?? "—", detalle: n ? `Negocio: ${n.title}` : null };
   }
 
   if (state.ok && state.viaticoId) {
@@ -211,251 +349,340 @@ export function NuevoViaticoForm({
     );
   }
 
+  const listaEmpresas = tipoActual === "contrato" ? [] : empresasDe(tipoActual);
+  // En una gira no se ofrece dos veces lo que ya está en ella.
+  const disponibles = <T extends { id: string }>(xs: T[], clave: "contrato" | "empresa") =>
+    unico
+      ? xs
+      : xs.filter((x) =>
+          !gira.some((d) =>
+            clave === "contrato"
+              ? d.tipo === "contrato" && d.contractId === x.id
+              : d.tipo !== "contrato" && d.organizationId === x.id,
+          ),
+        );
+
   return (
     <form action={action} className="grid gap-5">
-      <input type="hidden" name="asunto" value={asunto} />
+      <input type="hidden" name="destinos" value={JSON.stringify(destinos)} />
 
-      {permiteProspectos ? (
+      {!unico ? (
         <div>
-          <Label>¿A quién se viaja?</Label>
-          <div className="mt-1 grid grid-cols-2 gap-2">
-            {(
-              [
-                ["contrato", "Cliente con contrato", "El gasto va a su utilidad"],
-                ["prospecto", "Prospecto", "Todavía no nos ha comprado"],
-              ] as const
-            ).map(([valor, titulo, pie]) => (
-              <button
-                key={valor}
-                type="button"
-                onClick={() => cambiarAsunto(valor)}
-                aria-pressed={asunto === valor}
-                className={`rounded-lg border px-3 py-2.5 text-left transition ${
-                  asunto === valor
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:bg-muted"
-                }`}
-              >
-                <span className="block text-sm font-medium">{titulo}</span>
-                <span className="block text-xs text-muted-foreground">{pie}</span>
-              </button>
-            ))}
-          </div>
+          <Label>Destinos del viaje</Label>
+          {gira.length === 0 ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Hasta {topesEnPalabras} por viaje. Elige el primero abajo; para una
+              gira, agrégalo y elige el siguiente.
+            </p>
+          ) : (
+            <ol className="mt-1 space-y-1.5">
+              {gira.map((d, i) => {
+                const n = nombreDe(d);
+                return (
+                  <li
+                    key={i}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm"
+                  >
+                    <span className="min-w-0">
+                      <span className="mr-2 rounded bg-muted px-1.5 py-0.5 text-xs">
+                        {DESTINO_LABELS[d.tipo]}
+                      </span>
+                      <span className={d.tipo === "contrato" ? "font-mono" : "font-medium"}>
+                        {n.titulo}
+                      </span>
+                      {n.detalle ? (
+                        <span className="text-muted-foreground"> · {n.detalle}</span>
+                      ) : null}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setGira((g) => g.filter((_, j) => j !== i))}
+                      aria-label="Quitar este destino"
+                      className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+          {!mezclar && (hayContrato || hayComercial) && tipos.length > 1 ? (
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Tu empresa pide por separado los viajes de servicio y los
+              comerciales: {hayContrato ? "este viaje ya es a contratos." : "este viaje ya es comercial."}
+            </p>
+          ) : null}
         </div>
       ) : null}
 
-      {asunto === "contrato" ? (
-        <div>
-          <Label htmlFor="contractId">Contrato de servicio</Label>
-          {/*
-            Con búsqueda: los folios de contrato empiezan todos por las mismas
-            letras, así que el tecleo del navegador —que casa contra el prefijo—
-            no llega a ninguno. El cliente va en el segundo renglón porque es lo
-            único que distingue un folio de otro a ojo. Ver `ui/selector.tsx`.
-          */}
-          <Selector
-            id="contractId"
-            name="contractId"
-            required
-            placeholder="Elige un contrato…"
-            opciones={contratos.map((c) => ({
-              value: c.id,
-              label: c.number,
-              detalle: c.cliente,
-              // Se encuentra también por el destino, que es como se piensa un
-              // viaje: «voy a Mérida» antes que «voy al contrato CO16…».
-              buscar: c.domicilio.sugerencia ?? c.domicilio.completo,
-            }))}
-            onChange={elegirContrato}
-          />
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            El gasto de este viaje se le carga a la utilidad de este contrato.
-          </p>
-        </div>
+      {lleno ? (
+        <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
+          Ya no caben más destinos en este viaje: tu empresa permite hasta{" "}
+          {topesEnPalabras}.
+        </p>
       ) : (
-        <div className="grid gap-5">
-          <div>
-            <Label htmlFor="organizationId">Prospecto</Label>
-            {/*
-              LA `key` FUERZA EL REMONTAJE CUANDO NACE UNO NUEVO.
-
-              `Selector` guarda su propio valor por dentro y solo lee
-              `defaultValue` al montarse, así que elegir desde fuera —que es lo
-              que hace el alta rápida— no movía lo que se ve NI lo que se envía:
-              el formulario habría mandado el campo vacío con el prospecto recién
-              creado en pantalla.
-
-              La `key` cuenta los recién nacidos, no el prospecto elegido: así
-              solo se remonta al dar de alta uno, y elegir de la lista a mano
-              —el caso normal— no tira el estado del desplegable.
-            */}
-            <Selector
-              key={`prospectos-${reciennacidos.length}`}
-              id="organizationId"
-              name="organizationId"
-              required
-              defaultValue={organizationId}
-              placeholder="Elige un prospecto…"
-              opciones={todosLosProspectos.map((p) => ({
-                value: p.id,
-                label: p.name,
-                detalle: p.domicilio.sugerencia,
-                buscar: p.domicilio.completo,
-              }))}
-              onChange={elegirProspecto}
-            />
-            <p className="mt-1.5 text-xs text-muted-foreground">
-              Empresas sin ninguna compra registrada. En cuanto compren, pasan a
-              Clientes con su historial.
-            </p>
-            {puedeCrearProspectos ? (
-              <AltaProspectoRapida
-                onCreado={(nuevo) => {
-                  setReciennacidos((previos) => [nuevo, ...previos]);
-                  elegirProspecto(nuevo.id, nuevo);
-                }}
-              />
-            ) : null}
-          </div>
-
-          {prospecto ? (
+        <div className={unico ? "grid gap-5" : "grid gap-4 rounded-lg border border-border p-4"}>
+          {tiposVisibles.length > 1 ? (
             <div>
-              <Label htmlFor="dealId">Negocio (opcional)</Label>
-              {prospecto.negocios.length === 0 ? (
-                <p className="mt-1 rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
-                  Este prospecto no tiene oportunidades abiertas. El viaje se
-                  registra igual: el gasto queda como comercial.
+              <Label>{unico || gira.length === 0 ? "¿A quién se viaja?" : "Siguiente destino"}</Label>
+              <div
+                className={`mt-1 grid gap-2 ${tiposVisibles.length === 3 ? "sm:grid-cols-3" : "grid-cols-2"}`}
+              >
+                {tiposVisibles.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => cambiarTipo(t)}
+                    aria-pressed={tipoActual === t}
+                    className={`rounded-lg border px-3 py-2.5 text-left transition ${
+                      tipoActual === t ? "border-primary bg-primary/5" : "border-border hover:bg-muted"
+                    }`}
+                  >
+                    <span className="block text-sm font-medium">
+                      {t === "contrato" ? "Cliente con contrato" : t === "visita" ? "Visita a cliente" : "Prospecto"}
+                    </span>
+                    <span className="block text-xs text-muted-foreground">{DESTINO_AYUDA[t]}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {tipoActual === "contrato" ? (
+            <div>
+              <Label htmlFor="contractId">Contrato de servicio</Label>
+              {/*
+                Con búsqueda: los folios de contrato empiezan todos por las mismas
+                letras, así que el tecleo del navegador —que casa contra el
+                prefijo— no llega a ninguno. El cliente va en el segundo renglón
+                porque es lo único que distingue un folio de otro a ojo.
+
+                La `key` cuenta la gira: al agregar un destino, el selector se
+                vacía para elegir el siguiente.
+              */}
+              <Selector
+                key={`contratos-${gira.length}`}
+                id="contractId"
+                name="_contrato"
+                required={unico}
+                placeholder="Elige un contrato…"
+                opciones={disponibles(contratos, "contrato").map((c) => ({
+                  value: c.id,
+                  label: c.number,
+                  detalle: c.cliente,
+                  // Se encuentra también por el destino, que es como se piensa un
+                  // viaje: «voy a Mérida» antes que «voy al contrato CO16…».
+                  buscar: c.domicilio.sugerencia ?? c.domicilio.completo,
+                }))}
+                onChange={elegirContrato}
+              />
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                El gasto de este destino se le carga a la utilidad de este contrato.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-5">
+              <div>
+                <Label htmlFor="organizationId">
+                  {tipoActual === "visita" ? "Cliente que se visita" : "Prospecto"}
+                </Label>
+                {/*
+                  LA `key` FUERZA EL REMONTAJE CUANDO NACE UNO NUEVO O SE AGREGA
+                  UNO A LA GIRA.
+
+                  `Selector` guarda su propio valor por dentro y solo lee
+                  `defaultValue` al montarse, así que elegir desde fuera —que es
+                  lo que hace el alta rápida— no movía lo que se ve.
+                */}
+                <Selector
+                  key={`${tipoActual}-${reciennacidos.length}-${gira.length}`}
+                  id="organizationId"
+                  name="_empresa"
+                  required={unico}
+                  defaultValue={organizationId}
+                  placeholder={tipoActual === "visita" ? "Elige al cliente…" : "Elige un prospecto…"}
+                  opciones={disponibles(listaEmpresas, "empresa").map((p) => ({
+                    value: p.id,
+                    label: p.name,
+                    detalle: p.domicilio.sugerencia,
+                    buscar: p.domicilio.completo,
+                  }))}
+                  onChange={(id) => elegirEmpresa(id)}
+                />
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {tipoActual === "visita"
+                    ? "Clientes que ya compraron y no tienen contrato vigente. Al que sí lo tiene se le viaja por su contrato."
+                    : "Empresas sin ninguna compra registrada. En cuanto compren, pasan a Clientes con su historial."}
+                </p>
+                {tipoActual === "prospecto" && puedeCrearProspectos ? (
+                  <AltaProspectoRapida
+                    onCreado={(nuevo) => {
+                      setReciennacidos((previos) => [nuevo, ...previos]);
+                      elegirEmpresa(nuevo.id, nuevo);
+                    }}
+                  />
+                ) : null}
+              </div>
+
+              {empresa ? (
+                <div>
+                  <Label htmlFor="dealId">Negocio (opcional)</Label>
+                  {empresa.negocios.length === 0 ? (
+                    <p className="mt-1 rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
+                      No tiene oportunidades abiertas. El viaje se registra igual:
+                      el gasto queda como costo comercial de esta empresa.
+                    </p>
+                  ) : (
+                    <Selector
+                      key={empresa.id}
+                      id="dealId"
+                      name="_negocio"
+                      placeholder="Sin negocio concreto"
+                      opciones={empresa.negocios.map((n) => ({
+                        value: n.id,
+                        label: n.title,
+                        detalle: n.reference,
+                      }))}
+                      onChange={setDealId}
+                    />
+                  )}
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Si el viaje es por una oportunidad concreta, dilo aquí y el
+                    costo se podrá leer en su ficha. Si no, déjalo en blanco.
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {/*
+            EL DOMICILIO DEL CLIENTE, CON SUS TRES CASOS DICHOS.
+
+            Unos tienen municipio y estado capturados, otros solo el domicilio en
+            texto libre sin desarmar, y otros nada. Los tres se enseñan distinto
+            a propósito: callar los dos últimos convertiría «no hay dato» en «el
+            sistema no funciona».
+          */}
+          {borrador ? (
+            <div className="rounded-lg bg-muted/60 px-3 py-2 text-xs">
+              {dom?.completo ? (
+                <p className="flex items-start gap-1.5 text-muted-foreground">
+                  <MapPin className="mt-0.5 size-3.5 shrink-0" />
+                  <span>
+                    <span className="font-medium text-foreground">{aQuien}</span> ·{" "}
+                    {dom.completo}
+                    {dom.seña ? <span className="block text-muted-foreground">{dom.seña}</span> : null}
+                  </span>
+                </p>
+              ) : dom?.crudo ? (
+                <p className="flex items-start gap-1.5 text-muted-foreground">
+                  <MapPin className="mt-0.5 size-3.5 shrink-0" />
+                  <span>
+                    {dom.crudo}
+                    <span className="block">Domicilio sin desarmar: escribe el destino a mano.</span>
+                  </span>
                 </p>
               ) : (
-                <Selector
-                  key={prospecto.id}
-                  id="dealId"
-                  name="dealId"
-                  placeholder="Sin negocio concreto"
-                  opciones={prospecto.negocios.map((n) => ({
-                    value: n.id,
-                    label: n.title,
-                    detalle: n.reference,
-                  }))}
-                />
+                <p className="text-muted-foreground">
+                  No tiene domicilio capturado. Escribe el destino a mano.
+                </p>
               )}
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                Si el viaje es por una oportunidad concreta, dilo aquí y el costo
-                se podrá leer en su ficha. Si vas a prospectar sin más, déjalo en
-                blanco.
-              </p>
+              {dom?.sugerencia && destino !== dom.sugerencia && (unico || gira.length === 0) ? (
+                <button
+                  type="button"
+                  onClick={() => setDestino(dom.sugerencia!)}
+                  className="mt-1.5 text-primary hover:underline"
+                >
+                  Usar «{dom.sugerencia}»
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {!unico ? (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={agregar}
+                disabled={!borrador || yaEsta(borrador) || !cabeOtroTrasAgregar(borrador)}
+                title={
+                  borrador && !cabeOtroTrasAgregar(borrador)
+                    ? "Este es el último destino que cabe: se enviará con el viaje."
+                    : undefined
+                }
+              >
+                <Plus className="size-4" /> Agregar y elegir otro destino
+              </Button>
             </div>
           ) : null}
         </div>
       )}
 
-      {asunto === "contrato" && contractId ? (
+      {contratosDelViaje.length > 0 ? (
         <div>
           <Label>Módulos que vas a atender</Label>
-          {modulos.length === 0 ? (
-            <p className="mt-1 rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
-              Este contrato no tiene módulos capturados. Puedes seguir sin
-              marcar ninguno.
-            </p>
-          ) : (
-            <>
-              <div className="mt-1 max-h-52 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
-                {modulos.map((m) => (
-                  <label
-                    key={m.id}
-                    className="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
-                  >
-                    <input
-                      type="checkbox"
-                      name="moduleIds"
-                      value={m.id}
-                      className="mt-0.5 size-4 rounded border-input"
-                    />
-                    <span>
-                      <span className="font-medium">{m.name}</span>{" "}
-                      <span className="text-muted-foreground">
-                        · {m.brand} · {m.equipmentName}
-                      </span>
-                      {m.serialNumber ? (
-                        <span className="block font-mono text-xs text-muted-foreground">
-                          {m.serialNumber}
+          <div className="mt-1 max-h-64 space-y-2 overflow-y-auto rounded-lg border border-border p-2">
+            {contratosDelViaje.map((c) => (
+              <div key={c.id}>
+                {contratosDelViaje.length > 1 ? (
+                  <p className="px-2 pt-1 font-mono text-xs text-muted-foreground">{c.number}</p>
+                ) : null}
+                {c.modulos.length === 0 ? (
+                  <p className="px-2 py-1.5 text-sm text-muted-foreground">
+                    Este contrato no tiene módulos capturados.
+                  </p>
+                ) : (
+                  c.modulos.map((m) => (
+                    <label
+                      key={m.id}
+                      className="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                    >
+                      <input
+                        type="checkbox"
+                        name="moduleIds"
+                        value={m.id}
+                        className="mt-0.5 size-4 rounded border-input"
+                      />
+                      <span>
+                        <span className="font-medium">{m.name}</span>{" "}
+                        <span className="text-muted-foreground">
+                          · {m.brand} · {m.equipmentName}
                         </span>
-                      ) : null}
-                    </span>
-                  </label>
-                ))}
+                        {m.serialNumber ? (
+                          <span className="block font-mono text-xs text-muted-foreground">
+                            {m.serialNumber}
+                          </span>
+                        ) : null}
+                      </span>
+                    </label>
+                  ))
+                )}
               </div>
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                Opcional. Si vas a diagnosticar y todavía no sabes qué falla,
-                déjalo en blanco.
-              </p>
-            </>
-          )}
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Opcional. Si vas a diagnosticar y todavía no sabes qué falla, déjalo en
+            blanco.
+          </p>
         </div>
       ) : null}
 
       <div>
-        <Label htmlFor="destination">Destino</Label>
+        <Label htmlFor="destination">{unico ? "Destino" : "Ciudad o ruta del viaje"}</Label>
         <Input
           id="destination"
           name="destination"
           required
           maxLength={200}
-          placeholder="Ej. Monterrey, N. L."
+          placeholder={unico ? "Ej. Monterrey, N. L." : "Ej. Monterrey – Saltillo, Coah."}
           value={destino}
           onChange={(e) => setDestino(e.target.value)}
         />
-
-        {/*
-          EL DOMICILIO DEL CLIENTE, CON SUS TRES CASOS DICHOS.
-
-          De los contratos de hoy, unos tienen municipio y estado capturados,
-          otros solo el domicilio en texto libre sin desarmar, y otros nada. Los
-          tres se enseñan distinto a propósito: enseñar los tres igual —o callar
-          los dos últimos— convertiría «no hay dato» en «el sistema no funciona»,
-          y quien viaja no sabría si el hueco es del cliente o de la pantalla.
-        */}
-        {hayAsunto ? (
-          <div className="mt-2 rounded-lg bg-muted/60 px-3 py-2 text-xs">
-            {dom?.completo ? (
-              <p className="flex items-start gap-1.5 text-muted-foreground">
-                <MapPin className="mt-0.5 size-3.5 shrink-0" />
-                <span>
-                  <span className="font-medium text-foreground">{aQuien}</span>{" "}
-                  · {dom.completo}
-                  {dom.seña ? (
-                    <span className="block text-muted-foreground">{dom.seña}</span>
-                  ) : null}
-                </span>
-              </p>
-            ) : dom?.crudo ? (
-              <p className="flex items-start gap-1.5 text-muted-foreground">
-                <MapPin className="mt-0.5 size-3.5 shrink-0" />
-                <span>
-                  {dom.crudo}
-                  <span className="block">
-                    Domicilio sin desarmar: escribe el destino a mano.
-                  </span>
-                </span>
-              </p>
-            ) : (
-              <p className="text-muted-foreground">
-                {asunto === "contrato" ? "Este cliente" : "Este prospecto"} no
-                tiene domicilio capturado. Escribe el destino a mano.
-              </p>
-            )}
-            {dom?.sugerencia && destino !== dom.sugerencia ? (
-              <button
-                type="button"
-                onClick={() => setDestino(dom.sugerencia!)}
-                className="mt-1.5 text-primary hover:underline"
-              >
-                Usar «{dom.sugerencia}»
-              </button>
-            ) : null}
-          </div>
-        ) : null}
       </div>
+
 
       <div>
         <Label htmlFor="purpose">Motivo del viaje</Label>

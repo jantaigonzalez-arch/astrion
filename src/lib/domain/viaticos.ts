@@ -1,10 +1,13 @@
 import "server-only";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DbOrTx } from "@/lib/db";
 import {
   contractEquipment,
+  contracts,
   crmDeals,
+  crmOrganizations,
   tickets,
+  viaticoDestinos,
   viaticoExpenses,
   viaticoRubros,
   viaticos,
@@ -12,7 +15,7 @@ import {
 import { listTenantMembers } from "@/lib/data/people";
 import type { MembershipRole } from "@/lib/db/platform";
 import { getSettings } from "@/lib/data/settings";
-import { ajustesGuardados, alcanza, nivelEfectivo, type Nivel } from "@/lib/permisos";
+import { ajustesGuardados, nivelEfectivo, type Nivel } from "@/lib/permisos";
 import { nextViaticoReference } from "@/lib/domain/references";
 import { crearAvisos } from "@/lib/notificaciones";
 import { diasDeViaje, type ViaticoEstado } from "@/lib/viaticos";
@@ -50,21 +53,33 @@ import { diasDeViaje, type ViaticoEstado } from "@/lib/viaticos";
  * comprobar que el elegido pueda administrar viáticos obliga a leer
  * `memberships`, que está en otro esquema.
  *
- * ── EL VIAJE A QUIEN TODAVÍA NO ES CLIENTE ─────────────────────────────────
+ * ── A DÓNDE SE VIAJA LO DECIDE LA EMPRESA ──────────────────────────────────
  *
- * Un viático es de un CONTRATO o de un PROSPECTO, nunca de los dos ni de
- * ninguno. Lo de prospecto pide dos condiciones que se comprueban aquí y no en
- * la pantalla, porque una regla escrita en la pantalla se salta por cualquier
- * otro camino que escriba en la tabla:
+ * Desde la 0037 un viático tiene UNO O VARIOS destinos (`viaticoDestinos`):
+ * contratos, VISITAS a clientes sin contrato vigente y prospectos. Qué se puede
+ * pedir no está escrito aquí: lo decide cada empresa en `settings`, y aquí se
+ * hace cumplir —`vetoDestinos`—, no en la pantalla, porque una regla escrita en
+ * la pantalla se salta por cualquier otro camino que escriba en la tabla:
  *
- *   · que el ROL de quien pide esté en `settings.viaticosProspectosRoles`.
+ *   · el ROL de quien pide tiene que estar en la lista de ese tipo de destino
+ *     (`viaticosContratosRoles`, `viaticosVisitasRoles`,
+ *     `viaticosProspectosRoles`);
+ *   · no más destinos DE CADA TIPO que `viaticosMaxPorTipo` —cuántos
+ *     contratos, cuántos clientes a visitar y cuántos prospectos—;
+ *   · contratos y destinos comerciales juntos, solo con
+ *     `viaticosMezclarDestinos`.
  *
- * Era una condición más —acceso al módulo de Ventas por persona— y se quitó en
- * la 0033: dos reglas para una decisión obligaban a entrar en la hoja de
- * permisos de cada vendedor después de encender el interruptor, y la pantalla
- * tenía que confesarlo con un aviso. Va por rol y no por capacidad, al revés
- * que casi todo aquí, porque no decide acceso sino una política de gasto: a qué
- * puestos les paga la empresa un viaje a quien no le ha comprado nada.
+ * Va por rol y no por capacidad, al revés que casi todo aquí, porque no decide
+ * acceso sino una política de gasto: a qué puestos les paga la empresa cada
+ * clase de viaje. Era una condición más —acceso a Ventas por persona— y se
+ * quitó en la 0033: dos reglas para una decisión obligaban a entrar en la hoja
+ * de permisos de cada vendedor después de encender el interruptor.
+ *
+ * Y el destino tiene que SER lo que dice: una visita, a un cliente sin contrato
+ * vigente; un prospecto, a quien no ha comprado. La clasificación se comprueba
+ * con las mismas expresiones que llenan las listas del formulario
+ * (`ES_CLIENTE`, `TIENE_CONTRATO_VIGENTE`), para que no se pueda pedir por otro
+ * camino lo que la pantalla no ofrece.
  *
  * ── LOS RESULTADOS SON DATOS, NO EXCEPCIONES ───────────────────────────────
  *
@@ -192,9 +207,6 @@ async function cargar(tx: DbOrTx, id: string) {
       status: viaticos.status,
       requestedById: viaticos.requestedById,
       approverId: viaticos.approverId,
-      contractId: viaticos.contractId,
-      organizationId: viaticos.organizationId,
-      dealId: viaticos.dealId,
       // Las fechas viajan porque el tope de un rubro es presupuesto × DÍAS: sin
       // ellas no se puede saber contra qué se compara.
       departsOn: viaticos.departsOn,
@@ -205,8 +217,26 @@ async function cargar(tx: DbOrTx, id: string) {
     .from(viaticos)
     .where(eq(viaticos.id, id))
     .limit(1);
-  return v ?? null;
+  if (!v) return null;
+  return { ...v, destinos: await destinosDe(tx, id) };
 }
+
+/** Los destinos de un viaje, en orden. Ver la 0037. */
+async function destinosDe(tx: DbOrTx, viaticoId: string) {
+  return tx
+    .select({
+      id: viaticoDestinos.id,
+      tipo: viaticoDestinos.tipo,
+      contractId: viaticoDestinos.contractId,
+      organizationId: viaticoDestinos.organizationId,
+      dealId: viaticoDestinos.dealId,
+    })
+    .from(viaticoDestinos)
+    .where(eq(viaticoDestinos.viaticoId, viaticoId))
+    .orderBy(asc(viaticoDestinos.position), asc(viaticoDestinos.createdAt));
+}
+
+type DestinoCargado = Awaited<ReturnType<typeof destinosDe>>[number];
 
 /**
  * A QUIÉN LE TOCA MOVER ESTE VIÁTICO.
@@ -238,18 +268,29 @@ async function totalGastado(tx: DbOrTx, viaticoId: string): Promise<number> {
 /* ═════════════════════════════ Alta ═════════════════════════════ */
 
 /**
- * EL ASUNTO: contrato o prospecto, nunca los dos.
+ * UN DESTINO DEL VIAJE: contrato, visita o prospecto.
  *
- * Se modela como unión y no como tres campos opcionales sueltos porque así el
- * compilador no deja construir el caso imposible. El CHECK de la base dice lo
- * mismo del otro lado; aquí se dice antes, con un mensaje que se entiende.
+ * Unión y no tres campos opcionales sueltos para que el compilador no deje
+ * construir el caso imposible —un contrato con negocio, una visita sin
+ * empresa—. El CHECK de la 0037 dice lo mismo del otro lado; aquí se dice
+ * antes, con un mensaje que se entiende.
  */
-export type AsuntoViatico =
+export type DestinoViatico =
   | { tipo: "contrato"; contractId: string }
+  | { tipo: "visita"; organizationId: string; dealId?: string | null }
   | { tipo: "prospecto"; organizationId: string; dealId?: string | null };
 
+export type TipoDestino = DestinoViatico["tipo"];
+
+export const NOMBRE_DESTINO: Record<TipoDestino, string> = {
+  contrato: "contratos",
+  visita: "visitas a clientes sin contrato",
+  prospecto: "prospectos",
+};
+
 export type NuevoViatico = {
-  asunto: AsuntoViatico;
+  /** A dónde se viaja, en orden. Al menos uno. Ver `vetoDestinos`. */
+  destinos: DestinoViatico[];
   requestedById: string;
   /** A quién se le manda a firmar. Obligatorio desde la 0028. */
   approverId: string;
@@ -258,30 +299,144 @@ export type NuevoViatico = {
   departsOn: string;
   returnsOn: string;
   estimatedMxn: number;
-  /** Módulos del contrato que se van a atender. Puede ir vacío. */
+  /** Módulos de los contratos que se van a atender. Puede ir vacío. */
   moduleIds: string[];
 };
 
 /**
- * ¿Puede esta persona pedir un viaje a un prospecto?
+ * ¿Puede esta persona pedir ESTOS destinos, según la política de su empresa?
  *
- * Dos condiciones, y ninguna es un permiso nuevo: que la empresa lo permita y
- * que quien pide tenga acceso a Ventas aunque sea de solo lectura. Ver la
- * cabecera del archivo.
+ * Devuelve el motivo cuando NO puede, `null` cuando sí —la forma que ya usa
+ * `firmaValida()`: quien llama solo pregunta si hay veto—. Cada mensaje dice
+ * dónde se cambia la regla, porque quien choca con ella casi nunca es quien la
+ * puede cambiar, y tiene que poder decirle a quién ir.
  *
- * Devuelve el motivo cuando NO puede, `null` cuando sí. Es la forma que ya usa
- * `firmaValida()`: quien llama solo tiene que preguntar si hay veto.
+ * El orden importa: primero lo que es de la POLÍTICA (cuántos, cuáles, quién),
+ * y solo después se va a la base a comprobar que cada destino sea lo que dice.
+ * Así una regla apagada se explica como regla, no como «ese cliente no existe».
  */
-async function vetoProspecto(tx: DbOrTx, requestedById: string): Promise<string | null> {
-  const { viaticosProspectosRoles: permitidos } = await getSettings(tx);
-  if (permitidos.length === 0) {
-    return "Esta empresa no tiene habilitados los viáticos a prospectos. Se configura en Configuración → Viáticos.";
+async function vetoDestinos(
+  tx: DbOrTx,
+  requestedById: string,
+  destinos: DestinoViatico[],
+): Promise<string | null> {
+  if (destinos.length === 0) return "Elige al menos un destino.";
+
+  const politica = await getSettings(tx);
+  const DONDE = "Se configura en Configuración → Viáticos.";
+
+  /*
+    Un tope POR TIPO y no uno para todo: una empresa puede querer giras de tres
+    prospectos y un solo contrato por viaje. El mensaje dice el tope del tipo
+    que se pasó, que es lo único que le sirve a quien lo lee.
+  */
+  for (const tipo of ["contrato", "visita", "prospecto"] as const) {
+    const n = destinos.filter((d) => d.tipo === tipo).length;
+    const tope = politica.viaticosMaxPorTipo[tipo];
+    if (n > tope) {
+      const cuantos = {
+        contrato: tope === 1 ? "un solo contrato" : `hasta ${tope} contratos`,
+        visita: tope === 1 ? "una sola visita a cliente" : `hasta ${tope} visitas a clientes`,
+        prospecto: tope === 1 ? "un solo prospecto" : `hasta ${tope} prospectos`,
+      }[tipo];
+      return `Esta empresa permite ${cuantos} por viático. ${DONDE}`;
+    }
+  }
+
+  const contratos = destinos.filter((d) => d.tipo === "contrato").map((d) => d.contractId);
+  const empresas = destinos
+    .filter((d): d is Exclude<DestinoViatico, { tipo: "contrato" }> => d.tipo !== "contrato")
+    .map((d) => d.organizationId);
+  if (new Set(contratos).size !== contratos.length || new Set(empresas).size !== empresas.length) {
+    return "Hay un destino repetido. Cada contrato o empresa va una sola vez por viaje.";
+  }
+
+  if (contratos.length > 0 && empresas.length > 0 && !politica.viaticosMezclarDestinos) {
+    return `Esta empresa pide por separado los viajes de servicio (contratos) y los comerciales (visitas y prospectos). ${DONDE}`;
   }
 
   const rol = await rolDe(requestedById);
   if (!rol) return "Ya no perteneces a esta empresa.";
-  if (!permitidos.includes(rol)) {
-    return "Tu rol no puede pedir viajes a prospectos. Quien administre viáticos decide qué roles pueden, en Configuración → Viáticos.";
+  const roles: Record<TipoDestino, MembershipRole[]> = {
+    contrato: politica.viaticosContratosRoles,
+    visita: politica.viaticosVisitasRoles,
+    prospecto: politica.viaticosProspectosRoles,
+  };
+  for (const tipo of new Set(destinos.map((d) => d.tipo))) {
+    if (roles[tipo].length === 0) {
+      return `Esta empresa no tiene habilitados los viajes a ${NOMBRE_DESTINO[tipo]}. ${DONDE}`;
+    }
+    if (!roles[tipo].includes(rol)) {
+      return `Tu rol no puede pedir viajes a ${NOMBRE_DESTINO[tipo]}. Quien administre viáticos decide qué roles pueden, en Configuración → Viáticos.`;
+    }
+  }
+
+  return vetoClasificacion(tx, destinos);
+}
+
+/**
+ * ¿Cada destino ES lo que dice ser?
+ *
+ * Un contrato que existe; una visita a un CLIENTE sin contrato vigente; un
+ * prospecto que no ha comprado; y el negocio, abierto y de esa empresa. Con las
+ * mismas expresiones que llenan las listas del formulario (ver la cabecera):
+ * sin esto, un uuid cambiado a mano pediría como «visita» —comercial, sin
+ * utilidad que la mida— el viaje a un cliente con contrato.
+ */
+async function vetoClasificacion(
+  tx: DbOrTx,
+  destinos: DestinoViatico[],
+): Promise<string | null> {
+  const { ES_CLIENTE, TIENE_CONTRATO_VIGENTE } = await import("@/lib/data/crm");
+
+  const contratos = destinos.flatMap((d) => (d.tipo === "contrato" ? [d.contractId] : []));
+  if (contratos.length) {
+    const hay = await tx
+      .select({ id: contracts.id })
+      .from(contracts)
+      .where(inArray(contracts.id, contratos));
+    if (hay.length !== new Set(contratos).size) return "Uno de los contratos ya no existe.";
+  }
+
+  const empresas = destinos.flatMap((d) => (d.tipo === "contrato" ? [] : [d]));
+  if (empresas.length) {
+    const filas = await tx
+      .select({
+        id: crmOrganizations.id,
+        name: crmOrganizations.name,
+        cliente: ES_CLIENTE,
+        vigente: TIENE_CONTRATO_VIGENTE,
+      })
+      .from(crmOrganizations)
+      .where(inArray(crmOrganizations.id, empresas.map((d) => d.organizationId)));
+    const porId = new Map(filas.map((f) => [f.id, f]));
+
+    for (const d of empresas) {
+      const o = porId.get(d.organizationId);
+      if (!o) return "Una de las empresas del viaje ya no existe.";
+      if (d.tipo === "visita") {
+        if (!o.cliente) return `«${o.name}» todavía no es cliente: su viaje se pide como prospecto.`;
+        if (o.vigente) {
+          return `«${o.name}» tiene contrato vigente: el viaje va por su contrato, para que el gasto entre en su utilidad.`;
+        }
+      }
+      if (d.tipo === "prospecto" && o.cliente) {
+        return `«${o.name}» ya es cliente: su viaje se pide como visita (o por su contrato, si tiene uno vigente).`;
+      }
+    }
+
+    const negocios = empresas.flatMap((d) => (d.dealId ? [{ dealId: d.dealId, org: d.organizationId }] : []));
+    if (negocios.length) {
+      const deals = await tx
+        .select({ id: crmDeals.id, org: crmDeals.organizationId, status: crmDeals.status })
+        .from(crmDeals)
+        .where(inArray(crmDeals.id, negocios.map((n) => n.dealId)));
+      for (const n of negocios) {
+        const d = deals.find((x) => x.id === n.dealId);
+        if (!d || d.org !== n.org) return "Uno de los negocios no es de la empresa a la que se viaja.";
+        if (d.status !== "open") return "Solo se cuelga el viaje de un negocio abierto.";
+      }
+    }
   }
   return null;
 }
@@ -324,20 +479,14 @@ export async function createViatico(
   const vetoFirma = await vetoAprobador(input.approverId, input.requestedById);
   if (vetoFirma) return { ok: false, reason: vetoFirma };
 
-  if (input.asunto.tipo === "prospecto") {
-    const veto = await vetoProspecto(tx, input.requestedById);
-    if (veto) return { ok: false, reason: veto };
-  }
+  const veto = await vetoDestinos(tx, input.requestedById, input.destinos);
+  if (veto) return { ok: false, reason: veto };
 
   const reference = await nextViaticoReference(tx);
   const [fila] = await tx
     .insert(viaticos)
     .values({
       reference,
-      contractId: input.asunto.tipo === "contrato" ? input.asunto.contractId : null,
-      organizationId:
-        input.asunto.tipo === "prospecto" ? input.asunto.organizationId : null,
-      dealId: input.asunto.tipo === "prospecto" ? (input.asunto.dealId ?? null) : null,
       requestedById: input.requestedById,
       approverId: input.approverId,
       destination: input.destination,
@@ -348,10 +497,21 @@ export async function createViatico(
     })
     .returning({ id: viaticos.id });
 
-  // Los módulos son del equipo instalado, y un prospecto no tiene equipo
-  // instalado. No es una restricción que haya que explicar: el formulario ni
-  // siquiera enseña el selector cuando el asunto es un prospecto.
-  if (input.asunto.tipo === "contrato") {
+  await tx.insert(viaticoDestinos).values(
+    input.destinos.map((d, position) => ({
+      viaticoId: fila.id,
+      tipo: d.tipo,
+      contractId: d.tipo === "contrato" ? d.contractId : null,
+      organizationId: d.tipo === "contrato" ? null : d.organizationId,
+      dealId: d.tipo === "contrato" ? null : (d.dealId ?? null),
+      position,
+    })),
+  );
+
+  // Los módulos son del equipo instalado, y solo un contrato lo tiene. No es
+  // una restricción que haya que explicar: el formulario ni siquiera enseña el
+  // selector cuando no hay ningún destino de contrato.
+  if (input.destinos.some((d) => d.tipo === "contrato")) {
     await guardarModulos(tx, fila.id, input.moduleIds);
   }
   return { ok: true, id: fila.id };
@@ -765,7 +925,13 @@ export async function cancelViatico(
 export type DestinoGasto =
   | { tipo: "ticket"; ticketId: string }
   | { tipo: "negocio"; dealId: string }
-  | { tipo: "comercial" };
+  /**
+   * Ni ticket ni negocio. Con `destinoId`, es gasto de esa visita o de ese
+   * prospecto; sin él, en un viaje de varios destinos, es GASTO GENERAL del
+   * viaje (el hotel que sirvió para los tres). En un viaje de un solo destino
+   * no hace falta decirlo: es de ése. Ver `resolverDestino`.
+   */
+  | { tipo: "comercial"; destinoId?: string | null };
 
 export type NuevoGasto = {
   viaticoId: string;
@@ -823,61 +989,97 @@ async function vetoRubro(
 }
 
 /**
- * ¿Cabe este destino en este viático?
+ * ¿A QUÉ DESTINO DEL VIAJE VA ESTE GASTO, Y CABE AHÍ?
  *
- * El asunto de la cabecera decide qué destinos existen abajo, y no al revés:
+ * Devuelve las tres columnas ya resueltas, o el motivo por el que no cabe.
  *
- *   · un viático DE CONTRATO carga a tickets, como desde el primer día. El
- *     gasto comercial suelto no se le permite porque tiene dónde caer —el
- *     servicio que se fue a atender— y dejarlo suelto sería sacarlo de la
- *     utilidad del contrato justo cuando sí pertenece a ella;
- *   · un viático DE PROSPECTO no puede cargar a un ticket. No hay servicio.
+ * El destino se DEDUCE cuando se puede, en vez de pedírselo a quien captura:
+ * un ticket es de un equipo, y el equipo lo ampara uno de los contratos del
+ * viaje; un negocio es de una empresa, y la empresa es una de las visitas o
+ * prospectos del viaje. Solo el gasto «comercial» —ni ticket ni negocio—
+ * necesita que alguien diga de qué destino es.
  *
- * Y si se nombra un negocio, tiene que ser DE ESE PROSPECTO. Sin esta
- * comprobación, un uuid cambiado a mano carga la cena de una empresa a la
- * oportunidad de otra, y el informe comercial lo daría por bueno.
+ *   · un destino DE CONTRATO carga a tickets, como desde el primer día: su
+ *     gasto tiene dónde caer —el servicio que se fue a atender— y dejarlo
+ *     suelto lo sacaría de la utilidad del contrato justo cuando sí es suyo;
+ *   · una visita o un prospecto no tienen tickets: van a un negocio suyo o al
+ *     destino a secas;
+ *   · el gasto GENERAL (sin destino) solo cabe con varios destinos. Con uno,
+ *     el general ES de ese destino y se asigna solo: así un viaje de un destino
+ *     cuesta exactamente lo mismo que antes de la 0037.
+ *
+ * El ticket tiene que ser DE UN CONTRATO DEL VIAJE (lo encontró
+ * `_probe-acciones-viaticos`: se aceptaba cualquier ticket de la empresa, y un
+ * uuid cambiado a mano cargaba el gasto a otro contrato), y el negocio, DE UNA
+ * EMPRESA DEL VIAJE.
  */
-async function destinoValido(
+type DestinoResuelto = { destinoId: string | null; ticketId: string | null; dealId: string | null };
+
+async function resolverDestino(
   tx: DbOrTx,
-  v: { contractId: string | null; organizationId: string | null },
+  destinos: DestinoCargado[],
   destino: DestinoGasto,
-): Promise<string | null> {
-  if (v.contractId) {
-    if (destino.tipo !== "ticket") {
-      return "Este viático es de un contrato: cada gasto va a un ticket del servicio.";
-    }
-    /*
-      Y el ticket tiene que ser DE ESE CONTRATO: de uno de los equipos que
-      ampara, que es la misma relación con la que `ticketsDelContrato` llena el
-      desplegable. Se aceptaba cualquier ticket de la empresa, así que un uuid
-      cambiado a mano cargaba el gasto a otro contrato, y al cerrar el viático
-      entraba en la utilidad equivocada. Es la comprobación que los negocios ya
-      tenían abajo. Lo encontró `_probe-acciones-viaticos`.
-    */
-    const [t] = await tx
-      .select({ id: tickets.id })
-      .from(tickets)
-      .innerJoin(contractEquipment, eq(contractEquipment.equipmentId, tickets.equipmentId))
-      .where(
-        and(eq(tickets.id, destino.ticketId), eq(contractEquipment.contractId, v.contractId)),
-      )
-      .limit(1);
-    return t ? null : "Ese ticket no es de un equipo de este contrato.";
+): Promise<{ ok: true; columnas: DestinoResuelto } | { ok: false; reason: string }> {
+  if (destinos.length === 0) {
+    // Solo pasaría con una fila escrita a mano: el alta exige al menos uno.
+    return { ok: false, reason: "Este viático no tiene destinos." };
   }
 
   if (destino.tipo === "ticket") {
-    return "Este viaje es a un prospecto, y un prospecto no tiene tickets. Cárgalo al negocio o déjalo como gasto comercial.";
+    const deContrato = destinos.filter((d) => d.tipo === "contrato" && d.contractId);
+    if (deContrato.length === 0) {
+      return {
+        ok: false,
+        reason: "Este viaje no va a ningún contrato, y los tickets son de un contrato. Cárgalo al negocio o a la visita.",
+      };
+    }
+    const [t] = await tx
+      .select({ contractId: contractEquipment.contractId })
+      .from(tickets)
+      .innerJoin(contractEquipment, eq(contractEquipment.equipmentId, tickets.equipmentId))
+      .where(
+        and(
+          eq(tickets.id, destino.ticketId),
+          inArray(contractEquipment.contractId, deContrato.map((d) => d.contractId!)),
+        ),
+      )
+      .limit(1);
+    const d = t && deContrato.find((x) => x.contractId === t.contractId);
+    if (!d) return { ok: false, reason: "Ese ticket no es de un equipo de los contratos de este viaje." };
+    return { ok: true, columnas: { destinoId: d.id, ticketId: destino.ticketId, dealId: null } };
   }
-  if (destino.tipo === "comercial") return null;
 
-  const [d] = await tx
-    .select({ id: crmDeals.id })
-    .from(crmDeals)
-    .where(
-      and(eq(crmDeals.id, destino.dealId), eq(crmDeals.organizationId, v.organizationId!)),
-    )
-    .limit(1);
-  return d ? null : "Ese negocio no es de la empresa a la que se viajó.";
+  if (destino.tipo === "negocio") {
+    const [n] = await tx
+      .select({ org: crmDeals.organizationId })
+      .from(crmDeals)
+      .where(eq(crmDeals.id, destino.dealId))
+      .limit(1);
+    const d = n && destinos.find((x) => x.tipo !== "contrato" && x.organizationId === n.org);
+    if (!d) return { ok: false, reason: "Ese negocio no es de ninguna de las empresas de este viaje." };
+    return { ok: true, columnas: { destinoId: d.id, ticketId: null, dealId: destino.dealId } };
+  }
+
+  // Comercial: ni ticket ni negocio.
+  if (destino.destinoId) {
+    const d = destinos.find((x) => x.id === destino.destinoId);
+    if (!d) return { ok: false, reason: "Ese destino no es de este viaje." };
+    if (d.tipo === "contrato") {
+      return { ok: false, reason: "El gasto de un contrato va a un ticket del servicio." };
+    }
+    return { ok: true, columnas: { destinoId: d.id, ticketId: null, dealId: null } };
+  }
+
+  if (destinos.length === 1) {
+    const [unico] = destinos;
+    if (unico.tipo === "contrato") {
+      return { ok: false, reason: "Este viático es de un contrato: cada gasto va a un ticket del servicio." };
+    }
+    return { ok: true, columnas: { destinoId: unico.id, ticketId: null, dealId: null } };
+  }
+
+  // Varios destinos y ninguno nombrado: gasto general del viaje.
+  return { ok: true, columnas: { destinoId: null, ticketId: null, dealId: null } };
 }
 
 /**
@@ -946,14 +1148,6 @@ async function vetoPresupuesto(
   );
 }
 
-/** El destino, tal como se guarda en las dos columnas. */
-function columnasDeDestino(destino: DestinoGasto) {
-  return {
-    ticketId: destino.tipo === "ticket" ? destino.ticketId : null,
-    dealId: destino.tipo === "negocio" ? destino.dealId : null,
-  };
-}
-
 /**
  * Cargar un gasto.
  *
@@ -990,14 +1184,14 @@ export async function addExpense(
   const vetoDelTope = await vetoPresupuesto(tx, v, gasto);
   if (vetoDelTope) return { ok: false, reason: vetoDelTope };
 
-  const vetoDestino = await destinoValido(tx, v, gasto.destino);
-  if (vetoDestino) return { ok: false, reason: vetoDestino };
+  const destino = await resolverDestino(tx, v.destinos, gasto.destino);
+  if (!destino.ok) return { ok: false, reason: destino.reason };
 
   const [fila] = await tx
     .insert(viaticoExpenses)
     .values({
       viaticoId: gasto.viaticoId,
-      ...columnasDeDestino(gasto.destino),
+      ...destino.columnas,
       rubroId: gasto.rubroId,
       // La nota se guarda si la hay, la pida el rubro o no: alguien que aclara
       // «cena con el cliente» en un gasto de Comida está dando información que
@@ -1064,13 +1258,13 @@ export async function reclassifyExpense(
     };
   }
 
-  const vetoDestino = await destinoValido(tx, v, args.destino);
-  if (vetoDestino) return { ok: false, reason: vetoDestino };
+  const destino = await resolverDestino(tx, v.destinos, args.destino);
+  if (!destino.ok) return { ok: false, reason: destino.reason };
 
   await tx
     .update(viaticoExpenses)
     .set({
-      ...columnasDeDestino(args.destino),
+      ...destino.columnas,
       reclassifiedById: args.actorId,
       reclassifiedAt: new Date(),
     })

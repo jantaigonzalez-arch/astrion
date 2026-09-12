@@ -581,6 +581,29 @@ export const settings = pgTable("settings", {
     .default([]),
 
   /**
+   * LA POLÍTICA DE DESTINOS DE VIÁTICOS (0037). Lista vacía = nadie.
+   *
+   * Quién pide viajes a CONTRATOS —de fábrica todos los roles internos, que es
+   * lo que pasaba antes de que esto fuera configurable— y quién puede VISITAR a
+   * un cliente sin contrato vigente —de fábrica nadie—. Van por rol por lo
+   * mismo que la de prospectos: es una política de gasto por puesto.
+   */
+  viaticosContratosRoles: jsonb("viaticos_contratos_roles")
+    .notNull()
+    .default(["owner", "admin", "agent", "sales", "general"]),
+  viaticosVisitasRoles: jsonb("viaticos_visitas_roles").notNull().default([]),
+  /**
+   * Cuántos destinos de CADA tipo caben en una solicitud. 1 = un viaje, un
+   * destino, que es lo de antes. Uno por tipo y no uno para todo: una empresa
+   * puede querer giras de tres prospectos y un solo contrato por viaje.
+   */
+  viaticosMaxContratos: smallint("viaticos_max_contratos").notNull().default(1),
+  viaticosMaxVisitas: smallint("viaticos_max_visitas").notNull().default(1),
+  viaticosMaxProspectos: smallint("viaticos_max_prospectos").notNull().default(1),
+  /** Si una solicitud junta contratos con visitas o prospectos. */
+  viaticosMezclarDestinos: boolean("viaticos_mezclar_destinos").notNull().default(false),
+
+  /**
    * Si el tipo de cambio sale de Banxico (`true`, lo normal) o de `usdRate`.
    *
    * El manual no desaparece al encender el automático: es el de quien pactó una
@@ -2937,12 +2960,13 @@ export const viaticoSeq = pgSequence("viatico_reference_seq", {
 /**
  * Un viaje de servicio: lo que se pidió, lo que se autorizó y lo que se gastó.
  *
- * ── EL CONTRATO ES OBLIGATORIO, Y ESA ES LA IDEA ───────────────────────────
+ * ── A DÓNDE SE VIAJA: A UNO O VARIOS DESTINOS ─────────────────────────────
  *
- * Sin contrato, un viático es un gasto que no se puede imputar a nada, y el
- * módulo entero existe para que la utilidad del contrato deje de ignorar lo que
- * cuesta llegar hasta el equipo. Un viaje que de verdad no pertenece a ningún
- * contrato es un gasto de la empresa y su lugar es Cuentas por pagar, no aquí.
+ * Nació atado a un contrato (0026), aprendió a viajar a prospectos (0028) y
+ * desde la 0037 va a VARIOS destinos —contratos, visitas a clientes sin
+ * contrato y prospectos— en `viaticoDestinos`. Qué tipos se pueden pedir, cuántos
+ * a la vez y si se mezclan lo decide cada empresa en `settings`: ver
+ * `vetoDestinos` en `lib/domain/viaticos.ts`.
  *
  * ── DOS FIRMAS Y DOS MOMENTOS ──────────────────────────────────────────────
  *
@@ -2962,45 +2986,11 @@ export const viaticos = pgTable(
     /** Folio legible: EVO-V-000123. La V no la usa ningún otro documento. */
     reference: varchar("reference", { length: 30 }).notNull().unique(),
 
-    /**
-     * A qué contrato se le carga. Ver la nota de arriba.
-     *
-     * NULO cuando el viaje es a un PROSPECTO, que todavía no tiene contrato. Es
-     * una de las dos llaves de asunto y un CHECK exige que vaya exactamente
-     * una: ver `organizationId` y la migración 0028.
-     */
-    contractId: uuid("contract_id").references(() => contracts.id, {
-      onDelete: "restrict",
-    }),
-
-    /**
-     * A qué PROSPECTO se viaja, cuando no hay contrato.
-     *
-     * La otra mitad del asunto. Se viaja a ver a una planta que aún no ha
-     * comprado nada, y ese gasto existía igual: antes se metía en el contrato de
-     * otro cliente —falseando su rentabilidad— o no se pedía por el sistema.
-     *
-     * `restrict` por lo mismo que el contrato: borrar la ficha de una empresa a
-     * la que se le viajó dejaría un gasto sin destinatario.
-     */
-    organizationId: uuid("organization_id").references(() => crmOrganizations.id, {
-      onDelete: "restrict",
-    }),
-
-    /**
-     * La oportunidad concreta, si la hay. OPCIONAL, y solo con prospecto.
-     *
-     * Se prospecta antes de que haya negocio abierto: obligar a crear uno para
-     * poder pedir el viaje produciría oportunidades inventadas de una línea.
-     * Cuando sí existe, el costo del viaje se puede leer por negocio, que es la
-     * pregunta que hace Ventas —«¿cuánto llevamos gastado en cerrar esto?»—.
-     *
-     * `set null` y no `restrict`: la oportunidad es una etiqueta de gestión que
-     * se borra sin drama, y el viaje sigue siendo de esa empresa.
-     */
-    dealId: uuid("deal_id").references(() => crmDeals.id, {
-      onDelete: "set null",
-    }),
+    /*
+      A DÓNDE SE VIAJA ya no vive aquí: desde la 0037 es `viaticoDestinos`, uno
+      a muchos. Aquí estaban `contractId`, `organizationId` y `dealId`, que solo
+      podían contestar «a UN sitio».
+    */
 
     /**
      * A QUIÉN SE LE MANDA A FIRMAR. Nulo = a quien lo vea.
@@ -3090,10 +3080,6 @@ export const viaticos = pgTable(
     ),
     /** «Mis viáticos», del ingeniero. */
     index("viaticos_solicitante_idx").on(t.requestedById, t.createdAt),
-    /** El costo de viaje de un contrato: lo lee la utilidad. */
-    index("viaticos_contrato_idx").on(t.contractId),
-    /** Su contraparte: el costo de viaje de un prospecto. */
-    index("viaticos_organizacion_idx").on(t.organizationId),
     /**
      * «Lo que espera MI firma».
      *
@@ -3106,6 +3092,61 @@ export const viaticos = pgTable(
       desc(t.createdAt),
       desc(t.id),
     ),
+  ],
+);
+
+/**
+ * QUÉ CLASE DE DESTINO ES, según la política con la que se pidió.
+ *
+ *   contrato   un contrato de servicio: el gasto entra en su utilidad.
+ *   visita     un CLIENTE sin contrato vigente: costo comercial de esa empresa.
+ *   prospecto  alguien que todavía no ha comprado.
+ *
+ * Visita y prospecto usan la misma llave (`organizationId`); lo que los separa
+ * es si la empresa ya compró, y eso cambia con el tiempo. Se guarda lo que era
+ * el día que se pidió el viaje, que es lo que la política autorizó. Ver la 0037.
+ */
+export const viaticoDestinoTipo = pgEnum("viatico_destino_tipo", [
+  "contrato",
+  "visita",
+  "prospecto",
+]);
+
+/**
+ * LOS DESTINOS DE UN VIAJE, en orden de visita.
+ *
+ * Un CHECK ata el tipo a su llave: el contrato lleva `contractId` y nada más;
+ * visita y prospecto llevan `organizationId` y, si hay, el negocio. Un mismo
+ * contrato o una misma empresa no se repiten en un viaje (índices únicos).
+ *
+ * Que un viático tenga al menos uno lo exige el dominio, no la base: es otra
+ * tabla y un CHECK no la ve.
+ */
+export const viaticoDestinos = pgTable(
+  "viatico_destinos",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    viaticoId: uuid("viatico_id")
+      .notNull()
+      .references((): AnyPgColumn => viaticos.id, { onDelete: "cascade" }),
+    tipo: viaticoDestinoTipo("tipo").notNull(),
+    contractId: uuid("contract_id").references(() => contracts.id, {
+      onDelete: "restrict",
+    }),
+    organizationId: uuid("organization_id").references(() => crmOrganizations.id, {
+      onDelete: "restrict",
+    }),
+    /** La oportunidad concreta, si la hay. Nunca en un destino de contrato. */
+    dealId: uuid("deal_id").references(() => crmDeals.id, {
+      onDelete: "set null",
+    }),
+    position: smallint("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("viatico_destinos_viatico_idx").on(t.viaticoId, t.position),
+    index("viatico_destinos_contrato_idx").on(t.contractId),
+    index("viatico_destinos_organizacion_idx").on(t.organizationId),
   ],
 );
 
@@ -3246,6 +3287,16 @@ export const viaticoExpenses = pgTable(
       .references((): AnyPgColumn => viaticos.id, { onDelete: "cascade" }),
 
     /**
+     * A qué DESTINO del viaje va el gasto (0037). Nulo = gasto GENERAL del viaje
+     * —el hotel que sirvió para los tres—, y solo cabe con varios destinos: con
+     * uno, el dominio lo asigna a ése. El ticket y el negocio van siempre dentro
+     * de un destino (CHECK de la 0037).
+     */
+    destinoId: uuid("destino_id").references((): AnyPgColumn => viaticoDestinos.id, {
+      onDelete: "restrict",
+    }),
+
+    /**
      * A qué servicio pertenece este gasto. Ver la nota de arriba.
      *
      * NULO en un viaje a prospecto, donde no hay servicio al que cargarlo. Ver
@@ -3373,18 +3424,7 @@ export const viaticoExpenses = pgTable(
 );
 
 export const viaticosRelations = relations(viaticos, ({ one, many }) => ({
-  contract: one(contracts, {
-    fields: [viaticos.contractId],
-    references: [contracts.id],
-  }),
-  organization: one(crmOrganizations, {
-    fields: [viaticos.organizationId],
-    references: [crmOrganizations.id],
-  }),
-  deal: one(crmDeals, {
-    fields: [viaticos.dealId],
-    references: [crmDeals.id],
-  }),
+  destinos: many(viaticoDestinos),
   approver: one(users, {
     fields: [viaticos.approverId],
     references: [users.id],
@@ -3420,10 +3460,34 @@ export const viaticoModulesRelations = relations(viaticoModules, ({ one }) => ({
   }),
 }));
 
+export const viaticoDestinosRelations = relations(viaticoDestinos, ({ one, many }) => ({
+  viatico: one(viaticos, {
+    fields: [viaticoDestinos.viaticoId],
+    references: [viaticos.id],
+  }),
+  contract: one(contracts, {
+    fields: [viaticoDestinos.contractId],
+    references: [contracts.id],
+  }),
+  organization: one(crmOrganizations, {
+    fields: [viaticoDestinos.organizationId],
+    references: [crmOrganizations.id],
+  }),
+  deal: one(crmDeals, {
+    fields: [viaticoDestinos.dealId],
+    references: [crmDeals.id],
+  }),
+  expenses: many(viaticoExpenses),
+}));
+
 export const viaticoExpensesRelations = relations(viaticoExpenses, ({ one }) => ({
   viatico: one(viaticos, {
     fields: [viaticoExpenses.viaticoId],
     references: [viaticos.id],
+  }),
+  destino: one(viaticoDestinos, {
+    fields: [viaticoExpenses.destinoId],
+    references: [viaticoDestinos.id],
   }),
   ticket: one(tickets, {
     fields: [viaticoExpenses.ticketId],

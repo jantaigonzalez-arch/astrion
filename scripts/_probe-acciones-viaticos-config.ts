@@ -1,9 +1,16 @@
 /**
- * LA CONFIGURACIÓN DE VIÁTICOS: EL INTERRUPTOR DE PROSPECTOS Y LOS RUBROS.
+ * LA CONFIGURACIÓN DE VIÁTICOS: LA POLÍTICA DE DESTINOS Y LOS RUBROS.
  *
  *   npx tsx --tsconfig tsconfig.probe.json --conditions react-server scripts/_probe-acciones-viaticos-config.ts
  *
- * Cuatro acciones que deciden la política de gasto de la empresa. Lo que vale
+ * Cuatro acciones que deciden la política de gasto de la empresa. Desde la 0037
+ * la primera ya no es el interruptor de prospectos (`guardarViaticosProspectos`,
+ * que desapareció) sino la política de destinos ENTERA, en una sola acción
+ * (`guardarPoliticaViaticos`): quién viaja a contratos, a visitas y a
+ * prospectos, cuántos destinos de CADA TIPO caben y si se mezclan. Aquí se prueba que la
+ * guarde quien debe, que sanee lo que llega y que escriba exactamente lo
+ * marcado; que la política SE CUMPLA —cada perilla en sus dos estados— lo
+ * prueba `_probe-acciones-viaticos`, que es donde se piden viajes. Lo que vale
  * la pena atar es el PERMISO: es `viaticos: administrar` y NO `configuracion`
  * —la cabecera de la acción explica por qué: el rol General administra el
  * gasto y no tiene Configuración—. Así que además del escalón de menos
@@ -46,8 +53,12 @@ const CLAVE = MARCA.toLowerCase();
 const FANTASMA = "00000000-0000-4000-8000-00000000dead";
 const SIN_PERMISO = "No tienes permiso para configurar viáticos.";
 
+/** Las siete columnas de la política, y `updated_at`: un rechazo no la toca. */
 const AJUSTES = (esquema: string) =>
-  `select viaticos_prospectos_roles from ${esquema}.settings where id = 'global'`;
+  `select viaticos_contratos_roles, viaticos_visitas_roles, viaticos_prospectos_roles,
+          viaticos_max_contratos, viaticos_max_visitas, viaticos_max_prospectos,
+          viaticos_mezclar_destinos, updated_at
+     from ${esquema}.settings where id = 'global'`;
 /*
   Los rubros de esta corrida y el «Hotel» de fábrica, que es contra el que se
   prueba el choque de nombres: si una acción rechazada lo tocara —o creara un
@@ -72,6 +83,15 @@ type Rubro = {
   active: boolean;
   position: number;
 };
+type Politica = {
+  viaticos_contratos_roles: string[];
+  viaticos_visitas_roles: string[];
+  viaticos_prospectos_roles: string[];
+  viaticos_max_contratos: number;
+  viaticos_max_visitas: number;
+  viaticos_max_prospectos: number;
+  viaticos_mezclar_destinos: boolean;
+};
 type Estado = { ok: boolean; error?: string; message?: string };
 
 async function llamar(fn: () => Promise<Estado>): Promise<Estado> {
@@ -80,9 +100,19 @@ async function llamar(fn: () => Promise<Estado>): Promise<Estado> {
   return { ok: false, error: r.error ? `reventó: ${r.error}` : `redirigió a ${r.redirige}` };
 }
 
-async function roles(esquema = ESQUEMA): Promise<string[] | null> {
-  const [f] = await filas<{ viaticos_prospectos_roles: string[] }>(AJUSTES(esquema));
-  return f ? f.viaticos_prospectos_roles : null;
+/** La política guardada, sin `updated_at`, o `null` si la empresa no tiene fila. */
+async function politica(esquema = ESQUEMA): Promise<Politica | null> {
+  const [f] = await filas<Politica>(AJUSTES(esquema));
+  if (!f) return null;
+  return {
+    viaticos_contratos_roles: f.viaticos_contratos_roles,
+    viaticos_visitas_roles: f.viaticos_visitas_roles,
+    viaticos_prospectos_roles: f.viaticos_prospectos_roles,
+    viaticos_max_contratos: f.viaticos_max_contratos,
+    viaticos_max_visitas: f.viaticos_max_visitas,
+    viaticos_max_prospectos: f.viaticos_max_prospectos,
+    viaticos_mezclar_destinos: f.viaticos_mezclar_destinos,
+  };
 }
 
 void probar("configuración de viáticos: el permiso es el del gasto, no el del sistema", async () => {
@@ -90,21 +120,35 @@ void probar("configuración de viáticos: el permiso es el del gasto, no el del 
   if (!ACTOR) throw new Error("la base no trae usuarios con membresía");
 
   /*
-    EL INTERRUPTOR SE REPONE COMO ESTABA, Y SOLO ÉL.
+    LA POLÍTICA SE REPONE COMO ESTABA, Y SOLO ELLA.
 
     Si la fila no existía, la acción la crea (upsert). Borrarla al final sería
     lo simétrico, pero `settings` es UNA fila que comparten el tipo de cambio y
     las tarifas: otro probe puede estar a mitad de usarla, y un `delete` le
     quitaría lo que acaba de escribir. Así que se borra solo si nadie más la
-    tocó —todo en sus valores de fábrica—; si no, se deja la lista vacía, que es
-    exactamente lo que significa no tener fila.
+    tocó —todo lo demás en sus valores de fábrica—; si no, las siete columnas de
+    viáticos vuelven a su DEFAULT, que es exactamente lo que significa no tener
+    fila.
   */
-  const original = await roles();
+  const original = await politica();
   alLimpiar(async () => {
     if (original !== null) {
       return sql.unsafe(
-        `update ${ESQUEMA}.settings set viaticos_prospectos_roles = $1::jsonb where id = 'global'`,
-        [JSON.stringify(original)],
+        `update ${ESQUEMA}.settings
+            set viaticos_contratos_roles = $1::jsonb, viaticos_visitas_roles = $2::jsonb,
+                viaticos_prospectos_roles = $3::jsonb, viaticos_max_contratos = $4,
+                viaticos_max_visitas = $5, viaticos_max_prospectos = $6,
+                viaticos_mezclar_destinos = $7
+          where id = 'global'`,
+        [
+          JSON.stringify(original.viaticos_contratos_roles),
+          JSON.stringify(original.viaticos_visitas_roles),
+          JSON.stringify(original.viaticos_prospectos_roles),
+          original.viaticos_max_contratos,
+          original.viaticos_max_visitas,
+          original.viaticos_max_prospectos,
+          original.viaticos_mezclar_destinos,
+        ],
       );
     }
     await sql.unsafe(
@@ -113,7 +157,12 @@ void probar("configuración de viáticos: el permiso es el del gasto, no el del 
           and labor_rate_per_hour is null and tipo_cambio_automatico`,
     );
     return sql.unsafe(
-      `update ${ESQUEMA}.settings set viaticos_prospectos_roles = '[]'::jsonb where id = 'global'`,
+      `update ${ESQUEMA}.settings
+          set viaticos_contratos_roles = default, viaticos_visitas_roles = default,
+              viaticos_prospectos_roles = default, viaticos_max_contratos = default,
+              viaticos_max_visitas = default, viaticos_max_prospectos = default,
+              viaticos_mezclar_destinos = default
+        where id = 'global'`,
     );
   });
   // Los rubros, al final de todo: antes tiene que irse el gasto que sostiene a uno.
@@ -142,46 +191,170 @@ void probar("configuración de viáticos: el permiso es el del gasto, no el del 
     }
   }
 
-  /* ── 1 · el interruptor de prospectos ────────────────────────────────── */
-  seccion("viáticos a prospectos: qué roles pueden pedirlos");
+  /* ── 1 · la política de destinos ────────────────────────────────────── */
+  seccion("la política de destinos: quién viaja a dónde, cuántos de cada tipo y si se mezclan");
 
-  const prospectos = (lista: string[]) => () =>
-    c.guardarViaticosProspectos(ini, forma({ roles: lista }));
+  const POLITICA = {
+    rolesContrato: ["agent", "general"],
+    rolesVisita: ["sales", "general"],
+    rolesProspecto: ["owner"],
+    maxContratos: "2",
+    maxVisitas: "3",
+    maxProspectos: "4",
+    mezclar: "on",
+  };
+  const guardarPolitica = (campos: Record<string, string | string[] | null> = {}) => () =>
+    c.guardarPoliticaViaticos(ini, forma({ ...POLITICA, ...campos }));
   const ajenoAntes = JSON.stringify(await filas(AJUSTES(AJENO)));
 
-  await guardia("prospectos", prospectos(["agent", "general"]), [AJUSTES(ESQUEMA)]);
+  /*
+    La foto lleva `updated_at` y las siete columnas: un rechazo que aun así
+    escribiera —aunque fuera el mismo valor— movería la fecha y se vería.
+  */
+  await guardia("política", guardarPolitica(), [AJUSTES(ESQUEMA)]);
 
   como(ACTOR, "viaticos:administrar");
-  let r = await llamar(prospectos(["agent", "general"]));
-  ok("guardar dos roles responde ok", r.ok === true && r.message === "Guardado.", r.error ?? r.message);
-  let guardados = await roles();
+  /*
+    CADA TOPE va de 1 a 20 —el rango del CHECK de la 0037, dicho antes— y el
+    mensaje NOMBRA el tipo que está mal: con tres campos, «el máximo va de 1 a
+    20» no dice cuál corregir. Se prueba cada campo por separado, con los otros
+    dos bien, para que un rechazo no lo cause el vecino. Vacío no es «el de
+    fábrica»: el formulario siempre lo manda, así que vacío es un error de
+    captura; lo que vale 1 es el campo que NO llega.
+  */
+  const TOPES = [
+    ["maxContratos", "contratos"],
+    ["maxVisitas", "visitas"],
+    ["maxProspectos", "prospectos"],
+  ] as const;
+  for (const [campo, plural] of TOPES) {
+    for (const [nombre, valor] of [
+      ["en cero", "0"],
+      ["de 21", "21"],
+      ["que no es número", "abc"],
+      ["negativo", "-3"],
+      ["con decimales", "2.5"],
+      ["vacío", ""],
+    ] as const) {
+      await rechazaSinEscribir(
+        `política, ${campo} ${nombre}`,
+        guardarPolitica({ [campo]: valor }),
+        [AJUSTES(ESQUEMA)],
+        conError(`El máximo de ${plural} por viático va de 1 a 20.`),
+      );
+    }
+  }
+
+  let r = await llamar(guardarPolitica());
+  let p = await politica();
+  ok("guardar la política responde ok", r.ok === true && r.message === "Guardado.", r.error ?? r.message);
   ok(
-    "y se guardan exactamente esos",
-    JSON.stringify(guardados) === JSON.stringify(["agent", "general"]),
-    JSON.stringify(guardados),
+    "y escribe las SIETE perillas, exactamente como llegaron —cada tope en su columna—",
+    JSON.stringify(p) ===
+      JSON.stringify({
+        viaticos_contratos_roles: ["agent", "general"],
+        viaticos_visitas_roles: ["sales", "general"],
+        viaticos_prospectos_roles: ["owner"],
+        viaticos_max_contratos: 2,
+        viaticos_max_visitas: 3,
+        viaticos_max_prospectos: 4,
+        viaticos_mezclar_destinos: true,
+      }),
+    JSON.stringify(p),
   );
 
   /*
-    Un rol inventado no se guarda. En `jsonb` no fallaría al escribir: fallaría
-    meses después, al leerlo —es la lección que la acción cita—.
+    Lo que no es un rol de la casa no se guarda: un rol inventado en `jsonb` no
+    falla al escribir, falla meses después al leerlo; `client` no entra al
+    portal interno y no viaja; y una casilla enviada dos veces se guardaba dos
+    veces. Cada lista, por su cuenta.
   */
-  r = await llamar(prospectos(["sales", "superusuario", "owner"]));
-  guardados = await roles();
+  r = await llamar(
+    guardarPolitica({
+      rolesContrato: ["general", "general", "client", "agent"],
+      rolesVisita: ["superusuario", "sales", "sales"],
+      rolesProspecto: ["client", "owner", "owner", "admin"],
+    }),
+  );
+  p = await politica();
   ok(
-    "un rol que no existe se descarta y los buenos se quedan",
-    r.ok === true && JSON.stringify(guardados) === JSON.stringify(["sales", "owner"]),
-    JSON.stringify(guardados),
+    "roles repetidos, inventados y `client` se descartan, en las tres listas",
+    r.ok === true &&
+      JSON.stringify([p?.viaticos_contratos_roles, p?.viaticos_visitas_roles, p?.viaticos_prospectos_roles]) ===
+        JSON.stringify([["general", "agent"], ["sales"], ["owner", "admin"]]),
+    JSON.stringify([p?.viaticos_contratos_roles, p?.viaticos_visitas_roles, p?.viaticos_prospectos_roles]),
   );
 
-  // La lista vacía ES el apagado: no hay otro interruptor que la contradiga.
-  r = await llamar(prospectos([]));
-  guardados = await roles();
+  // Los dos bordes del rango entran en cada tope: un límite que rechaza su
+  // borde está mal escrito. Y los espacios alrededor no estorban.
+  const columna = {
+    maxContratos: "viaticos_max_contratos",
+    maxVisitas: "viaticos_max_visitas",
+    maxProspectos: "viaticos_max_prospectos",
+  } as const;
+  for (const [campo] of TOPES) {
+    for (const valor of ["1", "20", " 7 "]) {
+      r = await llamar(guardarPolitica({ [campo]: valor }));
+      p = await politica();
+      ok(
+        `${campo} = «${valor}» se guarda`,
+        r.ok === true && p?.[columna[campo]] === Number(valor),
+        r.error ?? String(p?.[columna[campo]]),
+      );
+    }
+  }
+
+  /*
+    UN CAMPO AUSENTE VALE 1, que es lo de fábrica: un formulario viejo —o uno
+    que todavía no enseña ese tope— no puede dejar la política en un valor
+    que nadie eligió, ni fallar por algo que no preguntó.
+  */
+  r = await llamar(guardarPolitica({ maxContratos: null, maxVisitas: null, maxProspectos: null }));
+  p = await politica();
   ok(
-    "sin roles marcados se apaga, y lo dice",
+    "sin los tres campos de tope, los tres se guardan en 1",
     r.ok === true &&
-      JSON.stringify(guardados) === "[]" &&
-      r.message === "Guardado. Sin roles marcados, nadie puede pedir viajes a prospectos.",
-    r.message,
+      p?.viaticos_max_contratos === 1 &&
+      p?.viaticos_max_visitas === 1 &&
+      p?.viaticos_max_prospectos === 1,
+    r.error ?? JSON.stringify(p),
+  );
+  r = await llamar(guardarPolitica({ maxVisitas: null }));
+  p = await politica();
+  ok(
+    "sin uno solo, ése vale 1 y los otros dos se guardan como llegaron",
+    r.ok === true &&
+      p?.viaticos_max_contratos === 2 &&
+      p?.viaticos_max_visitas === 1 &&
+      p?.viaticos_max_prospectos === 4,
+    r.error ?? JSON.stringify(p),
+  );
+
+  /*
+    Las casillas desmarcadas no se envían. Así que sin `mezclar` se APAGA —no
+    se queda como estaba—, y una lista sin marcar se guarda vacía: la lista
+    vacía ES el apagado, no hay otro interruptor que la contradiga.
+  */
+  r = await llamar(guardarPolitica({ mezclar: null, rolesVisita: null }));
+  p = await politica();
+  ok(
+    "sin la casilla de mezclar, se apaga; sin casillas de visita, nadie visita",
+    r.ok === true && p?.viaticos_mezclar_destinos === false && JSON.stringify(p?.viaticos_visitas_roles) === "[]",
+    JSON.stringify(p),
+  );
+  r = await llamar(guardarPolitica({ mezclar: "algo" }));
+  ok("`mezclar` solo se enciende con «on»", r.ok === true && (await politica())?.viaticos_mezclar_destinos === false);
+
+  // Sin un solo rol marcado nadie puede pedir viáticos, y la acción lo dice.
+  r = await llamar(guardarPolitica({ rolesContrato: null, rolesVisita: null, rolesProspecto: null }));
+  p = await politica();
+  ok(
+    "sin ningún rol marcado se guarda, y avisa que nadie podrá pedir",
+    r.ok === true &&
+      r.message === "Guardado. Sin ningún rol marcado, nadie puede pedir viáticos." &&
+      JSON.stringify([p?.viaticos_contratos_roles, p?.viaticos_visitas_roles, p?.viaticos_prospectos_roles]) ===
+        "[[],[],[]]",
+    r.message ?? r.error,
   );
   ok(
     `y la configuración de ${AJENO} no se movió`,
@@ -310,15 +483,16 @@ void probar("configuración de viáticos: el permiso es el del gasto, no el del 
     prueba es la acción de borrar, no la de capturar— y se borran antes que el
     rubro: la llave del gasto al rubro es `restrict`.
   */
-  const [contrato] = await filas<{ id: string }>(
-    `select id::text as id from ${ESQUEMA}.contracts order by id limit 1`,
-  );
-  if (!contrato) throw new Error("la base no trae contratos");
+  /*
+    Desde la 0037 la cabecera no dice a dónde se viaja, y el gasto sin ticket ni
+    negocio puede ir sin destino (gasto general): para lo que se prueba aquí
+    —que el rubro está en uso— no hace falta sembrar un destino.
+  */
   const [vi] = await filas<{ id: string }>(
     `insert into ${ESQUEMA}.viaticos
-       (reference, contract_id, requested_by_id, destination, purpose, departs_on, returns_on,
+       (reference, requested_by_id, destination, purpose, departs_on, returns_on,
         estimated_mxn, status)
-     values ('${MARCA}-C1', '${contrato.id}', '${ACTOR}', '${MARCA} config', 'probe',
+     values ('${MARCA}-C1', '${ACTOR}', '${MARCA} config', 'probe',
              '2026-10-01', '2026-10-01', 100, 'autorizado')
      returning id::text as id`,
   );

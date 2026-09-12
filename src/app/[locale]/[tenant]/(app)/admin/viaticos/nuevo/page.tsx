@@ -7,6 +7,7 @@ import {
   modulosPorContrato,
   negociosPorProspecto,
   prospectosParaViatico,
+  visitasParaViatico,
 } from "@/lib/data/viaticos";
 import { getSettings } from "@/lib/data/settings";
 import { aprobadoresPosibles } from "@/lib/domain/viaticos";
@@ -15,8 +16,9 @@ import { Card } from "@/components/ui/card";
 import {
   NuevoViaticoForm,
   type ContratoOpcion,
-  type ProspectoOpcion,
+  type EmpresaOpcion,
 } from "@/components/portal/viaticos/nuevo-viatico-form";
+import type { TipoDestinoViatico } from "@/lib/viaticos";
 
 export const dynamic = "force-dynamic";
 
@@ -36,33 +38,36 @@ export default async function NuevoViaticoPage({
   const yo = session!.user.id;
 
   /*
-    ¿SE PUEDE VIAJAR A UN PROSPECTO? Dos condiciones, y las dos se piden aquí
-    solo para PINTAR: quien decide de verdad es `domain/viaticos.ts`, que las
-    vuelve a comprobar al guardar.
+    ¿A QUÉ PUEDE VIAJAR QUIEN MIRA? Lo decide su empresa, por rol (0033, 0037),
+    y aquí se pregunta solo para PINTAR: quien decide de verdad es
+    `vetoDestinos` en `domain/viaticos.ts`, que lo vuelve a comprobar al
+    guardar.
 
     Que la pantalla y el dominio pregunten lo mismo por su cuenta no es
-    duplicación por descuido: es la misma disciplina que ya está escrita en
-    `portal/menu.ts`. Si la pantalla no lo preguntara, enseñaría una pestaña que
-    revienta al enviar; si el dominio se fiara de la pantalla, bastaría un
-    `curl` para saltársela.
+    duplicación por descuido: es la disciplina de `portal/menu.ts`. Si la
+    pantalla no lo preguntara, enseñaría una pestaña que revienta al enviar; si
+    el dominio se fiara de la pantalla, bastaría un `curl` para saltársela.
+
+    Dar de alta un prospecto SÍ sigue pidiendo `ventas: editar`: eso ya no es
+    pedir un viaje, es escribir en el padrón comercial.
   */
   const [ajustes, rol, puedeCrearProspectos] = await Promise.all([
     getSettings(),
     currentRole(),
     puedeEn("ventas", "editar"),
   ]);
+  const puede = (roles: string[]) => Boolean(rol && roles.includes(rol));
+  const tipos: TipoDestinoViatico[] = [
+    ...(puede(ajustes.viaticosContratosRoles) ? (["contrato"] as const) : []),
+    ...(puede(ajustes.viaticosVisitasRoles) ? (["visita"] as const) : []),
+    ...(puede(ajustes.viaticosProspectosRoles) ? (["prospecto"] as const) : []),
+  ];
+
   /*
-    UNA SOLA CONDICIÓN: que el rol de quien mira esté en la lista.
-
-    Eran dos —el interruptor de empresa y acceso a Ventas por persona— y la
-    segunda obligaba a tocar la hoja de permisos de cada vendedor. Ver la 0033.
-
-    Dar de alta un prospecto SÍ sigue pidiendo `ventas: editar`: eso ya no es
-    pedir un viaje, es escribir en el padrón comercial.
+    Cada lista se pide solo si su pestaña existe. Sin esto, cada alta de viático
+    leería el padrón comercial entero —161 organizaciones— para no enseñarlo.
   */
-  const permiteProspectos = Boolean(rol && ajustes.viaticosProspectosRoles.includes(rol));
-
-  const contratos = await contratosParaViatico();
+  const contratos = tipos.includes("contrato") ? await contratosParaViatico() : [];
   /*
     Los módulos de TODOS los contratos, en UNA consulta.
 
@@ -82,23 +87,24 @@ export default async function NuevoViaticoPage({
     modulos: porContrato.get(c.id) ?? [],
   }));
 
-  /*
-    Los prospectos y sus negocios solo se piden cuando la pestaña existe. Sin
-    esto, cada alta de viático leería el padrón comercial entero —161
-    organizaciones— para no enseñarlo.
-  */
-  const prospectos: ProspectoOpcion[] = permiteProspectos
-    ? await (async () => {
-        const orgs = await prospectosParaViatico();
-        const negocios = await negociosPorProspecto(orgs.map((o) => o.id));
-        return orgs.map((o) => ({
-          id: o.id,
-          name: o.name,
-          domicilio: o.domicilio,
-          negocios: negocios.get(o.id) ?? [],
-        }));
-      })()
-    : [];
+  const [visitasSinNegocios, prospectosSinNegocios] = await Promise.all([
+    tipos.includes("visita") ? visitasParaViatico() : Promise.resolve([]),
+    tipos.includes("prospecto") ? prospectosParaViatico() : Promise.resolve([]),
+  ]);
+  // Los negocios de visitas y prospectos, en UNA consulta para las dos listas.
+  const negocios = await negociosPorProspecto([
+    ...visitasSinNegocios.map((o) => o.id),
+    ...prospectosSinNegocios.map((o) => o.id),
+  ]);
+  const conNegocios = (orgs: typeof visitasSinNegocios): EmpresaOpcion[] =>
+    orgs.map((o) => ({
+      id: o.id,
+      name: o.name,
+      domicilio: o.domicilio,
+      negocios: negocios.get(o.id) ?? [],
+    }));
+  const visitas = conNegocios(visitasSinNegocios);
+  const prospectos = conNegocios(prospectosSinNegocios);
 
   // Sin uno mismo: no se firma lo que uno pide, así que ofrecerse en la lista
   // sería ofrecer un camino que el dominio va a cerrar.
@@ -119,17 +125,22 @@ export default async function NuevoViaticoPage({
 
       <Card className="p-5">
         {/*
-          EL VACÍO SE MIDE CONTRA LOS DOS ASUNTOS, no solo contra los contratos.
+          LOS VACÍOS, CADA UNO CON SU SALIDA.
 
-          Con la pestaña de prospectos encendida, una empresa sin contratos
-          firmados sigue pudiendo pedir viajes de prospección — y el mensaje
-          viejo le habría dicho que no se puede pedir nada.
+          Que el rol no pueda pedir nada es una decisión de la empresa, y se dice
+          dónde se cambia. Que no haya a quién viajar se mide contra TODAS las
+          listas que su rol puede usar, no solo contra los contratos: con visitas
+          o prospectos encendidos, una empresa sin contratos sigue pudiendo pedir
+          viajes, y el mensaje viejo le habría dicho que no se puede nada.
         */}
-        {contratos.length === 0 && prospectos.length === 0 ? (
+        {tipos.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            {permiteProspectos
-              ? "No hay contratos ni prospectos capturados. Un viático se carga a uno de los dos."
-              : "No hay contratos de servicio capturados. Un viático se carga siempre a un contrato."}
+            Tu rol no puede pedir viáticos a ningún destino. Quien administre
+            viáticos decide qué roles pueden, en Configuración → Viáticos.
+          </p>
+        ) : contratos.length === 0 && visitas.length === 0 && prospectos.length === 0 && !(tipos.includes("prospecto") && puedeCrearProspectos) ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            No hay contratos, clientes ni prospectos a los que tu rol pueda viajar.
           </p>
         ) : aprobadores.length === 0 ? (
           /*
@@ -145,10 +156,13 @@ export default async function NuevoViaticoPage({
         ) : (
           <NuevoViaticoForm
             contratos={conModulos}
+            visitas={visitas}
             prospectos={prospectos}
             aprobadores={aprobadores}
-            permiteProspectos={permiteProspectos}
-            puedeCrearProspectos={permiteProspectos && puedeCrearProspectos}
+            tipos={tipos}
+            maxPorTipo={ajustes.viaticosMaxPorTipo}
+            mezclar={ajustes.viaticosMezclarDestinos}
+            puedeCrearProspectos={tipos.includes("prospecto") && puedeCrearProspectos}
           />
         )}
       </Card>

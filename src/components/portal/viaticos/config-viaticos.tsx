@@ -6,7 +6,7 @@ import {
   borrarRubroAction,
   crearRubroAction,
   guardarRubroAction,
-  guardarViaticosProspectos,
+  guardarPoliticaViaticos,
   type ConfigState,
 } from "@/lib/actions/viaticos-config";
 import type { RubroFila } from "@/lib/data/viaticos";
@@ -29,19 +29,19 @@ function Aviso({ state }: { state: ConfigState }) {
   return null;
 }
 
-/* ─────────────────── ¿Se viaja a quien no es cliente? ─────────────────── */
+/* ─────────────────── A dónde se viaja, y quién ─────────────────── */
 
 /**
- * QUÉ ROLES PUEDEN VIAJAR A UN PROSPECTO.
+ * LA POLÍTICA DE DESTINOS: qué roles viajan a cada tipo de destino, cuántos de
+ * cada tipo caben en una solicitud y si se mezclan (0033, 0037).
  *
- * Era un interruptor de sí o no, y encenderlo no bastaba: había que entrar
- * además en la hoja de permisos de cada persona a darle acceso a Ventas. La
- * propia tarjeta tenía que confesarlo con un aviso —«falta darle acceso a
- * Ventas a quien vaya a pedirlos»—, que es la señal de que la regla estaba en
- * dos sitios. Ahora es una sola lista.
+ * Era una tarjeta de «viajes a prospectos» —un interruptor que además obligaba
+ * a entrar en la hoja de permisos de cada persona, y la tarjeta tenía que
+ * confesarlo con un aviso—. Ahora es una sola política, por rol, y cada tipo de
+ * destino tiene su lista.
  *
- * SIN NINGÚN ROL MARCADO, nadie puede: la lista vacía ES el apagado, así que no
- * hay un interruptor aparte que pueda contradecirla.
+ * SIN NINGÚN ROL MARCADO en un tipo, nadie puede pedirlo: la lista vacía ES el
+ * apagado, así que no hay un interruptor aparte que pueda contradecirla.
  *
  * `client` queda fuera de las opciones y no por descuido: el cliente no entra
  * al portal interno, así que ofrecerlo sería ofrecer una casilla que no puede
@@ -50,62 +50,163 @@ function Aviso({ state }: { state: ConfigState }) {
 const ROLES_QUE_VIAJAN = ["owner", "admin", "general", "agent", "sales"] as const;
 const ROL_LABEL: Record<string, string> = ROLE_LABELS;
 
-export function ProspectosCard({ roles }: { roles: string[] }) {
-  const [state, action, pending] = useActionState(guardarViaticosProspectos, initial);
-  const [marcados, setMarcados] = useState<string[]>(roles);
+type Politica = {
+  contratos: string[];
+  visitas: string[];
+  prospectos: string[];
+  /** Cuántos de cada tipo caben en un viático. */
+  max: { contratos: number; visitas: number; prospectos: number };
+  mezclar: boolean;
+};
 
-  const alternar = (rol: string) =>
-    setMarcados((prev) =>
-      prev.includes(rol) ? prev.filter((r) => r !== rol) : [...prev, rol],
-    );
+const GRUPOS = [
+  {
+    campo: "rolesContrato",
+    campoMax: "maxContratos",
+    clave: "contratos",
+    titulo: "Viajes a contratos",
+    ayuda: "Servicio a clientes con contrato. El gasto entra en la utilidad del contrato.",
+  },
+  {
+    campo: "rolesVisita",
+    campoMax: "maxVisitas",
+    clave: "visitas",
+    titulo: "Visitas a clientes sin contrato",
+    ayuda: "Clientes que ya compraron y no tienen contrato vigente. El gasto queda como costo comercial de esa empresa.",
+  },
+  {
+    campo: "rolesProspecto",
+    campoMax: "maxProspectos",
+    clave: "prospectos",
+    titulo: "Viajes a prospectos",
+    ayuda: "Empresas que todavía no compran. El gasto queda como costo comercial, y quien autoriza puede cargarlo a una oportunidad.",
+  },
+] as const;
+
+const mismoConjunto = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((x) => b.includes(x));
+
+export function PoliticaDestinosCard({ politica }: { politica: Politica }) {
+  const [state, action, pending] = useActionState(guardarPoliticaViaticos, initial);
+  const [roles, setRoles] = useState({
+    contratos: politica.contratos,
+    visitas: politica.visitas,
+    prospectos: politica.prospectos,
+  });
+  const [max, setMax] = useState({
+    contratos: String(politica.max.contratos),
+    visitas: String(politica.max.visitas),
+    prospectos: String(politica.max.prospectos),
+  });
+  const [mezclar, setMezclar] = useState(politica.mezclar);
+
+  const alternar = (clave: keyof typeof roles, rol: string) =>
+    setRoles((prev) => ({
+      ...prev,
+      [clave]: prev[clave].includes(rol) ? prev[clave].filter((r) => r !== rol) : [...prev[clave], rol],
+    }));
 
   // Comparación por conjunto: marcar y desmarcar el mismo rol no debe dejar el
   // botón activo, y el orden en que se pulsan no significa nada.
   const cambiado =
-    marcados.length !== roles.length || marcados.some((r) => !roles.includes(r));
+    !mismoConjunto(roles.contratos, politica.contratos) ||
+    !mismoConjunto(roles.visitas, politica.visitas) ||
+    !mismoConjunto(roles.prospectos, politica.prospectos) ||
+    (["contratos", "visitas", "prospectos"] as const).some((k) => max[k] !== String(politica.max[k])) ||
+    mezclar !== politica.mezclar;
+
+  // Mezclar solo tiene sentido si hay quien pida contratos Y quien pida algo
+  // comercial; si no, la casilla no puede cambiar nada y se dice.
+  const aplicaMezclar =
+    roles.contratos.length > 0 && roles.visitas.length + roles.prospectos.length > 0;
 
   return (
     <Card className="p-5">
-      <h2 className="font-semibold">Viajes a prospectos</h2>
+      <h2 className="flex items-center gap-2 font-semibold">
+        <Plane className="size-4 text-primary" /> A dónde se viaja
+      </h2>
       <p className="mt-1 text-xs text-muted-foreground">
-        Si tu equipo visita empresas que todavía no te han comprado, marca qué
-        roles pueden pedir esos viajes. Sin ninguno marcado, nadie puede.
+        Marca qué roles pueden pedir cada tipo de viaje. Sin ningún rol marcado,
+        nadie puede pedir ese tipo. Lo que no se ofrece aquí tampoco se puede
+        pedir por otro camino: el sistema lo vuelve a comprobar al guardar.
       </p>
 
-      <form action={action} className="mt-4 grid gap-3">
-        <div className="grid gap-2 sm:grid-cols-2">
-          {ROLES_QUE_VIAJAN.map((rol) => (
-            <label
-              key={rol}
-              className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-border p-3 text-sm hover:bg-muted/50"
-            >
-              <input
-                type="checkbox"
-                name="roles"
-                value={rol}
-                checked={marcados.includes(rol)}
-                onChange={() => alternar(rol)}
-                className="size-4 rounded border-input"
+      <form action={action} className="mt-4 grid gap-5">
+        {GRUPOS.map((g) => (
+          <fieldset key={g.clave} className="grid gap-2">
+            <legend className="text-sm font-medium">{g.titulo}</legend>
+            <p className="-mt-1 text-xs text-muted-foreground">{g.ayuda}</p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {ROLES_QUE_VIAJAN.map((rol) => (
+                <label
+                  key={rol}
+                  className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-border p-2.5 text-sm hover:bg-muted/50"
+                >
+                  <input
+                    type="checkbox"
+                    name={g.campo}
+                    value={rol}
+                    checked={roles[g.clave].includes(rol)}
+                    onChange={() => alternar(g.clave, rol)}
+                    className="size-4 rounded border-input"
+                  />
+                  {ROL_LABEL[rol] ?? rol}
+                </label>
+              ))}
+            </div>
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              Hasta
+              <Input
+                name={g.campoMax}
+                type="number"
+                min={1}
+                max={20}
+                value={max[g.clave]}
+                onChange={(e) => setMax((m) => ({ ...m, [g.clave]: e.target.value }))}
+                // `readOnly` y no `disabled`: un campo deshabilitado no se envía,
+                // y la acción lo tomaría por 1 y pisaría lo que había guardado.
+                readOnly={roles[g.clave].length === 0}
+                className="h-8 w-20 read-only:opacity-60"
+                aria-label={`Máximo de ${g.titulo.toLowerCase()} por viático`}
               />
-              {ROL_LABEL[rol] ?? rol}
+              por viático
+              {roles[g.clave].length === 0 ? " · sin roles marcados, no aplica" : ""}
             </label>
-          ))}
-        </div>
+          </fieldset>
+        ))}
 
-        <p className="rounded-lg bg-secondary/50 px-3 py-2.5 text-xs text-muted-foreground">
-          Su gasto no entra en la utilidad de ningún contrato —no hay contrato—:
-          queda como costo comercial, y quien autoriza puede cargarlo a una
-          oportunidad al revisar la comprobación.
-          {marcados.length > 0 ? (
-            <>
-              {" "}
-              Quien esté marcado verá los nombres de los prospectos al pedir el
-              viaje. <span className="font-medium">Dar de alta uno nuevo</span>{" "}
-              sigue pidiendo permiso de edición en Ventas: eso ya no es pedir un
-              viaje, es escribir en el padrón comercial.
-            </>
-          ) : null}
+        <p className="-mt-2 text-xs text-muted-foreground">
+          Con más de uno, una misma solicitud puede ser una gira —por ejemplo,
+          tres prospectos y un cliente—, y cada gasto se carga al destino que le
+          toca. Con 1 en todos, cada viaje se pide por separado, como siempre.
         </p>
+
+        <label
+          className={`flex items-start gap-2.5 border-t border-border pt-4 text-sm ${aplicaMezclar ? "cursor-pointer" : "opacity-60"}`}
+        >
+          {/*
+            Sin `disabled`: una casilla deshabilitada no se envía, y guardar con
+            ella así apagaría la mezcla en silencio. Se deja operable y se dice
+            cuándo no aplica.
+          */}
+          <input
+            type="checkbox"
+            name="mezclar"
+            checked={mezclar}
+            onChange={(e) => setMezclar(e.target.checked)}
+            className="mt-0.5 size-4 rounded border-input"
+          />
+          <span>
+            <span className="font-medium">Mezclar contratos con visitas y prospectos</span>
+            <span className="block text-xs text-muted-foreground">
+              Apagado, el viaje de servicio y el comercial se piden por separado.
+              Encendido, una gira puede atender un contrato y visitar a un cliente
+              o a un prospecto en el mismo viaje. Visitas y prospectos siempre se
+              pueden juntar entre sí.
+              {!aplicaMezclar ? " Solo aplica si hay roles marcados en contratos y en visitas o prospectos." : ""}
+            </span>
+          </span>
+        </label>
 
         <div className="flex items-center justify-end gap-3">
           <Aviso state={state} />

@@ -3,6 +3,13 @@ import { dataset, type Dataset } from "./registro";
 import { TOPE_FILAS } from "./registro";
 import { parseFiltro, parseOrden } from "@/lib/listado";
 import { diaCivil } from "@/lib/fechas";
+import type { DestinoResumen, TipoDestino } from "@/lib/data/viaticos";
+
+/** Los destinos de un tipo, separados por coma. Vacío si no hay ninguno. */
+function deTipo(destinos: DestinoResumen[], tipo: TipoDestino): string | null {
+  const nombres = destinos.filter((d) => d.tipo === tipo).map((d) => d.nombre);
+  return nombres.length ? nombres.join(", ") : null;
+}
 
 /**
  * LOS DATASETS DE CADA MÓDULO.
@@ -309,15 +316,17 @@ const viaticos = dataset({
     { titulo: "Folio", tipo: "texto", valor: (v) => v.reference, ancho: 18 },
     { titulo: "Solicitante", tipo: "texto", valor: (v) => v.solicitante, ancho: 28 },
     /*
-      DOS COLUMNAS Y NO UNA «asunto» combinada.
+      UNA COLUMNA POR TIPO DE DESTINO y no una «a dónde» combinada.
 
-      Quien se lleva esto a Excel filtra por una o por la otra —el contralor
-      mira contratos, Ventas mira prospección—, y una sola columna con las dos
-      cosas mezcladas obliga a partirla con una fórmula antes de poder usarla.
+      Quien se lleva esto a Excel filtra por una o por otra —el contralor mira
+      contratos, Ventas mira visitas y prospección—, y una sola columna con todo
+      mezclado obliga a partirla con una fórmula antes de poder usarla. Desde la
+      0037 un viaje puede ir a varios de cada tipo: van separados por coma.
       Vacío significa «este viaje no era de eso», que es una respuesta.
     */
-    { titulo: "Contrato", tipo: "texto", valor: (v) => v.contractNumber, ancho: 20 },
-    { titulo: "Prospecto", tipo: "texto", valor: (v) => v.prospecto, ancho: 28 },
+    { titulo: "Contratos", tipo: "texto", valor: (v) => deTipo(v.destinos, "contrato"), ancho: 20 },
+    { titulo: "Visitas", tipo: "texto", valor: (v) => deTipo(v.destinos, "visita"), ancho: 28 },
+    { titulo: "Prospectos", tipo: "texto", valor: (v) => deTipo(v.destinos, "prospecto"), ancho: 28 },
     { titulo: "Autoriza", tipo: "texto", valor: (v) => v.aprobador, ancho: 24 },
     { titulo: "Destino", tipo: "texto", valor: (v) => v.destination, ancho: 28 },
     { titulo: "Estado", tipo: "texto", valor: (v) => v.status },

@@ -13,6 +13,7 @@ import {
   SeccionDoc,
 } from "@/components/portal/documentos/documento";
 import {
+  DESTINO_LABELS,
   ESTADO_LABELS,
   consumoPorRubro,
   cuadre,
@@ -124,18 +125,18 @@ export default async function ReporteViaticoPage({
           <h2 className="mb-2 text-xs font-bold uppercase tracking-wider text-zinc-400">
             A cuenta de
           </h2>
-          {/*
-            El asunto es de uno de los dos tipos y nunca de los dos: lo garantiza
-            el CHECK de la 0028. Se pinta el que tenga valor.
-          */}
-          {v.contractId ? (
-            <CampoDoc k="Contrato" v={v.contractNumber} />
-          ) : (
-            <>
-              <CampoDoc k="Prospecto" v={v.prospecto} />
-              {v.negocio ? <CampoDoc k="Negocio" v={v.negocio} /> : null}
-            </>
-          )}
+          {/* Uno por destino, en orden de visita (0037). */}
+          {v.destinos.map((d) => (
+            <CampoDoc
+              key={d.id}
+              k={DESTINO_LABELS[d.tipo]}
+              v={
+                d.tipo === "contrato"
+                  ? d.contractNumber
+                  : `${d.organizacion ?? "—"}${d.negocio ? ` · ${d.negocio}` : ""}`
+              }
+            />
+          ))}
           <CampoDoc k="Solicitante" v={v.solicitante ?? "—"} />
           <CampoDoc k="Autoriza" v={v.aprobador ?? "—"} />
         </div>

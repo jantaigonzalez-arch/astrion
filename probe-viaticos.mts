@@ -28,19 +28,49 @@
  *
  *   4 · EL REPARTO DE PERMISOS del rol nuevo, módulo por módulo.
  *
- *   5 · LO QUE TRAJO LA 0028: que el asunto sea uno de dos y nunca ninguno,
- *       que un gasto no pueda ir a un ticket y a un negocio a la vez, y que un
- *       aprobador NOMBRADO sea el único que puede tocar el documento — ni el
- *       que lo pidió ni otro administrador que pase por ahí.
+ *   5 · LO QUE TRAJO LA 0028: que un gasto no pueda ir a un ticket y a un
+ *       negocio a la vez, y que un aprobador NOMBRADO sea el único que puede
+ *       tocar el documento — ni el que lo pidió ni otro administrador que pase
+ *       por ahí.
  *
- * TODO CORRE DENTRO DE UNA TRANSACCIÓN QUE SE DESHACE. La base local es una
- * copia de producción con clientes reales: este probe no puede dejar un viático
- * inventado colgando de un contrato de verdad.
+ *   6 · LO QUE TRAJO LA 0037: el destino dejó la cabecera y vive en
+ *       `viatico_destinos`. Que el tipo y sus llaves no se contradigan, que un
+ *       viaje no repita contrato ni empresa, que un ticket o un negocio siempre
+ *       estén DENTRO de un destino, y que cada tope de destinos POR TIPO
+ *       —contratos, visitas, prospectos— no salga de 1..20.
+ *
+ * TODO CORRE DENTRO DE UNA TRANSACCIÓN QUE SE DESHACE, y además contra la base
+ * de PRUEBAS: `.env.local` apunta a la copia de producción, con clientes reales,
+ * y este probe no puede dejar un viático inventado colgando de un contrato de
+ * verdad —ni siquiera durante lo que tarda en deshacerse—.
  *
  *   npx tsx --tsconfig tsconfig.check.json probe-viaticos.mts
  */
 import { config } from "dotenv";
-config({ path: ".env.local" });
+
+/*
+  LA BASE SE FIJA ANTES DE CARGAR `.env.local`, y es la de pruebas.
+
+  Antes este probe leía `.env.local` a secas y, corrido a mano sin
+  `DATABASE_URL`, iba a la copia de producción. Ahora hace lo mismo que el kit
+  de las pruebas de acciones: toma la URL de `pruebas/base.ts` —la del entorno
+  si la hay (el CI la pone), si no el servidor de `.env.local` con la base
+  `evoelution_ci`— y se niega a arrancar contra una base cuyo nombre no termine
+  en `_ci`, `_test` o `_pruebas`. dotenv no pisa lo que ya está, así que cargar
+  `.env.local` después no la cambia.
+*/
+const { urlDePruebas } = await import("./pruebas/base.ts");
+const URL_BASE = urlDePruebas();
+const NOMBRE_BASE = URL_BASE ? new URL(URL_BASE).pathname.replace(/^\//, "") : "";
+if (!URL_BASE || !/_(ci|test|pruebas)$/.test(NOMBRE_BASE)) {
+  console.error(
+    `✗ Me niego a correr contra «${NOMBRE_BASE || "?"}»: solo contra una base de pruebas ` +
+      "(_ci, _test o _pruebas). Levantala con: npm run pruebas:base",
+  );
+  process.exit(1);
+}
+process.env.DATABASE_URL = URL_BASE;
+config({ path: ".env.local", quiet: true });
 
 const { tenantDbFor } = await import("./src/lib/tenancy/context.ts");
 const { sql } = await import("drizzle-orm");
@@ -76,6 +106,24 @@ async function debeFallar(tx: any, q: any): Promise<string | null> {
     // La restricción viola la transacción entera, así que cada intento va en su
     // propio savepoint. Sin esto, el primer rechazo aborta lo que queda.
     return e?.cause?.code ?? e?.code ?? "error";
+  }
+}
+
+/**
+ * Como `debeFallar`, pero dice QUÉ restricción saltó.
+ *
+ * Desde la 0037 un mismo `insert` puede chocar con dos CHECK distintos del
+ * mismo código (23514): un gasto con ticket y sin destino viola
+ * `en_destino_ck`, y uno con ticket y negocio, `destino_ck`. Comparar solo el
+ * código daría verde aunque saltara la que no es — y la que se quiere probar
+ * podría no existir.
+ */
+async function restriccionQueSalta(tx: any, q: any): Promise<string | null> {
+  try {
+    await tx.execute(q);
+    return null;
+  } catch (e: any) {
+    return e?.cause?.constraint_name ?? e?.constraint_name ?? `sin nombre (${e?.cause?.code ?? e?.code})`;
   }
 }
 
@@ -270,23 +318,34 @@ await db
     const rOtros = await rubro("otros");
     ok("los cinco rubros de fábrica están sembrados", Boolean(rHotel && rOtros));
 
+    /*
+      Un viático de UN destino de contrato, que es lo que era todo viático
+      antes de la 0037. Desde ella la cabecera ya no dice a dónde se va: el
+      contrato vive en su fila de `viatico_destinos`, y el gasto con ticket
+      tiene que colgar de esa fila (`viatico_expenses_en_destino_ck`), así que
+      se devuelven los dos ids.
+    */
     const nuevo = async (estado: string, ref: string) => {
       const [f] = (await tx.execute(sql`
-        insert into viaticos (reference, contract_id, requested_by_id, destination,
+        insert into viaticos (reference, requested_by_id, destination,
                               purpose, departs_on, returns_on, estimated_mxn, status)
-        values (${ref}, ${contractId}::uuid, ${userId}::uuid, 'PROBE', 'PROBE',
+        values (${ref}, ${userId}::uuid, 'PROBE', 'PROBE',
                 current_date, current_date + 2, 5000, ${estado}::viatico_status)
         returning id::text as id`)) as any;
-      return f.id as string;
+      const [d] = (await tx.execute(sql`
+        insert into viatico_destinos (viatico_id, tipo, contract_id)
+        values (${f.id}::uuid, 'contrato', ${contractId}::uuid)
+        returning id::text as id`)) as any;
+      return { id: f.id as string, destino: d.id as string };
     };
 
     /* ── 1 · Las restricciones ── */
     await tx.execute(sql`savepoint s1`);
     const e1 = await debeFallar(
       tx,
-      sql`insert into viaticos (reference, contract_id, requested_by_id, destination,
+      sql`insert into viaticos (reference, requested_by_id, destination,
                                 purpose, departs_on, returns_on, estimated_mxn)
-          values ('PROBE-MAL-1', ${contractId}::uuid, ${userId}::uuid, 'X', 'X',
+          values ('PROBE-MAL-1', ${userId}::uuid, 'X', 'X',
                   current_date, current_date - 1, 5000)`,
     );
     ok("un regreso anterior a la salida se rechaza", e1 === "23514", `dio ${e1}`);
@@ -294,15 +353,15 @@ await db
 
     const e2 = await debeFallar(
       tx,
-      sql`insert into viaticos (reference, contract_id, requested_by_id, destination,
+      sql`insert into viaticos (reference, requested_by_id, destination,
                                 purpose, departs_on, returns_on, estimated_mxn)
-          values ('PROBE-MAL-2', ${contractId}::uuid, ${userId}::uuid, 'X', 'X',
+          values ('PROBE-MAL-2', ${userId}::uuid, 'X', 'X',
                   current_date, current_date, 0)`,
     );
     ok("pedir cero se rechaza", e2 === "23514", `dio ${e2}`);
     await tx.execute(sql`rollback to savepoint s1`);
 
-    const vId = await nuevo("autorizado", "PROBE-V-1");
+    const { id: vId } = await nuevo("autorizado", "PROBE-V-1");
 
     /*
       LA REGLA DE LA NOTA YA NO LA GUARDA LA BASE, Y POR ESO SE PRUEBA AQUÍ.
@@ -363,7 +422,7 @@ await db
     */
     console.log("\nEL TOPE BLOQUEA SOLO SI EL RUBRO LO PIDE");
     await tx.execute(sql`update viatico_rubros set daily_budget_mxn = 1000 where key = 'hotel'`);
-    const vTope = await nuevo("autorizado", "PROBE-TOPE");
+    const { id: vTope } = await nuevo("autorizado", "PROBE-TOPE");
     await tx.execute(sql`
       update viaticos set departs_on = current_date, returns_on = current_date + 1
        where id = ${vTope}::uuid`);
@@ -430,12 +489,15 @@ await db
     await tx.execute(sql`rollback to savepoint s1`);
 
     const vId2 = await nuevo("autorizado", "PROBE-V-1");
-    const e4 = await debeFallar(
+    // Con su destino puesto: sin él saltaría `en_destino_ck` antes que el del
+    // importe, con el mismo código, y el aserto pasaría por la razón equivocada.
+    const e4 = await restriccionQueSalta(
       tx,
-      sql`insert into viatico_expenses (viatico_id, ticket_id, rubro_id, description, amount_mxn, spent_on)
-          values (${vId2}::uuid, ${ticketId}::uuid, ${rHotel}::uuid, 'importe cero', 0, current_date)`,
+      sql`insert into viatico_expenses (viatico_id, destino_id, ticket_id, rubro_id, description, amount_mxn, spent_on)
+          values (${vId2.id}::uuid, ${vId2.destino}::uuid, ${ticketId}::uuid, ${rHotel}::uuid,
+                  'importe cero', 0, current_date)`,
     );
-    ok("un gasto en cero se rechaza", e4 === "23514", `dio ${e4}`);
+    ok("un gasto en cero se rechaza", e4 === "viatico_expenses_importe_ck", `dio ${e4}`);
     await tx.execute(sql`rollback to savepoint s1`);
 
     /* La campana: exactamente un asunto. */
@@ -446,7 +508,7 @@ await db
     ok("un aviso SIN asunto se rechaza", e5 === "23514", `dio ${e5}`);
     await tx.execute(sql`rollback to savepoint s1`);
 
-    const vId3 = await nuevo("enviado", "PROBE-V-2");
+    const { id: vId3 } = await nuevo("enviado", "PROBE-V-2");
     const e6 = await debeFallar(
       tx,
       sql`insert into notifications (user_id, kind, title, ticket_id, viatico_id)
@@ -456,7 +518,7 @@ await db
     await tx.execute(sql`rollback to savepoint s1`);
 
     /* Y los dos que sí valen. */
-    const vId4 = await nuevo("enviado", "PROBE-V-3");
+    const { id: vId4 } = await nuevo("enviado", "PROBE-V-3");
     await tx.execute(sql`insert into notifications (user_id, kind, title, viatico_id)
                          values (${userId}::uuid, 'viatico.enviado', 'ok', ${vId4}::uuid)`);
     await tx.execute(sql`insert into notifications (user_id, kind, title, ticket_id)
@@ -467,10 +529,10 @@ await db
     console.log("\nSOLO EL VIÁTICO CERRADO CUENTA EN LA UTILIDAD");
     const estados = ["borrador", "enviado", "autorizado", "en_revision", "cerrado"];
     for (const [i, e] of estados.entries()) {
-      const id = await nuevo(e, `PROBE-EST-${i}`);
+      const v = await nuevo(e, `PROBE-EST-${i}`);
       await tx.execute(sql`
-        insert into viatico_expenses (viatico_id, ticket_id, rubro_id, description, amount_mxn, spent_on)
-        values (${id}::uuid, ${ticketId}::uuid, ${rHotel}::uuid, 'PROBE', 1000, current_date)`);
+        insert into viatico_expenses (viatico_id, destino_id, ticket_id, rubro_id, description, amount_mxn, spent_on)
+        values (${v.id}::uuid, ${v.destino}::uuid, ${ticketId}::uuid, ${rHotel}::uuid, 'PROBE', 1000, current_date)`);
     }
 
     const [{ n: totalTodos }] = (await tx.execute(sql`
@@ -553,75 +615,53 @@ await db
       select id::text as id from public.users where id <> ${userId}::uuid limit 1`)) as any;
     ok("hay una segunda persona con la que probar la firma", Boolean(otro));
 
-    console.log("\nEL ASUNTO ES UNO DE DOS, Y LA BASE LO EXIGE");
+    console.log("\nUN VIAJE A PROSPECTO, CON SU NEGOCIO, EN SU DESTINO");
 
-    /* El que sí vale: viaje a prospecto, con su negocio y su aprobador. */
+    /*
+      El viaje a prospecto de la 0028, en la forma de la 0037: la cabecera sin
+      asunto y el prospecto —con su negocio— en su fila de destino. Los CHECK
+      de «uno de dos asuntos» (`viaticos_asunto_ck`, `viaticos_negocio_ck`) se
+      fueron con las columnas; lo que dicen ahora lo dice
+      `viatico_destinos_llave_ck`, y se prueba en la sección de la 0037.
+    */
     const [vProsp] = (await tx.execute(sql`
-      insert into viaticos (reference, organization_id, deal_id, requested_by_id,
-                            approver_id, destination, purpose, departs_on, returns_on,
-                            estimated_mxn, status)
-      values ('PROBE-28-OK', ${A.org}::uuid, ${A.deal}::uuid, ${userId}::uuid,
-              ${userId}::uuid, 'PROBE', 'PROBE', current_date, current_date + 1,
-              5000, 'en_revision')
+      insert into viaticos (reference, requested_by_id, approver_id, destination, purpose,
+                            departs_on, returns_on, estimated_mxn, status)
+      values ('PROBE-28-OK', ${userId}::uuid, ${userId}::uuid, 'PROBE', 'PROBE',
+              current_date, current_date + 1, 5000, 'en_revision')
       returning id::text as id`)) as any;
-    ok("un viaje a prospecto con negocio SÍ entra", Boolean(vProsp?.id));
+    const [dProsp] = (await tx.execute(sql`
+      insert into viatico_destinos (viatico_id, tipo, organization_id, deal_id)
+      values (${vProsp.id}::uuid, 'prospecto', ${A.org}::uuid, ${A.deal}::uuid)
+      returning id::text as id`)) as any;
+    ok("un viaje a prospecto con negocio SÍ entra", Boolean(vProsp?.id && dProsp?.id));
 
     /*
       El gasto comercial suelto: sin ticket y sin negocio. Es el caso que la
       0028 vino a permitir, así que tiene que entrar sin protestar — y es el
-      renglón sobre el que se prueba después quién puede moverlo.
+      renglón sobre el que se prueba después quién puede moverlo. Cuelga del
+      único destino, que es donde la 0037 dejó los gastos de antes.
     */
     const [gCom] = (await tx.execute(sql`
-      insert into viatico_expenses (viatico_id, rubro_id, description, amount_mxn, spent_on)
-      values (${vProsp.id}::uuid, ${rHotel}::uuid, 'comida de prospección', 800, current_date)
+      insert into viatico_expenses (viatico_id, destino_id, rubro_id, description, amount_mxn, spent_on)
+      values (${vProsp.id}::uuid, ${dProsp.id}::uuid, ${rHotel}::uuid, 'comida de prospección', 800, current_date)
       returning id::text as id`)) as any;
     ok("un gasto comercial SIN ticket ni negocio sí entra", Boolean(gCom?.id));
 
     await tx.execute(sql`savepoint s28`);
 
-    const a1 = await debeFallar(
-      tx,
-      sql`insert into viaticos (reference, requested_by_id, destination, purpose,
-                                departs_on, returns_on, estimated_mxn)
-          values ('PROBE-28-A', ${userId}::uuid, 'X', 'X',
-                  current_date, current_date, 5000)`,
-    );
-    ok("un viático SIN asunto se rechaza", a1 === "23514", `dio ${a1}`);
-    await tx.execute(sql`rollback to savepoint s28`);
-
-    const a2 = await debeFallar(
-      tx,
-      sql`insert into viaticos (reference, contract_id, organization_id, requested_by_id,
-                                destination, purpose, departs_on, returns_on, estimated_mxn)
-          values ('PROBE-28-B', ${contractId}::uuid, ${A.org}::uuid, ${userId}::uuid,
-                  'X', 'X', current_date, current_date, 5000)`,
-    );
-    ok("un viático con LOS DOS asuntos se rechaza", a2 === "23514", `dio ${a2}`);
-    await tx.execute(sql`rollback to savepoint s28`);
-
-    // El negocio cuelga del prospecto, no del contrato: sin esto se podría
-    // guardar un viático de contrato con una oportunidad pegada, y nadie sabría
-    // qué significa esa combinación.
-    const a3 = await debeFallar(
-      tx,
-      sql`insert into viaticos (reference, contract_id, deal_id, requested_by_id,
-                                destination, purpose, departs_on, returns_on, estimated_mxn)
-          values ('PROBE-28-C', ${contractId}::uuid, ${A.deal}::uuid, ${userId}::uuid,
-                  'X', 'X', current_date, current_date, 5000)`,
-    );
-    ok("un negocio colgado de un CONTRATO se rechaza", a3 === "23514", `dio ${a3}`);
-    await tx.execute(sql`rollback to savepoint s28`);
-
     console.log("\nEL GASTO VA A UN SITIO, A OTRO O A NINGUNO");
 
-    const g1 = await debeFallar(
+    // Con destino: el que tiene que saltar es el de «ticket o negocio», no el
+    // de «dentro de un destino».
+    const g1 = await restriccionQueSalta(
       tx,
-      sql`insert into viatico_expenses (viatico_id, ticket_id, deal_id, rubro_id,
+      sql`insert into viatico_expenses (viatico_id, destino_id, ticket_id, deal_id, rubro_id,
                                         description, amount_mxn, spent_on)
-          values (${vProsp.id}::uuid, ${ticketId}::uuid, ${A.deal}::uuid, ${rHotel}::uuid,
-                  'a dos sitios', 100, current_date)`,
+          values (${vProsp.id}::uuid, ${dProsp.id}::uuid, ${ticketId}::uuid, ${A.deal}::uuid,
+                  ${rHotel}::uuid, 'a dos sitios', 100, current_date)`,
     );
-    ok("un gasto con ticket Y negocio se rechaza", g1 === "23514", `dio ${g1}`);
+    ok("un gasto con ticket Y negocio se rechaza", g1 === "viatico_expenses_destino_ck", `dio ${g1}`);
     await tx.execute(sql`rollback to savepoint s28`);
 
     console.log("\nSOLO FIRMA QUIEN TIENE EL VIÁTICO A SU NOMBRE");
@@ -675,7 +715,8 @@ await db
     });
     ok(
       "un negocio de OTRA empresa se rechaza",
-      !rCruzado.ok && rCruzado.reason.includes("no es de la empresa"),
+      // Desde la 0037 el negocio tiene que ser de UNA de las empresas del viaje.
+      !rCruzado.ok && rCruzado.reason.includes("ninguna de las empresas de este viaje"),
       rCruzado.ok ? "lo dejó pasar" : rCruzado.reason,
     );
 
@@ -688,9 +729,11 @@ await db
     ok("el aprobador nombrado SÍ mueve el gasto", rOk.ok, rOk.ok ? "" : rOk.reason);
 
     const [gDespues] = (await tx.execute(sql`
-      select deal_id::text as deal, reclassified_by_id::text as quien
+      select deal_id::text as deal, destino_id::text as destino, reclassified_by_id::text as quien
         from viatico_expenses where id = ${gCom.id}::uuid`)) as any;
     ok("quedó cargado al negocio", gDespues.deal === A.deal, `dio ${gDespues.deal}`);
+    // El negocio se lleva su destino: el de la empresa del negocio (0037).
+    ok("y dentro del destino de esa empresa", gDespues.destino === dProsp.id, `dio ${gDespues.destino}`);
     // El rastro es media razón de que la columna exista: sin él, meses después
     // nadie puede decir quién decidió que esa cena fuera del negocio.
     ok("y queda escrito quién lo movió", gDespues.quien === otro, `dio ${gDespues.quien}`);
@@ -710,6 +753,205 @@ await db
       rCerrado.ok ? "lo dejó pasar" : rCerrado.reason,
     );
 
+    /* ══════════ 6 · Lo que trajo la 0037 ══════════ */
+
+    /*
+      UNA GIRA: contrato + prospecto + visita, y un segundo viaje al MISMO
+      contrato. Todo lo que tiene que sobrevivir se crea ANTES del savepoint,
+      por lo mismo que en la 0028: cada rechazo vuelve a `s37` y se lleva lo
+      creado después.
+
+      La base no clasifica —que la visita sea a un cliente sin contrato
+      vigente lo decide `vetoClasificacion` en el dominio, porque cambia con el
+      tiempo—; aquí solo se prueba que el TIPO y sus LLAVES no se contradigan.
+    */
+    console.log("\n0037 · EL DESTINO VIVE EN SU TABLA, Y LA BASE CUIDA SUS LLAVES");
+
+    const [{ id: contrato2 }] = (await tx.execute(sql`
+      select id::text as id from contracts where id <> ${contractId}::uuid order by id limit 1`)) as any;
+    ok("hay un segundo contrato con el que probar", Boolean(contrato2));
+
+    const [vGira] = (await tx.execute(sql`
+      insert into viaticos (reference, requested_by_id, destination, purpose,
+                            departs_on, returns_on, estimated_mxn)
+      values ('PROBE-37-GIRA', ${userId}::uuid, 'PROBE', 'PROBE', current_date, current_date + 3, 9000)
+      returning id::text as id`)) as any;
+    const destino = async (q: any) => ((await tx.execute(q)) as any)[0]?.id as string | undefined;
+    const dGiraC = await destino(sql`
+      insert into viatico_destinos (viatico_id, tipo, contract_id, position)
+      values (${vGira.id}::uuid, 'contrato', ${contractId}::uuid, 0) returning id::text as id`);
+    const dGiraP = await destino(sql`
+      insert into viatico_destinos (viatico_id, tipo, organization_id, deal_id, position)
+      values (${vGira.id}::uuid, 'prospecto', ${A.org}::uuid, ${A.deal}::uuid, 1) returning id::text as id`);
+    // Una visita sin negocio: el negocio es opcional en los destinos de empresa.
+    const dGiraV = await destino(sql`
+      insert into viatico_destinos (viatico_id, tipo, organization_id, position)
+      values (${vGira.id}::uuid, 'visita', ${B.org}::uuid, 2) returning id::text as id`);
+    ok(
+      "un viaje con contrato, prospecto con negocio y visita sin negocio SÍ entra",
+      Boolean(dGiraC && dGiraP && dGiraV),
+    );
+
+    // Los índices únicos son POR VIAJE: el mismo contrato en otro viaje es otro viaje.
+    const [vOtro] = (await tx.execute(sql`
+      insert into viaticos (reference, requested_by_id, destination, purpose,
+                            departs_on, returns_on, estimated_mxn)
+      values ('PROBE-37-OTRO', ${userId}::uuid, 'PROBE', 'PROBE', current_date, current_date, 1000)
+      returning id::text as id`)) as any;
+    const dOtro = await destino(sql`
+      insert into viatico_destinos (viatico_id, tipo, contract_id)
+      values (${vOtro.id}::uuid, 'contrato', ${contractId}::uuid) returning id::text as id`);
+    ok("el mismo contrato en OTRO viaje sí entra", Boolean(dOtro));
+
+    /*
+      El gasto general del viaje: sin destino, sin ticket y sin negocio. Es lo
+      único que la 0037 deja fuera de un destino, y tiene que entrar.
+    */
+    const [gGeneral] = (await tx.execute(sql`
+      insert into viatico_expenses (viatico_id, rubro_id, description, amount_mxn, spent_on)
+      values (${vGira.id}::uuid, ${rHotel}::uuid, 'hotel de la gira', 1500, current_date)
+      returning id::text as id`)) as any;
+    ok("un gasto general, sin destino ni ticket ni negocio, sí entra", Boolean(gGeneral?.id));
+    // Y uno con ticket, dentro de su destino de contrato: el que después
+    // impide quitar ese destino del viaje.
+    await tx.execute(sql`
+      insert into viatico_expenses (viatico_id, destino_id, ticket_id, rubro_id, description, amount_mxn, spent_on)
+      values (${vGira.id}::uuid, ${dGiraC}::uuid, ${ticketId}::uuid, ${rHotel}::uuid, 'servicio', 700, current_date)`);
+
+    // La fila de ajustes tiene que existir para poder tocar su CHECK.
+    await tx.execute(sql`insert into settings (id) values ('global') on conflict (id) do nothing`);
+
+    await tx.execute(sql`savepoint s37`);
+
+    /** Intenta, dice qué restricción saltó, y vuelve al savepoint. */
+    const rechazo = async (q: any) => {
+      const r = await restriccionQueSalta(tx, q);
+      await tx.execute(sql`rollback to savepoint s37`);
+      return r;
+    };
+    const LLAVE = "viatico_destinos_llave_ck";
+
+    for (const [nombre, q] of [
+      [
+        "un destino de CONTRATO que además nombra una empresa",
+        sql`insert into viatico_destinos (viatico_id, tipo, contract_id, organization_id)
+            values (${vOtro.id}::uuid, 'contrato', ${contrato2}::uuid, ${A.org}::uuid)`,
+      ],
+      [
+        "un destino de contrato SIN contrato",
+        sql`insert into viatico_destinos (viatico_id, tipo) values (${vOtro.id}::uuid, 'contrato')`,
+      ],
+      // El negocio es de una empresa, no de un contrato: un contrato con
+      // oportunidad pegada es la combinación que nadie sabría leer (era a3).
+      [
+        "un negocio colgado de un destino de CONTRATO",
+        sql`insert into viatico_destinos (viatico_id, tipo, contract_id, deal_id)
+            values (${vOtro.id}::uuid, 'contrato', ${contrato2}::uuid, ${A.deal}::uuid)`,
+      ],
+      [
+        "una VISITA sin empresa",
+        sql`insert into viatico_destinos (viatico_id, tipo) values (${vOtro.id}::uuid, 'visita')`,
+      ],
+      [
+        "un PROSPECTO sin empresa, aunque traiga negocio",
+        sql`insert into viatico_destinos (viatico_id, tipo, deal_id)
+            values (${vOtro.id}::uuid, 'prospecto', ${A.deal}::uuid)`,
+      ],
+      [
+        "una visita que además nombra un contrato",
+        sql`insert into viatico_destinos (viatico_id, tipo, contract_id, organization_id)
+            values (${vOtro.id}::uuid, 'visita', ${contrato2}::uuid, ${B.org}::uuid)`,
+      ],
+    ] as const) {
+      const r = await rechazo(q);
+      ok(`${nombre} se rechaza`, r === LLAVE, `dio ${r}`);
+    }
+
+    console.log("\n0037 · UN CONTRATO O UNA EMPRESA, UNA SOLA VEZ POR VIAJE");
+    const u1 = await rechazo(sql`
+      insert into viatico_destinos (viatico_id, tipo, contract_id, position)
+      values (${vGira.id}::uuid, 'contrato', ${contractId}::uuid, 5)`);
+    ok("el mismo contrato dos veces en un viaje se rechaza", u1 === "viatico_destinos_contrato_unico_idx", `dio ${u1}`);
+    // Con OTRO tipo: la unicidad es de la empresa, no del par empresa-tipo. Si
+    // no, una empresa podría ir como prospecto y como visita en el mismo viaje
+    // y sus gastos no sabrían a cuál de los dos ir.
+    const u2 = await rechazo(sql`
+      insert into viatico_destinos (viatico_id, tipo, organization_id, position)
+      values (${vGira.id}::uuid, 'visita', ${A.org}::uuid, 5)`);
+    ok(
+      "la misma empresa dos veces en un viaje —aun con otro tipo— se rechaza",
+      u2 === "viatico_destinos_organizacion_unico_idx",
+      `dio ${u2}`,
+    );
+
+    console.log("\n0037 · UN TICKET O UN NEGOCIO SIEMPRE VAN DENTRO DE UN DESTINO");
+    const d1 = await rechazo(sql`
+      insert into viatico_expenses (viatico_id, ticket_id, rubro_id, description, amount_mxn, spent_on)
+      values (${vGira.id}::uuid, ${ticketId}::uuid, ${rHotel}::uuid, 'ticket suelto', 100, current_date)`);
+    ok("un gasto con TICKET y sin destino se rechaza", d1 === "viatico_expenses_en_destino_ck", `dio ${d1}`);
+    const d2 = await rechazo(sql`
+      insert into viatico_expenses (viatico_id, deal_id, rubro_id, description, amount_mxn, spent_on)
+      values (${vGira.id}::uuid, ${A.deal}::uuid, ${rHotel}::uuid, 'negocio suelto', 100, current_date)`);
+    ok("un gasto con NEGOCIO y sin destino se rechaza", d2 === "viatico_expenses_en_destino_ck", `dio ${d2}`);
+
+    // `restrict`: un destino con gastos no se quita sin decidir antes a dónde van.
+    const d3 = await rechazo(sql`delete from viatico_destinos where id = ${dGiraC}::uuid`);
+    ok("quitar del viaje un destino con gastos se rechaza", d3 === "viatico_expenses_destino_id_fk", `dio ${d3}`);
+    // Y por el otro lado: la ficha de a quien se le viajó no se borra.
+    const d4 = await rechazo(sql`delete from contracts where id = ${contractId}::uuid`);
+    ok("borrar un contrato al que se le viajó se rechaza", d4 === "viatico_destinos_contract_id_fk", `dio ${d4}`);
+
+    /*
+      UN TOPE POR TIPO, Y LOS TRES DE 1 A 20 (`settings_viaticos_max_por_tipo_ck`).
+
+      Un solo CHECK cubre las tres columnas, así que se prueba CADA UNA por
+      separado: si alguien quitara una de la condición, las otras dos seguirían
+      rechazando y un aserto sobre «el CHECK» a secas daría verde.
+    */
+    console.log("\n0037 · CADA TOPE POR TIPO VA DE 1 A 20");
+    const TOPES = ["viaticos_max_contratos", "viaticos_max_visitas", "viaticos_max_prospectos"] as const;
+    for (const columna of TOPES) {
+      for (const n of [0, 21]) {
+        const r = await rechazo(sql`update settings set ${sql.identifier(columna)} = ${n} where id = 'global'`);
+        ok(`${columna} = ${n} se rechaza`, r === "settings_viaticos_max_por_tipo_ck", `dio ${r}`);
+      }
+      // Los dos bordes entran: un CHECK que rechaza el borde es un CHECK mal escrito.
+      for (const n of [1, 20]) {
+        const r = await restriccionQueSalta(
+          tx,
+          sql`update settings set ${sql.identifier(columna)} = ${n} where id = 'global'`,
+        );
+        ok(`${columna} = ${n} sí entra`, r === null, `dio ${r}`);
+      }
+    }
+    // Una fila recién creada nace con los tres topes en 1: lo de antes de la
+    // 0037. Se borra y se vuelve a crear dentro de la transacción que se deshace.
+    await tx.execute(sql`delete from settings where id = 'global'`);
+    await tx.execute(sql`insert into settings (id) values ('global')`);
+    const [nueva] = (await tx.execute(sql`
+      select viaticos_max_contratos as c, viaticos_max_visitas as v, viaticos_max_prospectos as p
+        from settings where id = 'global'`)) as any;
+    ok(
+      "una fila de ajustes nueva trae los tres topes en 1",
+      Number(nueva?.c) === 1 && Number(nueva?.v) === 1 && Number(nueva?.p) === 1,
+      JSON.stringify(nueva),
+    );
+
+    /*
+      Y BORRAR EL VIAJE SE LLEVA TODO LO SUYO. Los gastos cuelgan del destino
+      con `restrict` y los dos cuelgan del viático en `cascade`: se comprueba
+      que la cascada no tropieza con el `restrict` —es de lo que dependen las
+      limpiezas de todos los probes que crean viáticos—.
+    */
+    const d5 = await restriccionQueSalta(tx, sql`delete from viaticos where id = ${vGira.id}::uuid`);
+    const [{ quedan }] = (await tx.execute(sql`
+      select ((select count(*) from viatico_destinos where viatico_id = ${vGira.id}::uuid)
+            + (select count(*) from viatico_expenses where viatico_id = ${vGira.id}::uuid))::int as quedan`)) as any;
+    ok(
+      "borrar un viaje con destinos y gastos se lleva los dos",
+      d5 === null && Number(quedan) === 0,
+      d5 ? `dio ${d5}` : `quedan ${quedan}`,
+    );
 
     // DESHACER: nada de esto queda. Ver la cabecera.
     throw new Error("__rollback__");

@@ -37,7 +37,25 @@ export type AppSettings = {
    * de una política de gasto tiene que ser el que no gasta.
    */
   viaticosProspectosRoles: MembershipRole[];
+  /**
+   * LA POLÍTICA DE DESTINOS DE VIÁTICOS (0037).
+   *
+   * Qué roles piden viajes a CONTRATOS y quién VISITA a clientes sin contrato
+   * vigente; cuántos destinos de cada tipo caben en una solicitud y si se
+   * mezclan contratos con lo comercial. Los valores de fábrica son los de antes
+   * de que esto fuera configurable: contratos para todos los roles internos,
+   * visitas para nadie, uno de cada tipo y sin mezclar. Ver `vetoDestinos` en
+   * `domain/viaticos.ts`.
+   */
+  viaticosContratosRoles: MembershipRole[];
+  viaticosVisitasRoles: MembershipRole[];
+  /** Cuántos de cada tipo caben en un viático. Ver la 0037. */
+  viaticosMaxPorTipo: { contrato: number; visita: number; prospecto: number };
+  viaticosMezclarDestinos: boolean;
 };
+
+/** Los roles que viajan: todos menos el cliente, que no entra al portal interno. */
+export const ROLES_INTERNOS: MembershipRole[] = ["owner", "admin", "agent", "sales", "general"];
 
 const DEFAULTS: AppSettings = {
   laborCostPerHour: 0,
@@ -46,7 +64,15 @@ const DEFAULTS: AppSettings = {
   // Automático también sin fila de ajustes: es lo que se decidió para todas.
   tipoCambioAutomatico: true,
   viaticosProspectosRoles: [],
+  // Sin fila de ajustes, lo de antes de la 0037: cualquiera pide contratos.
+  viaticosContratosRoles: ROLES_INTERNOS,
+  viaticosVisitasRoles: [],
+  viaticosMaxPorTipo: { contrato: 1, visita: 1, prospecto: 1 },
+  viaticosMezclarDestinos: false,
 };
+
+/** El CHECK de la base ya lo acota a 1..20; se acota otra vez por si la fila se escribió a mano. */
+const tope = (n: unknown) => Math.min(20, Math.max(1, Number(n) || 1));
 
 export async function getSettings(conexion?: DbOrTx): Promise<AppSettings> {
   // La conexión explícita permite leer los ajustes dentro de una transacción o
@@ -74,6 +100,14 @@ export async function getSettings(conexion?: DbOrTx): Promise<AppSettings> {
       fila de `viz` con un nombre viejo tumbando un tablero entero.
     */
     viaticosProspectosRoles: rolesGuardados(row.viaticosProspectosRoles),
+    viaticosContratosRoles: rolesGuardados(row.viaticosContratosRoles),
+    viaticosVisitasRoles: rolesGuardados(row.viaticosVisitasRoles),
+    viaticosMaxPorTipo: {
+      contrato: tope(row.viaticosMaxContratos),
+      visita: tope(row.viaticosMaxVisitas),
+      prospecto: tope(row.viaticosMaxProspectos),
+    },
+    viaticosMezclarDestinos: row.viaticosMezclarDestinos,
   };
 }
 

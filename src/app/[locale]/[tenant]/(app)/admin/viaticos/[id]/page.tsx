@@ -8,8 +8,7 @@ import { puedeEn } from "@/lib/tenancy/context";
 import {
   getViatico,
   listRubros,
-  negociosDelProspecto,
-  ticketsDelContrato,
+  opcionesDeGasto,
 } from "@/lib/data/viaticos";
 import { aprobadoresPosibles } from "@/lib/domain/viaticos";
 import { Card } from "@/components/ui/card";
@@ -23,6 +22,7 @@ import {
 } from "@/components/portal/viaticos/acciones";
 import { GastoForm } from "@/components/portal/viaticos/gasto-form";
 import {
+  DESTINO_LABELS,
   ESTADO_LABELS,
   consumoPorRubro,
   cuadre,
@@ -117,13 +117,6 @@ export default async function ViaticoPage({
   const hayQueMostrarGastos = v.gastos.length > 0 || puedeCapturar;
 
   /*
-    Lo que hace falta para capturar un gasto, y solo mientras se puede capturar.
-
-    De qué se llena el selector depende del ASUNTO: un viático de contrato carga
-    a tickets del servicio; uno de prospecto, a una oportunidad o a nada. Pedir
-    las dos cosas siempre serían dos consultas por pantalla para descartar una.
-  */
-  /*
     ¿Tiene sentido reasignar? Solo mientras alguien tenga que firmar algo: en
     borrador todavía no se ha mandado a nadie, y cerrado ya no hay nada que
     mover. Los mismos tres estados que admite el dominio.
@@ -137,26 +130,25 @@ export default async function ViaticoPage({
 
   const capturando = soyElSolicitante && v.status === "autorizado";
   /*
-    ¿Se pueden mover los renglones de sitio?
-
-    Solo quien firma, solo en revisión y solo en un viático de prospecto: en uno
-    de contrato los tres destinos se reducen a uno —el gasto va a un ticket del
-    servicio— y ofrecer un desplegable de una sola opción es ofrecer una
-    decisión que no existe.
+    A QUÉ SE PUEDE CARGAR UN GASTO, y solo cuando alguien va a elegir: quien
+    captura, o quien firma mientras revisa. Es LA MISMA lista para los dos
+    —`opcionesDeGasto`—: el desplegable de quien reclasifica tiene que traer
+    las mismas opciones que tuvo quien capturó.
   */
-  const reclasificando =
-    puedoFirmar && v.status === "en_revision" && Boolean(v.organizationId);
-  const tickets =
-    capturando && v.contractId ? await ticketsDelContrato(v.contractId) : [];
-  /*
-    Los negocios hacen falta también EN REVISIÓN, no solo al capturar: quien
-    firma reclasifica desde ahí, y el desplegable tiene que traer las mismas
-    opciones que tuvo quien capturó.
-  */
-  const negocios =
-    v.organizationId && (capturando || (puedoFirmar && v.status === "en_revision"))
-      ? await negociosDelProspecto(v.organizationId)
+  const opciones =
+    capturando || (puedoFirmar && v.status === "en_revision")
+      ? await opcionesDeGasto(v.destinos)
       : [];
+  /*
+    ¿Se pueden mover los renglones de sitio? Solo quien firma, solo en revisión,
+    y solo si hay más de un sitio: un desplegable de una sola opción es ofrecer
+    una decisión que no existe.
+  */
+  const reclasificando = puedoFirmar && v.status === "en_revision" && opciones.length > 1;
+  /** Nombre del destino de un gasto, para la columna «Se carga a». */
+  const nombreDestino = new Map(
+    v.destinos.map((d) => [d.id, d.tipo === "contrato" ? `Contrato ${d.contractNumber ?? "—"}` : (d.organizacion ?? "—")]),
+  );
 
   const loc = locale === "en" ? "en-US" : "es-MX";
   const fecha = (d: string) =>
@@ -175,53 +167,43 @@ export default async function ViaticoPage({
             {v.destination}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {fecha(v.departsOn)} – {fecha(v.returnsOn)} ·{" "}
-            {/*
-              EL ASUNTO, que es de uno de los dos tipos y nunca de los dos.
-
-              El contrato lleva al expediente del contrato; el prospecto, a su
-              ficha en Ventas. Enseñar «—» cuando falta el contrato habría sido
-              lo cómodo y lo que esconde el modelo: quien mira un viático de
-              prospección tiene que poder llegar a la empresa desde aquí igual
-              que llega al contrato en el otro caso.
-            */}
-            {v.contractId ? (
-              <Link
-                href={`/admin/contratos/${v.contractId}`}
-                className="font-mono hover:underline"
-              >
-                {v.contractNumber}
-              </Link>
-            ) : (
-              <Link
-                href={`/admin/organizaciones/${v.organizationId}`}
-                className="hover:underline"
-              >
-                {v.prospecto}
-                <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-                  prospecto
-                </span>
-              </Link>
-            )}
+            {fecha(v.departsOn)} – {fecha(v.returnsOn)}
             {v.solicitante ? ` · ${v.solicitante}` : ""}
           </p>
           {/*
-            EL NEGOCIO, cuando el viaje va por una oportunidad concreta. En su
-            propio renglón y no pegado al anterior: son dos cosas distintas —a
-            qué empresa se viaja y por qué trato— y juntarlas en una línea hacía
-            que se leyeran como una sola.
+            LOS DESTINOS, uno por renglón y en orden de visita (0037).
+
+            Cada uno lleva a su expediente: el contrato al contrato, la visita y
+            el prospecto a la ficha de la empresa, y el negocio —cuando el viaje
+            va por una oportunidad concreta— a la oportunidad. Enseñar «—» donde
+            falta el contrato habría sido lo cómodo y lo que esconde el modelo.
           */}
-          {v.dealId ? (
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              Por el negocio{" "}
-              <Link
-                href={`/admin/crm/negocios/${v.dealId}`}
-                className="text-primary hover:underline"
-              >
-                {v.negocio}
-              </Link>
-            </p>
-          ) : null}
+          <ul className="mt-1 space-y-0.5 text-sm text-muted-foreground">
+            {v.destinos.map((d) => (
+              <li key={d.id} className="flex flex-wrap items-center gap-1.5">
+                <span className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                  {DESTINO_LABELS[d.tipo]}
+                </span>
+                {d.tipo === "contrato" ? (
+                  <Link href={`/admin/contratos/${d.contractId}`} className="font-mono hover:underline">
+                    {d.contractNumber}
+                  </Link>
+                ) : (
+                  <Link href={`/admin/organizaciones/${d.organizationId}`} className="hover:underline">
+                    {d.organizacion}
+                  </Link>
+                )}
+                {d.dealId ? (
+                  <>
+                    · por el negocio
+                    <Link href={`/admin/crm/negocios/${d.dealId}`} className="text-primary hover:underline">
+                      {d.negocio}
+                    </Link>
+                  </>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         </div>
         <div className="flex items-center gap-2">
           {/*
@@ -531,13 +513,16 @@ export default async function ViaticoPage({
                         </Link>
                       ) : (
                         /*
-                          «Gasto comercial» con todas sus letras, y no un
-                          guion. El guion se lee como dato que falta, y este es
-                          un destino elegido: la diferencia importa justo
-                          cuando quien revisa decide si moverlo.
+                          Con todas sus letras, y no un guion: el destino a
+                          secas o el gasto general del viaje. El guion se lee
+                          como dato que falta, y esto es un destino elegido: la
+                          diferencia importa justo cuando quien revisa decide si
+                          moverlo.
                         */
                         <span className="text-xs text-muted-foreground">
-                          Gasto comercial
+                          {g.destinoId
+                            ? (nombreDestino.get(g.destinoId) ?? "Gasto comercial")
+                            : "Gasto general del viaje"}
                         </span>
                       )}
                       {g.reclassifiedAt ? (
@@ -551,9 +536,16 @@ export default async function ViaticoPage({
                       {reclasificando ? (
                         <ReclasificarGasto
                           gastoId={g.id}
-                          negocios={negocios}
-                          actual={g.dealId ? "negocio" : "comercial"}
-                          dealActual={g.dealId}
+                          opciones={opciones}
+                          actual={
+                            g.ticketId
+                              ? `ticket:${g.ticketId}`
+                              : g.dealId
+                                ? `negocio:${g.dealId}`
+                                : g.destinoId
+                                  ? `destino:${g.destinoId}`
+                                  : "general"
+                          }
                         />
                       ) : null}
                     </td>
@@ -604,9 +596,7 @@ export default async function ViaticoPage({
           <div className="border-t border-border bg-muted/20 p-5">
             <GastoForm
               viaticoId={v.id}
-              tickets={tickets}
-              negocios={negocios}
-              esProspecto={Boolean(v.organizationId)}
+              opciones={opciones}
               // Solo los ACTIVOS al capturar: los retirados siguen arriba, en
               // la tabla, sosteniendo el nombre de lo ya capturado.
               rubros={rubros.filter((r) => r.active)}
