@@ -46,7 +46,23 @@ export type ViaticoState = {
 };
 
 const uuid = z.string().uuid();
-const fecha = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida.");
+/*
+  AAAA-MM-DD Y ADEMÁS UN DÍA QUE EXISTA.
+
+  Con la expresión regular a secas, «2026-02-30» pasaba y reventaba en Postgres
+  («date/time field value out of range»): en el alta lo tapaba el `catch` con un
+  mensaje genérico, y en el gasto —que no tenía— tumbaba la acción entera. Se
+  comprueba que la fecha dé la vuelta intacta por `Date`: un 30 de febrero se
+  convierte en 2 de marzo y deja de coincidir. Lo encontró
+  `scripts/_probe-acciones-viaticos.ts`.
+*/
+const fecha = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida.")
+  .refine((s) => {
+    const d = new Date(`${s}T00:00:00Z`);
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+  }, "Fecha inválida.");
 
 /**
  * Importe en pesos, tal como lo teclea una persona.
@@ -205,6 +221,15 @@ export async function enviarViaticoAction(
 ): Promise<ViaticoState> {
   const userId = await quien();
   if (!userId) return { ok: false, error: "No hay sesión." };
+  /*
+    Enviar es parte de PEDIR, y pedir es `viaticos: editar` —la cabecera lo dice
+    y el alta lo exige—. Aquí no se comprobaba: quien había perdido el módulo
+    seguía pudiendo mover su borrador. Lo encontró
+    `scripts/_probe-acciones-viaticos.ts`.
+  */
+  if (!(await puedeEn("viaticos", "editar"))) {
+    return { ok: false, error: "No tienes permiso para enviar viáticos." };
+  }
   const id = uuid.safeParse(formData.get("id"));
   if (!id.success) return { ok: false, error: "Viático inválido." };
 
@@ -235,16 +260,28 @@ export async function autorizarViaticoAction(
   const monto = importe(formData.get("authorizedMxn"));
   if (monto === null) return { ok: false, error: "Pon el monto que autorizas." };
 
-  const db = await tenantDb();
-  const res = await db.transaction((tx) =>
-    approveViatico(tx, {
-      id: id.data,
-      actorId: userId,
-      puedeAdministrar: puede,
-      authorizedMxn: monto,
-      note: String(formData.get("note") ?? ""),
-    }),
-  );
+  /*
+    El `catch` es el mismo que ya tenía el alta. Un monto que no cabe en
+    `numeric(12,2)` —«1e12» es un número para `Number()`— llegaba a Postgres y
+    la acción reventaba en vez de contestar. Lo encontró
+    `scripts/_probe-acciones-viaticos.ts`.
+  */
+  let res: Awaited<ReturnType<typeof approveViatico>>;
+  try {
+    const db = await tenantDb();
+    res = await db.transaction((tx) =>
+      approveViatico(tx, {
+        id: id.data,
+        actorId: userId,
+        puedeAdministrar: puede,
+        authorizedMxn: monto,
+        note: String(formData.get("note") ?? ""),
+      }),
+    );
+  } catch (e) {
+    console.error("[viaticos] autorizar", e);
+    return { ok: false, error: "No se pudo autorizar el viático." };
+  }
   if (!res.ok) return { ok: false, error: res.reason };
   revalidateTenant();
   return { ok: true, message: "Autorizado." };
@@ -321,26 +358,39 @@ export async function agregarGastoAction(
     return { ok: false, error: (e as Error).message };
   }
 
-  const db = await tenantDb();
-  const res = await db.transaction((tx) =>
-    addExpense(
-      tx,
-      {
-        viaticoId: viaticoId.data,
-        destino: destino.valor,
-        rubroId: rubroId.data,
-        // Que el rubro EXIJA la nota lo decide el dominio, leyendo la fila: aquí
-        // no se sabe cuál la pide y comprobarlo obligaría a consultar el
-        // catálogo desde la acción, que es justo lo que esta capa no hace.
-        note: String(formData.get("note") ?? ""),
-        description,
-        amountMxn: monto,
-        spentOn: spentOn.data,
-        receiptPath,
-      },
-      userId,
-    ),
-  );
+  /*
+    Sin este `catch`, lo que pasa Zod pero no Postgres —un ticket con uuid bien
+    formado que no existe (llave foránea), un importe que no cabe en
+    `numeric(12,2)`— tumbaba la acción con un error en vez de devolver un
+    mensaje. Es el mismo que ya tenía el alta. Lo encontró
+    `scripts/_probe-acciones-viaticos.ts`.
+  */
+  let res: Awaited<ReturnType<typeof addExpense>>;
+  try {
+    const db = await tenantDb();
+    res = await db.transaction((tx) =>
+      addExpense(
+        tx,
+        {
+          viaticoId: viaticoId.data,
+          destino: destino.valor,
+          rubroId: rubroId.data,
+          // Que el rubro EXIJA la nota lo decide el dominio, leyendo la fila: aquí
+          // no se sabe cuál la pide y comprobarlo obligaría a consultar el
+          // catálogo desde la acción, que es justo lo que esta capa no hace.
+          note: String(formData.get("note") ?? ""),
+          description,
+          amountMxn: monto,
+          spentOn: spentOn.data,
+          receiptPath,
+        },
+        userId,
+      ),
+    );
+  } catch (e) {
+    console.error("[viaticos] gasto", e);
+    return { ok: false, error: "No se pudo agregar el gasto." };
+  }
   if (!res.ok) return { ok: false, error: res.reason };
   revalidateTenant();
   return {
@@ -355,6 +405,12 @@ export async function quitarGastoAction(
 ): Promise<ViaticoState> {
   const userId = await quien();
   if (!userId) return { ok: false, error: "No hay sesión." };
+  // Quitar un renglón es COMPROBAR, como ponerlo, y ponerlo ya pedía «editar».
+  // Este no lo pedía: con «ver» —o sin nada— se borraban gastos propios. Lo
+  // encontró `scripts/_probe-acciones-viaticos.ts`.
+  if (!(await puedeEn("viaticos", "editar"))) {
+    return { ok: false, error: "No tienes permiso para quitar gastos." };
+  }
   const id = uuid.safeParse(formData.get("gastoId"));
   if (!id.success) return { ok: false, error: "Gasto inválido." };
 
@@ -371,6 +427,12 @@ export async function mandarARevisionAction(
 ): Promise<ViaticoState> {
   const userId = await quien();
   if (!userId) return { ok: false, error: "No hay sesión." };
+  // Mandar la comprobación es la última parte de COMPROBAR: `viaticos: editar`,
+  // igual que cargar los gastos. No se exigía. Lo encontró
+  // `scripts/_probe-acciones-viaticos.ts`.
+  if (!(await puedeEn("viaticos", "editar"))) {
+    return { ok: false, error: "No tienes permiso para mandar la comprobación." };
+  }
   const id = uuid.safeParse(formData.get("id"));
   if (!id.success) return { ok: false, error: "Viático inválido." };
 

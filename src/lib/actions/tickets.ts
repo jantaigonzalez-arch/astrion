@@ -45,6 +45,24 @@ const CreateSchema = z.object({
 
 export type TicketFormState = { ok: boolean; error?: string; reference?: string };
 
+/**
+ * Un id que llega en el formulario, solo si tiene forma de uuid; si no, `null`.
+ *
+ * Las acciones leían `String(formData.get("ticketId"))`, que convierte la
+ * AUSENCIA en el texto "null" —verdadero para el `if (!ticketId)` que debía
+ * cortar— y dejaba llegar la basura a Postgres, que revienta al compararla con
+ * una columna uuid: un 500 donde tocaba no hacer nada. Lo encontró
+ * `scripts/_probe-acciones-tickets.ts`, mandando un formulario sin el campo.
+ *
+ * La forma y no la versión: es lo que acepta Postgres, y los ids importados no
+ * tienen por qué ser v4.
+ */
+const FORMA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function uuidDe(v: FormDataEntryValue | null | undefined): string | null {
+  const s = typeof v === "string" ? v.trim() : "";
+  return FORMA_UUID.test(s) ? s : null;
+}
+
 export async function createTicket(
   _prev: TicketFormState,
   formData: FormData,
@@ -66,7 +84,15 @@ export async function createTicket(
   try {
     const db = await tenantDb();
 
-    // El equipo debe pertenecer a quien crea el ticket (o al cliente dueño).
+    /*
+      El equipo debe pertenecer a quien crea el ticket, y el módulo a ese equipo.
+
+      Un equipo ajeno se DESCARTABA en silencio y el ticket nacía sin equipo: el
+      cliente elegía uno y recibía otro sin enterarse, y con el `equipmentId`
+      de otro laboratorio en el formulario la acción respondía «creado». Ahora
+      se rechaza como cualquier otra captura inválida. Lo encontró
+      `scripts/_probe-acciones-tickets.ts`.
+    */
     let equipmentId: string | null = null;
     let moduleId: string | null = null;
     if (parsed.data.equipmentId) {
@@ -80,21 +106,21 @@ export async function createTicket(
           ),
         )
         .limit(1);
-      if (own) {
-        equipmentId = own.id;
-        if (parsed.data.moduleId) {
-          const [mod] = await db
-            .select({ id: equipmentModules.id })
-            .from(equipmentModules)
-            .where(
-              and(
-                eq(equipmentModules.id, parsed.data.moduleId),
-                eq(equipmentModules.equipmentId, own.id),
-              ),
-            )
-            .limit(1);
-          moduleId = mod?.id ?? null;
-        }
+      if (!own) return { ok: false, error: "invalid" };
+      equipmentId = own.id;
+      if (parsed.data.moduleId) {
+        const [mod] = await db
+          .select({ id: equipmentModules.id })
+          .from(equipmentModules)
+          .where(
+            and(
+              eq(equipmentModules.id, parsed.data.moduleId),
+              eq(equipmentModules.equipmentId, own.id),
+            ),
+          )
+          .limit(1);
+        if (!mod) return { ok: false, error: "invalid" };
+        moduleId = mod.id;
       }
     }
 
@@ -213,7 +239,22 @@ export async function createServiceTicket(
   try {
     const db = await tenantDb();
 
-    // El equipo debe pertenecer al laboratorio elegido.
+    /*
+      El laboratorio tiene que ser de ESTA empresa.
+
+      El `clientId` viaja en el formulario y solo se comprobaba que tuviera
+      forma de uuid: con el id de una cuenta de fuera, el ticket quedaba a su
+      nombre en el esquema de esta empresa y el acuse de recibo —asunto y folio
+      incluidos— le llegaba por correo. Se exige una membresía activa, como al
+      asignar; el rol no se exige porque la pantalla ya ofrece solo clientes y
+      aquí lo que se cierra es la puerta a los de fuera. Lo encontró
+      `scripts/_probe-acciones-tickets.ts`.
+    */
+    const cliente = await getTenantMember(parsed.data.clientId);
+    if (!cliente?.memberActive) return { ok: false, error: "invalid" };
+
+    // El equipo debe pertenecer al laboratorio elegido, y el módulo a ese
+    // equipo. Si no, se rechaza: ver la misma comprobación en `createTicket`.
     let equipmentId: string | null = null;
     let moduleId: string | null = null;
     if (parsed.data.equipmentId) {
@@ -227,21 +268,21 @@ export async function createServiceTicket(
           ),
         )
         .limit(1);
-      if (own) {
-        equipmentId = own.id;
-        if (parsed.data.moduleId) {
-          const [mod] = await db
-            .select({ id: equipmentModules.id })
-            .from(equipmentModules)
-            .where(
-              and(
-                eq(equipmentModules.id, parsed.data.moduleId),
-                eq(equipmentModules.equipmentId, own.id),
-              ),
-            )
-            .limit(1);
-          moduleId = mod?.id ?? null;
-        }
+      if (!own) return { ok: false, error: "invalid" };
+      equipmentId = own.id;
+      if (parsed.data.moduleId) {
+        const [mod] = await db
+          .select({ id: equipmentModules.id })
+          .from(equipmentModules)
+          .where(
+            and(
+              eq(equipmentModules.id, parsed.data.moduleId),
+              eq(equipmentModules.equipmentId, own.id),
+            ),
+          )
+          .limit(1);
+        if (!mod) return { ok: false, error: "invalid" };
+        moduleId = mod.id;
       }
     }
 
@@ -330,7 +371,7 @@ export async function approveTicket(formData: FormData) {
   const session = await auth();
   if (!session?.user || !(await puedeEn("servicio", "editar"))) return;
 
-  const ticketId = String(formData.get("ticketId"));
+  const ticketId = uuidDe(formData.get("ticketId"));
   if (!ticketId) return;
 
   const db = await tenantDb();
@@ -357,7 +398,7 @@ export async function rejectTicket(formData: FormData) {
   const session = await auth();
   if (!session?.user || !(await puedeEn("servicio", "editar"))) return;
 
-  const ticketId = String(formData.get("ticketId"));
+  const ticketId = uuidDe(formData.get("ticketId"));
   const reason = String(formData.get("reason") ?? "").trim();
   if (!ticketId) return;
 
@@ -380,7 +421,7 @@ export async function addComment(formData: FormData) {
   const session = await auth();
   if (!session?.user) return;
 
-  const ticketId = String(formData.get("ticketId"));
+  const ticketId = uuidDe(formData.get("ticketId"));
   const body = String(formData.get("body") ?? "").trim();
   const staff = await puedeEn("servicio", "editar");
   const internal = formData.get("internal") === "on" && staff;
@@ -411,11 +452,11 @@ export async function addComment(formData: FormData) {
 
   // Componente al que se refiere la actividad. Se valida la jerarquía:
   // el submódulo debe pertenecer al módulo, y el módulo al equipo.
-  const pick = (v: FormDataEntryValue | null) =>
-    typeof v === "string" && v.trim() ? v.trim() : null;
-  const inEquipment = pick(formData.get("cEquipmentId"));
-  const inModule = pick(formData.get("cModuleId"));
-  const inSubmodule = pick(formData.get("cSubmoduleId"));
+  // `uuidDe` y no un simple recorte: un id con basura llegaba a Postgres y
+  // reventaba la acción entera, comentario incluido.
+  const inEquipment = uuidDe(formData.get("cEquipmentId"));
+  const inModule = uuidDe(formData.get("cModuleId"));
+  const inSubmodule = uuidDe(formData.get("cSubmoduleId"));
 
   let refEquipment: string | null = null;
   let refModule: string | null = null;
@@ -470,17 +511,33 @@ export async function addComment(formData: FormData) {
     quien fuera —y una acción acepta el formulario que le manden, no el que se
     dibujó—. Un cliente podía mover el inventario de la empresa.
   */
-  const rawHours = staff ? pick(formData.get("hours")) : null;
+  const horasTecleadas = formData.get("hours");
+  const rawHours =
+    staff && typeof horasTecleadas === "string" && horasTecleadas.trim()
+      ? horasTecleadas.trim()
+      : null;
   let hours: string | null = null;
   if (rawHours) {
     const n = Number(rawHours.replace(",", "."));
     if (!Number.isNaN(n) && n > 0 && n < 1000) hours = n.toFixed(2);
   }
 
-  const partIds = staff
-    ? formData.getAll("partIds").map(String).filter(Boolean)
+  /*
+    Pieza y cantidad se EMPAREJAN antes de filtrar. Se filtraba solo la lista de
+    ids y las cantidades se leían por posición, así que un id descartado
+    corría todas las cantidades una casilla; y un id con basura llegaba a
+    Postgres y tumbaba la transacción. Ahora lo que no tiene forma de uuid se
+    ignora junto con SU cantidad.
+  */
+  const qtysTecleadas = staff ? formData.getAll("partQtys").map(String) : [];
+  const piezas = staff
+    ? formData.getAll("partIds").flatMap((v, i) => {
+        const id = uuidDe(v);
+        return id ? [{ id, qty: qtysTecleadas[i] }] : [];
+      })
     : [];
-  const qtys = staff ? formData.getAll("partQtys").map(String) : [];
+  const partIds = piezas.map((p) => p.id);
+  const qtys = piezas.map((p) => p.qty);
 
   // La bitácora, el consumo de refacciones, el movimiento de inventario y la
   // marca de SLA son un solo hecho operativo. Antes eran escrituras sueltas:
@@ -626,8 +683,9 @@ export async function updateTicketStatus(formData: FormData) {
   const session = await auth();
   if (!session?.user || !(await puedeEn("servicio", "editar"))) return;
 
-  const ticketId = String(formData.get("ticketId"));
+  const ticketId = uuidDe(formData.get("ticketId"));
   const status = String(formData.get("status"));
+  if (!ticketId) return;
   // La aprobación/rechazo tiene su propio flujo; aquí solo estados operativos.
   if (!STAFF_SETTABLE_STATUSES.includes(status as never)) return;
 
@@ -701,11 +759,13 @@ export async function assignTicket(formData: FormData) {
   const session = await auth();
   if (!session?.user || !(await puedeEn("servicio", "editar"))) return;
 
-  const ticketId = String(formData.get("ticketId") ?? "");
+  const ticketId = uuidDe(formData.get("ticketId"));
   const raw = formData.get("assignedToId");
-  // Cadena vacía / ausente = desasignar.
-  const candidate = typeof raw === "string" && raw.trim() ? raw.trim() : null;
-  if (!ticketId) return;
+  // Cadena vacía / ausente = desasignar. Algo que no es un uuid NO es vacío: se
+  // rechaza, en vez de reventar en la consulta o de leerse como «desasignar».
+  const tecleado = typeof raw === "string" ? raw.trim() : "";
+  const candidate = tecleado ? uuidDe(tecleado) : null;
+  if (!ticketId || (tecleado && !candidate)) return;
 
   const db = await tenantDb();
 

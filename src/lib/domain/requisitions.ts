@@ -723,7 +723,19 @@ export async function convertToPurchaseOrders(
     })
     .from(requisitions)
     .where(eq(requisitions.id, input.id))
-    .limit(1);
+    .limit(1)
+    /*
+      CON CANDADO. Sin él, un doble clic compraba el doble.
+
+      Dos conversiones a la vez leían los mismos renglones pendientes, y las dos
+      sacaban su orden: con un renglón de 2 piezas se le pedían 4 al proveedor.
+      Nadie lo veía, porque `ordered_quantity` se FIJA al total en vez de
+      sumarse, así que el renglón seguía diciendo «2 de 2». Con el candado la
+      segunda espera a que la primera confirme, y entonces ya no hay pendiente.
+      Lo encontró `_probe-acciones-requisiciones`. Quien llama tiene que pasar
+      una transacción, que es lo que hace la acción.
+    */
+    .for("update");
 
   if (!req) return { ok: false, reason: "La requisición no existe." };
   if (req.status !== "approved" && req.status !== "partial") {

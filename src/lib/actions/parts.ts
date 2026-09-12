@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { importeOpcional } from "@/lib/importe";
 import { revalidateTenant } from "@/lib/revalidate";
 import { eq } from "drizzle-orm";
 import { currentRole, tenantDb, puedeEn } from "@/lib/tenancy/context";
@@ -16,15 +17,8 @@ export type PartState = {
   partNumber?: string;
 };
 
-const money = z
-  .string()
-  .optional()
-  .transform((v) => {
-    if (!v) return undefined;
-    const clean = v.replace(/[^0-9.]/g, "");
-    return clean || undefined;
-  })
-  .refine((v) => v === undefined || !Number.isNaN(Number(v)));
+// Monto opcional: vacío o un número de cero en adelante. Ver `lib/importe.ts`.
+const money = importeOpcional;
 
 const PartSchema = z.object({
   partNumber: z.string().min(2).max(80),
@@ -154,6 +148,14 @@ export async function updatePart(
           brand: parsed.data.brand ?? null,
           costMxn: parsed.data.costMxn ?? null,
           costUsd: parsed.data.costUsd ?? null,
+          /*
+            Los precios de venta se validaban y se TIRABAN: el formulario de
+            edición los ofrece, la acción los leía y respondía «guardado», y la
+            columna seguía con el valor de antes. Lo encontró
+            `scripts/_probe-acciones-equipos.ts`. Vacío borra, igual que el costo.
+          */
+          priceMxn: parsed.data.priceMxn ?? null,
+          priceUsd: parsed.data.priceUsd ?? null,
           active: formData.get("active") === "on",
           updatedAt: new Date(),
         })

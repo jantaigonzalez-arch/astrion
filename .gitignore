@@ -156,6 +156,27 @@ scripts/_dash.ts
 !scripts/_probe-profit.ts
 !scripts/_probe-rent.ts
 !scripts/_probe-siembra.ts
+# Las pruebas de acciones y su andamio (ver `pruebas/registro.ts`).
+!scripts/_probe-acciones-compras.ts
+!scripts/_probe-acciones-contratos.ts
+!scripts/_probe-acciones-crm-etapas.ts
+!scripts/_probe-acciones-crm-extras.ts
+!scripts/_probe-acciones-crm-fichas.ts
+!scripts/_probe-acciones-crm-negocios.ts
+!scripts/_probe-acciones-crm-seguimiento.ts
+!scripts/_probe-acciones-empresa.ts
+!scripts/_probe-acciones-equipos.ts
+!scripts/_probe-acciones-inteligencia.ts
+!scripts/_probe-acciones-pagar.ts
+!scripts/_probe-acciones-plataforma.ts
+!scripts/_probe-acciones-publicas.ts
+!scripts/_probe-acciones-requisiciones.ts
+!scripts/_probe-acciones-settings.ts
+!scripts/_probe-acciones-tableros.ts
+!scripts/_probe-acciones-tickets.ts
+!scripts/_probe-acciones-usuarios.ts
+!scripts/_probe-acciones-viaticos-config.ts
+!scripts/_probe-acciones-viaticos.ts
 
 # ── Y DOS DE `scripts/`, POR UNA RAZÓN DISTINTA ────────────────────────────
 #

@@ -234,14 +234,20 @@ console.log("\nLO QUE LA BASE TIENE QUE RECHAZAR");
 
 await db
   .transaction(async (tx: any) => {
-    const [{ id: contractId }] = (await tx.execute(
-      sql`select id::text as id from contracts limit 1`,
+    /*
+      Contrato y ticket se eligen JUNTOS: un ticket de un equipo que el contrato
+      ampara. Se tomaban por separado —el primero de cada tabla—, y cuando el
+      dominio empezó a exigir que el gasto de un viático de contrato vaya a un
+      ticket DE ESE contrato (lo encontró `_probe-acciones-viaticos`), el par al
+      azar dejó de ser un caso posible.
+    */
+    const [{ id: contractId, ticket_id: ticketId }] = (await tx.execute(
+      sql`select ce.contract_id::text as id, t.id::text as ticket_id
+            from contract_equipment ce join tickets t on t.equipment_id = ce.equipment_id
+           limit 1`,
     )) as any;
     const [{ id: userId }] = (await tx.execute(
       sql`select requested_by_id::text as id from (select created_by_id as requested_by_id from tickets limit 1) x`,
-    )) as any;
-    const [{ id: ticketId }] = (await tx.execute(
-      sql`select id::text as id from tickets limit 1`,
     )) as any;
 
     ok("hay contrato, persona y ticket con los que probar", Boolean(contractId && userId && ticketId));

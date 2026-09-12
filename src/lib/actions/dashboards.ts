@@ -6,6 +6,7 @@ import { revalidateDashboards } from "@/lib/revalidate";
 import { redirectAfterAction } from "@/lib/nav-server";
 import { createDashboard, deleteDashboard, setDashboardModules, publishDashboard, renameDashboard, reorderDashboard, unpublishDashboard } from "@/lib/ml/dashboards";
 import { caja, type Caja } from "@/lib/ml/placements";
+import { moduloById } from "@/lib/ml/analyses";
 
 /**
  * Acciones del compositor de tableros.
@@ -180,21 +181,39 @@ export async function setDashboardModulesAction(
   const no = await soloAdmin();
   if (no) return { ok: false, error: no };
 
-  const modulos = String(form.get("modulos") ?? "")
-    .split(",")
-    .map((x) => x.trim())
-    .filter(Boolean);
+  /*
+    Sin repetidos, conservando la PRIMERA aparición —el orden es lo que decide
+    cuál manda—. La lista viene de un campo oculto, o sea de fuera, y
+    `dashboard_modules` tiene llave (tablero, módulo): «ventas,compras,ventas»
+    reventaba el INSERT contra la llave y la acción devolvía un error de
+    servidor en vez de guardar. Lo encontró `_probe-acciones-tableros`.
+  */
+  const modulos = [
+    ...new Set(
+      String(form.get("modulos") ?? "")
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean),
+    ),
+  ];
 
   const r = await setDashboardModules(String(form.get("slug") ?? ""), modulos);
   if (!r.ok) return { ok: false, error: r.reason };
+
+  /*
+    El mensaje cuenta los que QUEDARON, no los que llegaron. `setDashboardModules`
+    descarta en silencio los que no están en el catálogo, y contar la lista
+    cruda decía «Sale en 2 módulos» con uno solo guardado. Mismo probe.
+  */
+  const quedaron = modulos.filter((m) => moduloById(m)).length;
 
   await revalidateDashboards();
   return {
     ok: true,
     message:
-      modulos.length === 0
+      quedaron === 0
         ? "Ya no sale en ningún módulo; se llega por el menú."
-        : `Sale en ${modulos.length} módulo${modulos.length === 1 ? "" : "s"}.`,
+        : `Sale en ${quedaron} módulo${quedaron === 1 ? "" : "s"}.`,
   };
 }
 

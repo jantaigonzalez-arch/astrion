@@ -59,8 +59,14 @@ export async function requestSignup(
   // Trampa para robots: es un campo oculto que una persona nunca ve ni llena.
   // Se responde con éxito a propósito — un bot que recibe un error reintenta
   // con otra forma; uno que recibe "gracias" da el trabajo por hecho.
+  //
+  // Y con EXACTAMENTE la respuesta del camino feliz. Contestaba «gracias»
+  // donde una solicitud real contesta «recibida»: la pantalla no enseña el
+  // mensaje, pero la respuesta de la acción llega entera al navegador, y un
+  // robot que la leyera sabía que había caído en la trampa. Lo encontró
+  // `scripts/_probe-acciones-publicas.ts`.
   if (String(formData.get("website") ?? "").trim() !== "") {
-    return { ok: true, message: "gracias" };
+    return { ok: true, message: "recibida" };
   }
 
   const parsed = SignupSchema.safeParse({

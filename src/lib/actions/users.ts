@@ -1,7 +1,15 @@
 "use server";
 
 import { z } from "zod";
-import { MODULOS, NIVELES, type Ajustes, type Modulo, type Nivel } from "@/lib/permisos";
+import {
+  MODULOS,
+  NIVELES,
+  alcanza,
+  nivelEfectivo,
+  type Ajustes,
+  type Modulo,
+  type Nivel,
+} from "@/lib/permisos";
 import { revalidateTenant } from "@/lib/revalidate";
 import { and, eq, ne } from "drizzle-orm";
 import bcrypt from "bcryptjs";
@@ -86,7 +94,7 @@ const UpdateUserSchema = z.object({
 
 export type UpdateUserState = {
   ok: boolean;
-  error?: "auth" | "invalid" | "self" | "owner" | "server";
+  error?: "auth" | "invalid" | "self" | "owner" | "compartida" | "server";
 };
 
 export async function updateUser(
@@ -121,9 +129,18 @@ export async function updateUser(
   if (target.role === "owner") return { ok: false, error: "owner" };
 
   // Evita que un admin se quite a sí mismo el acceso.
+  //
+  // Mirar el rol y la baja no alcanzaba: el ajuste por persona REEMPLAZA al rol
+  // en su módulo (`nivelEfectivo`), así que un administrador podía guardarse
+  // `configuracion: ninguno` —rol admin, activo— y quedarse fuera de Usuarios,
+  // que es justo la pantalla donde eso se deshace. Lo encontró
+  // `scripts/_probe-acciones-usuarios.ts`.
+  const ajustes = aAjustes(parsed.data.permisos);
   if (
     parsed.data.id === session.user.id &&
-    (!isAdminRole(parsed.data.role) || !parsed.data.active)
+    (!isAdminRole(parsed.data.role) ||
+      !parsed.data.active ||
+      !alcanza(nivelEfectivo(parsed.data.role, ajustes, "configuracion"), "administrar"))
   ) {
     return { ok: false, error: "self" };
   }
@@ -151,7 +168,7 @@ export async function updateUser(
       .set({
         role: parsed.data.role,
         active: parsed.data.active,
-        permissions: aAjustes(parsed.data.permisos),
+        permissions: ajustes,
       })
       .where(
         and(
@@ -200,7 +217,13 @@ export async function resetUserPassword(
 
   const id = String(formData.get("id") ?? "");
   const password = String(formData.get("password") ?? "");
-  if (!id || password.length < 8) return { ok: false, error: "invalid" };
+  // El uuid se valida aquí y no se deja a Postgres: un id que no lo es llegaba
+  // tal cual a `getTenantMember` y la acción reventaba con «invalid input
+  // syntax for type uuid» —un 500— en vez de responder «inválido». Lo encontró
+  // `scripts/_probe-acciones-usuarios.ts`.
+  if (!z.string().uuid().safeParse(id).success || password.length < 8) {
+    return { ok: false, error: "invalid" };
+  }
 
   // La comprobación de pertenencia pesa más aquí que en ninguna otra acción:
   // la contraseña abre la sesión en TODAS las empresas de esa persona. Sin
@@ -209,6 +232,30 @@ export async function resetUserPassword(
   const target = await getTenantMember(id);
   if (!target) return { ok: false, error: "invalid" };
   if (target.role === "owner") return { ok: false, error: "owner" };
+
+  /*
+    Y SOLO SI ES DE ESTA EMPRESA Y DE NINGUNA OTRA.
+
+    Comprobar que pertenece aquí no bastaba, por la misma razón de arriba: la
+    contraseña es de la persona, no de la membresía. Alguien que es agente aquí
+    y dueño en otra empresa quedaba al alcance de este formulario, y el
+    administrador de aquí entraba allá como dueño. Lo encontró
+    `_probe-acciones-usuarios`. Quien trabaja en varias empresas no es de
+    ninguna en particular: su contraseña la restablece soporte de la plataforma.
+  */
+  const { tenantId } = await requireTenant();
+  const [enOtra] = await getDb()
+    .select({ id: memberships.id })
+    .from(memberships)
+    .where(
+      and(
+        eq(memberships.userId, id),
+        ne(memberships.tenantId, tenantId),
+        eq(memberships.active, true),
+      ),
+    )
+    .limit(1);
+  if (enOtra) return { ok: false, error: "compartida" };
 
   try {
     const control = getDb();

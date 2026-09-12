@@ -336,7 +336,9 @@ export const tenants = pgTable(
      * que poder demostrar en una auditoría. */
     mlContribution: boolean("ml_contribution").notNull().default(false),
     mlConsentAt: timestamp("ml_consent_at", { withTimezone: true }),
-    mlConsentBy: uuid("ml_consent_by").references(() => users.id, {
+    // Un OPERADOR: solo un superadministrador de Astraion otorga el aporte.
+    // Apuntaba a `users` y la 0023 no lo movió; ver la 0034.
+    mlConsentBy: uuid("ml_consent_by").references(() => platformUsers.id, {
       onDelete: "set null",
     }),
 

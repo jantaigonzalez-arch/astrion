@@ -105,6 +105,8 @@ services:
       AUTH_URL: https://${AUTH_DOMAIN:?definí AUTH_DOMAIN en deploy/.env}
       NEXT_PUBLIC_SITE_URL: https://${APP_DOMAIN:?definí APP_DOMAIN en deploy/.env}
       NEXT_PUBLIC_WHATSAPP: ${NEXT_PUBLIC_WHATSAPP:-}
+      # A qué empresa le llegan los contactos de /contacto. Ver `actions/leads.ts`.
+      LEADS_TENANT: ${LEADS_TENANT:-evoelution}
       # Activa el modo subdominio. Sin esta variable la aplicación resuelve el
       # inquilino por el primer segmento del path, exactamente como antes: la
       # migración se puede hacer y deshacer sin desplegar código nuevo.

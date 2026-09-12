@@ -228,6 +228,15 @@ async function main() {
     );
 
     /* ── 3 · CON PERMISO, PERO CON BASURA ──────────────────────────────────── */
+    /*
+      «Mil pesos» pasó en verde meses por una razón que no era la validación.
+
+      El stub de inquilino llevaba un `tenantId` de ceros, así que el contrato se
+      rechazaba en `validateParties` —el cliente no era miembro de ninguna
+      empresa— y nunca llegaba a mirar el importe. Cuando el stub aprendió el id
+      de verdad, el contrato SE GUARDÓ: la limpieza del importe (`[^0-9.]`)
+      dejaba «mil pesos» en vacío, y vacío es «sin monto». Ver `lib/importe.ts`.
+    */
     console.log("\nCON PERMISO Y CAPTURA INVÁLIDA");
     process.env.PROBE_PUEDE = "true";
 

@@ -37,6 +37,20 @@ async function soloAdmin(): Promise<string | null> {
   return null;
 }
 
+/**
+ * El id del modelo, o `null` si no tiene forma de UUID.
+ *
+ * Llega de un campo oculto, o sea de fuera. Se pasaba tal cual a un
+ * `where id = …` y Postgres contestaba «invalid input syntax for type uuid»: la
+ * acción LANZABA y la pantalla recibía un error de servidor, justo lo que la
+ * cabecera promete no hacer. Lo encontró `_probe-acciones-inteligencia`.
+ */
+function idDeModelo(form: FormData): string | null {
+  const id = String(form.get("modelId") ?? "");
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? id : null;
+}
+const SIN_MODELO = "Ese modelo no existe.";
+
 export async function createQuestionAction(
   _prev: IntelState,
   form: FormData,
@@ -154,7 +168,8 @@ export async function promoteModelAction(
   const no = await soloAdmin();
   if (no) return { ok: false, error: no };
 
-  const modelId = String(form.get("modelId") ?? "");
+  const modelId = idDeModelo(form);
+  if (!modelId) return { ok: false, error: SIN_MODELO };
   const r = await promoteModel(modelId);
   if (!r.ok) return { ok: false, error: r.reason };
 
@@ -181,7 +196,10 @@ export async function retireModelAction(
   const no = await soloAdmin();
   if (no) return { ok: false, error: no };
 
-  await retireModel(String(form.get("modelId") ?? ""));
+  const modelId = idDeModelo(form);
+  if (!modelId) return { ok: false, error: SIN_MODELO };
+  const r = await retireModel(modelId);
+  if (!r.ok) return { ok: false, error: r.reason };
   await revalidateDashboards();
   return { ok: true, message: "Retirado. Deja de emitir pronósticos." };
 }
@@ -200,7 +218,9 @@ export async function deleteModelAction(
   const no = await soloAdmin();
   if (no) return { ok: false, error: no };
 
-  const r = await deleteModel(String(form.get("modelId") ?? ""));
+  const modelId = idDeModelo(form);
+  if (!modelId) return { ok: false, error: SIN_MODELO };
+  const r = await deleteModel(modelId);
   if (!r.ok) return { ok: false, error: r.reason };
 
   await revalidateDashboards();

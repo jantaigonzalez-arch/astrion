@@ -508,22 +508,40 @@ export async function reorderDashboard(
     )
     .map(({ b }) => b);
 
-  return db.transaction(async (tx) => {
-    for (const [i, b] of porLectura.entries()) {
-      const r = await setPlacement({
-        analysis: b.analysis,
-        screen,
-        active: b.active,
-        position: i,
-        caja: b.caja,
-        viz: b.viz,
-        conexion: tx,
-      });
-      if (!r.ok) return r;
-    }
-    await tocar(slug, tx);
-    return { ok: true };
-  });
+  /*
+    Un bloque que falla DESHACE los anteriores, y para eso hay que lanzar.
+
+    Devolvía `r` desde dentro de la transacción, y devolver no es fallar: Drizzle
+    confirmaba lo ya escrito. Si el segundo bloque traía un análisis que no
+    existe, la acción contestaba error y el primero quedaba guardado — el
+    tablero a medias que esta transacción existe para evitar. Lo encontró
+    `_probe-acciones-tableros`.
+  */
+  let fallo: Awaited<ReturnType<typeof setPlacement>> | null = null;
+  try {
+    return await db.transaction(async (tx) => {
+      for (const [i, b] of porLectura.entries()) {
+        const r = await setPlacement({
+          analysis: b.analysis,
+          screen,
+          active: b.active,
+          position: i,
+          caja: b.caja,
+          viz: b.viz,
+          conexion: tx,
+        });
+        if (!r.ok) {
+          fallo = r;
+          tx.rollback();
+        }
+      }
+      await tocar(slug, tx);
+      return { ok: true };
+    });
+  } catch (e) {
+    if (fallo) return fallo;
+    throw e;
+  }
 }
 
 /** Publica el tablero: lo hace visible para el resto del equipo. */

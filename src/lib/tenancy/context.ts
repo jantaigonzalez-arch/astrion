@@ -17,6 +17,7 @@ import { estadoDe, type EstadoSuscripcion } from "@/lib/suscripcion";
 import {
   ajustesGuardados,
   alcanza,
+  nivelDeVisita,
   nivelEfectivo,
   type Ajustes,
   type Modulo,
@@ -457,7 +458,9 @@ export async function currentRole(): Promise<MembershipRole | null> {
 export async function nivelEn(modulo: Modulo): Promise<Nivel> {
   const ctx = await getTenantContext();
   if (!ctx) return "ninguno";
-  return nivelEfectivo(ctx.role, ctx.permisos, modulo);
+  const nivel = nivelEfectivo(ctx.role, ctx.permisos, modulo);
+  // Un operador de visita mira; no escribe. Ver `nivelDeVisita`.
+  return ctx.impersonated ? nivelDeVisita(nivel) : nivel;
 }
 
 /**

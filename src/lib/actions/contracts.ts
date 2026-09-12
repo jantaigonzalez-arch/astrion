@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { importeOpcional } from "@/lib/importe";
 import { revalidateTenant } from "@/lib/revalidate";
 import { redirectAfterAction } from "@/lib/nav-server";
 import { and, eq } from "drizzle-orm";
@@ -17,18 +18,8 @@ export type ContractState = {
   number?: string;
 };
 
-// Monto opcional: acepta "12,500.50" o vacío.
-const money = z
-  .string()
-  .optional()
-  .transform((v) => {
-    if (!v) return undefined;
-    const clean = v.replace(/[^0-9.]/g, "");
-    return clean || undefined;
-  })
-  .refine((v) => v === undefined || !Number.isNaN(Number(v)), {
-    message: "monto inválido",
-  });
+// Monto opcional: vacío o un número de cero en adelante. Ver `lib/importe.ts`.
+const money = importeOpcional;
 
 const ContractSchema = z.object({
   number: z.string().min(2).max(60),

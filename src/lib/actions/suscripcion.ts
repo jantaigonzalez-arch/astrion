@@ -1,6 +1,7 @@
 "use server";
 
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { getDb } from "@/lib/db";
 import { tenants, platformEvents } from "@/lib/db/platform";
@@ -43,6 +44,19 @@ async function soloSuper() {
   return session.user.id;
 }
 
+/*
+  LA EMPRESA LLEGA EN UN CAMPO OCULTO, ASÍ QUE SE COMPRUEBA.
+
+  Un `tenantId` que no era uuid reventaba en Postgres («invalid input syntax for
+  type uuid»), y uno que no era de ninguna empresa actualizaba cero filas y
+  reventaba después, en la foránea del evento. Las dos cosas acababan en un
+  error 500 en vez de en un mensaje que la consola pueda enseñar, y la segunda
+  además respondía como si hubiera algo que registrar. Lo encontró
+  `scripts/_probe-acciones-empresa.ts`.
+*/
+const NO_EXISTE = "Esa empresa no existe.";
+const esUuid = (v: string) => z.string().uuid().safeParse(v).success;
+
 async function registrar(
   tenantId: string,
   actorId: string,
@@ -74,15 +88,18 @@ export async function iniciarPrueba(
   const tenantId = String(form.get("tenantId") ?? "");
   const dias = Number(form.get("dias") ?? DIAS_DE_PRUEBA);
   if (!tenantId) return { ok: false, error: "Falta la empresa." };
+  if (!esUuid(tenantId)) return { ok: false, error: NO_EXISTE };
   if (!Number.isInteger(dias) || dias < 1 || dias > 365) {
     return { ok: false, error: "Los días tienen que ser un entero entre 1 y 365." };
   }
 
   const hasta = new Date(Date.now() + dias * 86_400_000);
-  await getDb()
+  const [cambiada] = await getDb()
     .update(tenants)
     .set({ status: "trial", trialEndsAt: hasta, updatedAt: new Date() })
-    .where(eq(tenants.id, tenantId));
+    .where(eq(tenants.id, tenantId))
+    .returning({ id: tenants.id });
+  if (!cambiada) return { ok: false, error: NO_EXISTE };
 
   await registrar(tenantId, actorId, "prueba_iniciada", {
     dias,
@@ -109,11 +126,14 @@ export async function activarSuscripcion(
 
   const tenantId = String(form.get("tenantId") ?? "");
   if (!tenantId) return { ok: false, error: "Falta la empresa." };
+  if (!esUuid(tenantId)) return { ok: false, error: NO_EXISTE };
 
-  await getDb()
+  const [cambiada] = await getDb()
     .update(tenants)
     .set({ status: "active", trialEndsAt: null, updatedAt: new Date() })
-    .where(eq(tenants.id, tenantId));
+    .where(eq(tenants.id, tenantId))
+    .returning({ id: tenants.id });
+  if (!cambiada) return { ok: false, error: NO_EXISTE };
 
   await registrar(tenantId, actorId, "activada", {});
   revalidatePath("/[locale]/platform", "layout");
@@ -138,14 +158,17 @@ export async function suspenderSuscripcion(
   const tenantId = String(form.get("tenantId") ?? "");
   const motivo = String(form.get("motivo") ?? "").trim();
   if (!tenantId) return { ok: false, error: "Falta la empresa." };
+  if (!esUuid(tenantId)) return { ok: false, error: NO_EXISTE };
   if (motivo.length < 3) {
     return { ok: false, error: "Escribe el motivo: es lo que explica el corte después." };
   }
 
-  await getDb()
+  const [cambiada] = await getDb()
     .update(tenants)
     .set({ status: "suspended", updatedAt: new Date() })
-    .where(eq(tenants.id, tenantId));
+    .where(eq(tenants.id, tenantId))
+    .returning({ id: tenants.id });
+  if (!cambiada) return { ok: false, error: NO_EXISTE };
 
   await registrar(tenantId, actorId, "suspendida", { motivo });
   revalidatePath("/[locale]/platform", "layout");

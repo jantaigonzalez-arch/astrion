@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { leerImporte } from "@/lib/importe";
 import { auth } from "@/lib/auth";
 import { tenantDb, puedeEn } from "@/lib/tenancy/context";
 import { revalidateTenant } from "@/lib/revalidate";
@@ -27,10 +28,16 @@ export type PayableState = {
   invoiceId?: string;
 };
 
-/** Importe desde un campo de texto: quita el formato y deja el número. */
+/**
+ * Importe desde un campo de texto: quita el formato y deja el número.
+ *
+ * Vacío es cero, como siempre fue. Pero lo que no es un número ya no: con la
+ * limpieza de antes (`[^0-9.-]`) «mil pesos» quedaba en "" y `Number("")` es 0,
+ * así que pasaba la validación como un importe de cero. Ver `lib/importe.ts`.
+ */
 const importe = z
   .string()
-  .transform((v) => Number(String(v).replace(/[^0-9.-]/g, "")))
+  .transform((v) => leerImporte(String(v)) ?? 0)
   .refine((n) => Number.isFinite(n), { message: "importe inválido" });
 
 const fecha = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "fecha inválida");
@@ -578,7 +585,9 @@ export async function splitInvoiceAction(
   if (modo === "auto") {
     const n = Number(formData.get("count") ?? 0);
     const primero = String(formData.get("firstDueAt") ?? "");
-    const total = Number(String(formData.get("total") ?? "0").replace(/[^0-9.]/g, ""));
+    // Sin la limpieza de `[^0-9.]`, que convertía «-1000» en 1000.
+    const total = leerImporte(formData.get("total")) ?? 0;
+    if (!(total > 0)) return { ok: false, error: "El total a dividir tiene que ser mayor que cero." };
     if (!Number.isInteger(n) || n < 2 || n > 60) {
       return { ok: false, error: "El número de parcialidades va de 2 a 60." };
     }
@@ -591,9 +600,20 @@ export async function splitInvoiceAction(
     const fechas = formData.getAll("part-due").map(String);
     parts = [];
     for (let i = 0; i < importes.length; i++) {
-      const amount = Number(importes[i].replace(/[^0-9.]/g, ""));
+      const amount = leerImporte(importes[i]);
       const dueAt = fechas[i]?.trim();
-      if (!amount || !dueAt) continue;
+      // Un renglón vacío se salta; uno con basura o negativo, no: saltarlo
+      // repartiría la factura en menos parcialidades de las que se capturaron.
+      //
+      // La comprobación va ANTES del salto. Estaba detrás, y el salto también
+      // miraba la fecha (`!dueAt`): un «-100» o un «mil» en un renglón SIN fecha
+      // se saltaba en silencio, y si los demás renglones sumaban el total la
+      // factura se dividía sin ese renglón y respondía «dividida». Lo encontró
+      // `scripts/_probe-acciones-pagar.ts`.
+      if (amount !== null && !(amount >= 0)) {
+        return { ok: false, error: `La parcialidad ${i + 1} no tiene un importe válido.` };
+      }
+      if (amount === null || amount === 0 || !dueAt) continue;
       parts.push({ amount, dueAt });
     }
   }

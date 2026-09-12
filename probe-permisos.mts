@@ -40,7 +40,7 @@
  *   npx tsx --tsconfig tsconfig.check.json probe-permisos.mts
  */
 const { navFor } = await import("./src/lib/portal/menu.ts");
-const { nivelEfectivo, exigenciaDe, puedeEntrar, alcanza, ajustesGuardados } =
+const { nivelEfectivo, exigenciaDe, puedeEntrar, alcanza, ajustesGuardados, nivelDeVisita } =
   await import("./src/lib/permisos.ts");
 
 const ok = (l: string, c: boolean, e = "") => console.log(`${c ? "✓" : "✗"} ${l}${e ? ` — ${e}` : ""}`);
@@ -111,6 +111,23 @@ check("y le aparece en el menú",
     .some((g) => g.items.some((i) => i.href === "/admin/compras/cuentas-por-pagar")));
 check("lo que NO se ajusta sigue al rol",
   nivelEfectivo("agent", { pagar: "administrar" }, "servicio") === "editar");
+
+/*
+  LA VISITA DE UN OPERADOR MIRA Y NO ESCRIBE.
+
+  Entra con rol `admin`, así que sin techo `puedeEn` le daba «administrar» en
+  todo, y las acciones que escriben con `getDb()` —usuarios, marca, correo— no
+  pasan por el solo lectura de `tenantDb()`. Lo encontró `_probe-acciones-plataforma`.
+*/
+console.log("\n── la visita de un operador tiene «ver» como techo ──");
+check("administrar se queda en ver", nivelDeVisita("administrar") === "ver");
+check("editar se queda en ver", nivelDeVisita("editar") === "ver");
+check("ver sigue siendo ver", nivelDeVisita("ver") === "ver");
+check("ninguno no SUBE a ver", nivelDeVisita("ninguno") === "ninguno");
+check("con el rol del operador, nada llega a editar",
+  (["servicio", "ventas", "configuracion", "compras", "pagar"] as const).every(
+    (m) => !alcanza(nivelDeVisita(nivelEfectivo("admin", {}, m)), "editar"),
+  ));
 
 /*
   EL CONJUNTO DE DIRECCIONES, APARTE DEL MENÚ.

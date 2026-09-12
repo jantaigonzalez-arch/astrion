@@ -142,7 +142,23 @@ describe("el registro cubre todos los probes", () => {
     });
     expect(destinos.length, "no se encontró ningún `paths` en los tsconfig").toBeGreaterThan(0);
 
-    const fuera = destinos.filter((d) => {
+    /*
+      Y lo que los probes del CI importan POR RUTA RELATIVA.
+
+      Las pruebas de acciones importan `./_acciones-kit`, que no pasa por ningún
+      `paths`: sin esto, olvidarlo en el commit daba verde aquí y un
+      `MODULE_NOT_FOUND` en Actions — la misma forma de fallo de arriba, por otra
+      puerta. Se resuelve relativo al probe y se prueba con y sin `.ts`.
+    */
+    for (const probe of [...UNITARIAS, ...INTEGRACION, ...CON_STUBS]) {
+      const fuente = readFileSync(path.join(RAIZ, probe), "utf8");
+      for (const [, rel] of fuente.matchAll(/from\s+["'](\.{1,2}\/[^"']+)["']/g)) {
+        const base = path.relative(RAIZ, path.resolve(RAIZ, path.dirname(probe), rel));
+        destinos.push("./" + (/\.[mc]?ts$/.test(base) ? base : `${base}.ts`));
+      }
+    }
+
+    const fuera = [...new Set(destinos)].filter((d) => {
       const rel = d.replace(/^\.\//, "");
       try {
         execFileSync("git", ["ls-files", "--error-unmatch", rel], {
@@ -157,7 +173,7 @@ describe("el registro cubre todos los probes", () => {
     expect(
       fuera,
       fuera.length
-        ? `\nLos tsconfig de pruebas apuntan a archivos que no están en git:\n  ${fuera.join("\n  ")}\n\n` +
+        ? `\nLos tsconfig de pruebas o los probes del CI apuntan a archivos que no están en git:\n  ${fuera.join("\n  ")}\n\n` +
             "Sin ellos los probes no arrancan en un clon limpio. Agregá la excepción en .gitignore.\n"
         : undefined,
     ).toEqual([]);

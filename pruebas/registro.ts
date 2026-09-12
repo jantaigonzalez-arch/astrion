@@ -1,7 +1,7 @@
 /**
  * QUÉ PRUEBA CORRE DÓNDE, Y POR QUÉ.
  *
- * Las cinco listas de este archivo reparten los 59 probes del repositorio. La
+ * Las cinco listas de este archivo reparten los 83 probes del repositorio. La
  * meta-prueba de `cobertura.test.ts` exige que TODOS estén exactamente en una:
  * un probe nuevo que nadie clasifique rompe la suite en vez de quedarse fuera
  * en silencio, que es como se llega a tener catorce pruebas muertas sin que
@@ -158,6 +158,40 @@ export const CON_STUBS = [
   "scripts/_probe-profit.ts",
   "scripts/_probe-rent.ts",
   "scripts/_probe-siembra.ts",
+
+  /*
+    LAS ACCIONES DE SERVIDOR, UNA POR UNA (2026-09-12).
+
+    `_probe-acciones` fue la primera y cubría tres acciones de 137. Estas cubren
+    el resto, archivo por archivo, con el andamio de `scripts/_acciones-kit.ts`:
+    guardia, NIVEL exacto —se le da a cada acción un escalón menos del que pide
+    y debe decir que no—, validación, lo que escribe y en qué empresa.
+
+    El kit se niega a correr contra una base que no sea de pruebas, porque estas
+    escriben, borran y aprovisionan empresas. La primera vuelta encontró más de
+    treinta bugs; el de más alcance, que siete acciones limpiaban los importes
+    con `[^0-9.]` y se comían el signo (ver `lib/importe.ts`).
+  */
+  "scripts/_probe-acciones-compras.ts",
+  "scripts/_probe-acciones-contratos.ts",
+  "scripts/_probe-acciones-crm-etapas.ts",
+  "scripts/_probe-acciones-crm-extras.ts",
+  "scripts/_probe-acciones-crm-fichas.ts",
+  "scripts/_probe-acciones-crm-negocios.ts",
+  "scripts/_probe-acciones-crm-seguimiento.ts",
+  "scripts/_probe-acciones-empresa.ts",
+  "scripts/_probe-acciones-equipos.ts",
+  "scripts/_probe-acciones-inteligencia.ts",
+  "scripts/_probe-acciones-pagar.ts",
+  "scripts/_probe-acciones-plataforma.ts",
+  "scripts/_probe-acciones-publicas.ts",
+  "scripts/_probe-acciones-requisiciones.ts",
+  "scripts/_probe-acciones-settings.ts",
+  "scripts/_probe-acciones-tableros.ts",
+  "scripts/_probe-acciones-tickets.ts",
+  "scripts/_probe-acciones-usuarios.ts",
+  "scripts/_probe-acciones-viaticos-config.ts",
+  "scripts/_probe-acciones-viaticos.ts",
 ] as const;
 
 /**

@@ -3,12 +3,17 @@
 import { revalidateTenant } from "@/lib/revalidate";
 import { tenantDb, puedeEn } from "@/lib/tenancy/context";
 import { settings } from "@/lib/db/schema";
+import { limpiarImporte as limpiar } from "@/lib/importe";
 
 export type SettingsState = { ok: boolean; error?: string };
 
+/*
+  Limpiaba con `[^0-9.]`, que también se lleva el signo: «-50» llegaba como 50 y
+  la comprobación de negativos de abajo no se cumplía nunca. Ver `lib/importe.ts`.
+*/
 const money = (v: FormDataEntryValue | null) => {
   if (typeof v !== "string") return null;
-  const clean = v.replace(/[^0-9.]/g, "");
+  const clean = limpiar(v);
   if (!clean) return null;
   const n = Number(clean);
   return Number.isNaN(n) || n < 0 ? null : n.toFixed(2);
@@ -34,12 +39,14 @@ export async function updateFxRate(
 ): Promise<SettingsState> {
   if (!(await puedeEn("configuracion", "administrar"))) return { ok: false, error: "auth" };
 
-  const raw = String(formData.get("usdRate") ?? "").replace(/[^0-9.]/g, "");
+  const raw = limpiar(String(formData.get("usdRate") ?? ""));
   const n = Number(raw);
   // Vacío BORRA el tipo de cambio, y es deliberado: sin tipo de cambio la
   // empresa declara que no convierte, y los informes lo dicen en vez de
   // inventarse una paridad. Un cero o un negativo, en cambio, son errores de
-  // captura — convertirían toda la cartera en dólares a cero pesos.
+  // captura — convertirían toda la cartera en dólares a cero pesos. Y texto
+  // que no es un número también: con la limpieza de antes, «abc» quedaba en
+  // vacío y BORRABA el tipo de cambio de la empresa por un error de dedo.
   const usdRate = raw === "" ? null : Number.isFinite(n) && n > 0 ? n.toFixed(4) : undefined;
   if (usdRate === undefined) {
     return { ok: false, error: "invalid" };

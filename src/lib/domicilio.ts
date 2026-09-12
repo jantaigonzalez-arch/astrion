@@ -92,14 +92,21 @@ export function cpValido(v: unknown): v is string {
  * padrón. Rellenar con ceros a la izquierda no es una licencia: un código postal
  * mexicano tiene exactamente cinco dígitos, así que «4650» solo puede ser 04650.
  *
- * Devuelve `null` en vez de adivinar cuando queda algo que no son de uno a cinco
+ * Devuelve `null` en vez de adivinar cuando queda algo que no son cuatro o cinco
  * dígitos —«S/N», un rango, una fecha—, porque un CP inventado se descubre el
  * día del timbrado y para entonces ya se facturó mal.
+ *
+ * Cuatro como mínimo, y no uno: el cero que se come la hoja de cálculo es UNO.
+ * Ningún código postal mexicano empieza por «00» —el primer par es el estado,
+ * de 01 a 99—, así que rellenar «465» daba «00465», un CP que no existe, y el
+ * formulario de organizaciones lo aceptaba aunque su comentario dijera que no.
+ * Lo encontró `_probe-acciones-crm-fichas`. De paso, al desarmar una dirección
+ * sin CP, el número de la calle («123») ya no se confunde con uno.
  */
 export function normalizarCp(bruto: string | null | undefined): string | null {
   if (!bruto) return null;
   const soloDigitos = bruto.replace(/[\s,._-]/g, "");
-  if (!/^\d{1,5}$/.test(soloDigitos)) return null;
+  if (!/^\d{4,5}$/.test(soloDigitos)) return null;
   return soloDigitos.padStart(5, "0");
 }
 

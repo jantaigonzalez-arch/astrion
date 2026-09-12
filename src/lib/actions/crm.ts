@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { importeOpcional } from "@/lib/importe";
 import {
   SLA_HORAS_MAX,
   SLA_HORAS_MIN,
@@ -28,18 +29,8 @@ export type CrmState = {
   reference?: string;
 };
 
-/** Monto opcional: acepta "185,000.50" o vacío. */
-const money = z
-  .string()
-  .optional()
-  .transform((v) => {
-    if (!v) return undefined;
-    const clean = v.replace(/[^0-9.]/g, "");
-    return clean || undefined;
-  })
-  .refine((v) => v === undefined || !Number.isNaN(Number(v)), {
-    message: "monto inválido",
-  });
+/** Monto opcional: vacío o un número de cero en adelante. Ver `lib/importe.ts`. */
+const money = importeOpcional;
 
 const optUuid = z
   .string()
@@ -100,6 +91,30 @@ async function resolveOwner(
   if (!isSalesRole(member.role)) return undefined;
 
   return member.id;
+}
+
+/**
+ * ¿Se puede vincular esta cuenta de portal a una organización?
+ *
+ * Tiene que ser un CLIENTE de esta empresa, con la membresía y la cuenta
+ * vivas: es el mismo hueco que `resolveOwner` cierra para el responsable. Se
+ * aceptaba cualquier uuid de `users` —el padrón de toda la plataforma—, así
+ * que una ficha podía quedar vinculada al usuario de otra empresa. Lo encontró
+ * `_probe-acciones-crm-fichas`.
+ *
+ * Solo se exige cuando el vínculo CAMBIA. Una ficha que ya estaba unida a una
+ * cuenta que después se dio de baja tiene que poder seguir editándose sin que
+ * cada guardado la obligue a soltar su historia.
+ */
+async function cuentaDePortalValida(
+  clientId: string | undefined,
+  actual: string | null = null,
+): Promise<boolean> {
+  if (!clientId || clientId === actual) return true;
+  const member = await getTenantMember(clientId);
+  return Boolean(
+    member?.memberActive && member.accountActive && member.role === "client",
+  );
 }
 
 // Una sola llamada cubre el subárbol entero de la empresa; el parámetro que
@@ -574,7 +589,7 @@ export async function setDealStatus(formData: FormData) {
   if (!dealId || !["open", "won", "lost"].includes(status)) return;
 
   const db = await tenantDb();
-  await db
+  const [row] = await db
     .update(crmDeals)
     .set({
       status: status as "open" | "won" | "lost",
@@ -582,7 +597,15 @@ export async function setDealStatus(formData: FormData) {
       closedAt: status === "open" ? null : new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(crmDeals.id, dealId));
+    .where(eq(crmDeals.id, dealId))
+    .returning({ id: crmDeals.id });
+  /*
+    El negocio ya no existe —lo borró un administrador mientras la ficha seguía
+    abierta en otra pestaña—. Antes el `update` no tocaba nada y el `insert` del
+    evento reventaba contra la llave foránea: un 500 a quien solo quería
+    marcarlo como ganado. Lo encontró `_probe-acciones-crm-negocios`.
+  */
+  if (!row) return;
 
   await db.insert(crmDealEvents).values({
     dealId,
@@ -727,6 +750,9 @@ export async function createOrganization(
   // ficha sin dueño sin decírselo a nadie.
   const owner = await resolveOwner(parsed.data.ownerId, session);
   if (!owner) return { ok: false, error: "invalid" };
+  if (!(await cuentaDePortalValida(parsed.data.clientId))) {
+    return { ok: false, error: "invalid" };
+  }
 
   try {
     const db = await tenantDb();
@@ -792,7 +818,15 @@ export async function updateOrganization(
 
   try {
     const db = await tenantDb();
-    await db
+    const [antes] = await db
+      .select({ clientId: crmOrganizations.clientId })
+      .from(crmOrganizations)
+      .where(eq(crmOrganizations.id, parsed.data.id))
+      .limit(1);
+    if (!(await cuentaDePortalValida(parsed.data.clientId, antes?.clientId ?? null))) {
+      return { ok: false, error: "invalid" };
+    }
+    const [row] = await db
       .update(crmOrganizations)
       .set({
         name: parsed.data.name.trim(),
@@ -820,7 +854,17 @@ export async function updateOrganization(
         clientId: parsed.data.clientId ?? null,
         notes: parsed.data.notes ?? null,
       })
-      .where(eq(crmOrganizations.id, parsed.data.id));
+      .where(eq(crmOrganizations.id, parsed.data.id))
+      .returning({ id: crmOrganizations.id });
+
+    /*
+      La organización ya no existe —la borró alguien con el formulario abierto—.
+      Antes se respondía «guardado» sin haber guardado nada, y si el envío traía
+      cuenta de portal, `enforceSingleClientLink` la SOLTABA de su ficha de
+      verdad para no vincularla a ninguna: se perdía el vínculo, y con él la
+      vista de sus equipos y tickets. Lo encontró `_probe-acciones-crm-fichas`.
+    */
+    if (!row) return { ok: false, error: "invalid" };
 
     if (parsed.data.clientId) {
       await enforceSingleClientLink(parsed.data.clientId, parsed.data.id);
@@ -983,7 +1027,7 @@ export async function updateContact(
 
   try {
     const db = await tenantDb();
-    await db
+    const [row] = await db
       .update(crmContacts)
       .set({
         name: parsed.data.name.trim(),
@@ -998,7 +1042,12 @@ export async function updateContact(
         ownerId: owner,
         notes: parsed.data.notes ?? null,
       })
-      .where(eq(crmContacts.id, parsed.data.id));
+      .where(eq(crmContacts.id, parsed.data.id))
+      .returning({ id: crmContacts.id });
+    // Un contacto que ya no existe respondía «guardado» sin guardar nada. Lo
+    // encontró `_probe-acciones-crm-fichas`; es la misma comprobación que
+    // `updateDeal` ya hacía.
+    if (!row) return { ok: false, error: "invalid" };
 
     revalidateTenant();
     return { ok: true, id: parsed.data.id };
@@ -1044,8 +1093,22 @@ export async function createActivity(formData: FormData) {
   const contactId = (formData.get("contactId") as string) || null;
   const organizationId = (formData.get("organizationId") as string) || null;
   const notes = (formData.get("notes") as string) || null;
-  const ownerId = (formData.get("ownerId") as string) || session.user.id;
   if (!subject) return;
+
+  /*
+    El responsable pasa por `resolveOwner`, como en negocios, organizaciones y
+    contactos. Aquí se tomaba tal cual del formulario: con el uuid válido de
+    alguien de OTRA empresa —`owner_id` apunta al padrón de toda la plataforma—
+    la actividad quedaba a su nombre, y con el de un cliente, en la agenda de
+    alguien que no vende. El formulario de hoy no manda `ownerId` (vacío = yo),
+    así que para quien usa la pantalla no cambia nada. El uuid se comprueba
+    antes porque `getTenantMember` reventaría con uno mal formado. Lo encontró
+    `_probe-acciones-crm-seguimiento`.
+  */
+  const ownerCandidate = (formData.get("ownerId") as string) || undefined;
+  if (ownerCandidate && !z.string().uuid().safeParse(ownerCandidate).success) return;
+  const ownerId = await resolveOwner(ownerCandidate, session);
+  if (!ownerId) return;
 
   const db = await tenantDb();
   await db.insert(crmActivities).values({
@@ -1088,11 +1151,26 @@ export async function deleteActivity(formData: FormData) {
   if (!session) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
+  /*
+    Lo propio con «editar»; lo de otro, solo con «administrar».
+
+    Bastaba «editar» para borrar lo que escribió cualquier compañero, cuando en
+    `permisos.ts` borrar es de «administrar» y así lo piden los demás borrados
+    de este archivo. Pero una nota o una actividad son el apunte de una persona,
+    y obligarla a pedirle a un administrador que le borre su propio error sería
+    peor que el hueco. Lo encontró `_probe-acciones-crm-seguimiento`.
+  */
+  const deTodos = await puedeEn("ventas", "administrar");
   const db = await tenantDb();
   await db.transaction(async (tx) => {
     const [deleted] = await tx
       .delete(crmActivities)
-      .where(eq(crmActivities.id, id))
+      .where(
+        and(
+          eq(crmActivities.id, id),
+          deTodos ? undefined : eq(crmActivities.createdById, session.user.id),
+        ),
+      )
       .returning();
     if (!deleted) return null;
     await recordDeletion(tx, {
@@ -1137,11 +1215,26 @@ export async function deleteNote(formData: FormData) {
   if (!session) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;
+  /*
+    Lo propio con «editar»; lo de otro, solo con «administrar».
+
+    Bastaba «editar» para borrar lo que escribió cualquier compañero, cuando en
+    `permisos.ts` borrar es de «administrar» y así lo piden los demás borrados
+    de este archivo. Pero una nota o una actividad son el apunte de una persona,
+    y obligarla a pedirle a un administrador que le borre su propio error sería
+    peor que el hueco. Lo encontró `_probe-acciones-crm-seguimiento`.
+  */
+  const deTodos = await puedeEn("ventas", "administrar");
   const db = await tenantDb();
   await db.transaction(async (tx) => {
     const [deleted] = await tx
       .delete(crmNotes)
-      .where(eq(crmNotes.id, id))
+      .where(
+        and(
+          eq(crmNotes.id, id),
+          deTodos ? undefined : eq(crmNotes.authorId, session.user.id),
+        ),
+      )
       .returning();
     if (!deleted) return null;
     await recordDeletion(tx, {

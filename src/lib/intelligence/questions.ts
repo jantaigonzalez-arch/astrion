@@ -377,12 +377,26 @@ export async function promoteModel(
   return { ok: true };
 }
 
-export async function retireModel(modelId: string): Promise<{ ok: boolean }> {
+/**
+ * Apaga el modelo que está sirviendo. SOLO ése.
+ *
+ * Retiraba cualquier modelo, también uno rechazado, y eso abría un rodeo a la
+ * compuerta de la regla 1: `promoteModel` solo le cierra el paso a `rejected`,
+ * así que retirar un rechazado y luego promoverlo lo ponía a servir. Lo
+ * encontró `_probe-acciones-inteligencia`.
+ */
+export async function retireModel(
+  modelId: string,
+): Promise<{ ok: boolean; reason?: string }> {
   const db = await tenantDb();
-  await db
+  const retirados = await db
     .update(mlModels)
     .set({ status: "retired", retiredAt: new Date() })
-    .where(eq(mlModels.id, modelId));
+    .where(and(eq(mlModels.id, modelId), eq(mlModels.status, "production")))
+    .returning({ id: mlModels.id });
+  if (!retirados.length) {
+    return { ok: false, reason: "Solo se retira el modelo que está en producción." };
+  }
   return { ok: true };
 }
 

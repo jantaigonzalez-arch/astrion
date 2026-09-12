@@ -307,7 +307,8 @@ function SignupCard({ s }: { s: SignupRow }) {
  * claro en ningún lado, así que si el operador cierra sin copiarlas el camino
  * es restablecer la contraseña, no recuperarla.
  */
-function ApprovedCard({ state }: { state: ReviewState }) {
+/** Lo que queda de un alta hecha: el mensaje y, si la cuenta es nueva, su acceso. */
+export function ApprovedCard({ state }: { state: ReviewState }) {
   const c = state.credentials!;
   return (
     <div className="rounded-lg border border-success/40 bg-success/5 p-4">

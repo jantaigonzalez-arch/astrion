@@ -1,5 +1,6 @@
 "use server";
 
+import { leerImporte } from "@/lib/importe";
 import { revalidateTenant } from "@/lib/revalidate";
 import { and, eq } from "drizzle-orm";
 import { tenantDb, puedeEn } from "@/lib/tenancy/context";
@@ -65,15 +66,21 @@ export async function addDealItem(formData: FormData) {
 
   const dealId = String(formData.get("dealId") ?? "");
   const name = String(formData.get("name") ?? "").trim();
-  const quantity = String(formData.get("quantity") ?? "1");
-  const unitPriceMxn = String(formData.get("unitPriceMxn") ?? "0").replace(
-    /[^0-9.]/g,
-    "",
-  );
-  const discountPct = String(formData.get("discountPct") ?? "0").replace(
-    /[^0-9.]/g,
-    "",
-  );
+  // Vacío vale cero; lo que no sea un número de cero en adelante no entra. Con
+  // la limpieza de antes (`[^0-9.]`) un precio de «-500» se guardaba como 500 y
+  // sumaba al valor del negocio. Ver `lib/importe.ts`.
+  const precio = leerImporte(formData.get("unitPriceMxn")) ?? 0;
+  const descuento = leerImporte(formData.get("discountPct")) ?? 0;
+  // La cantidad se quedó fuera de ese arreglo y entraba tal cual: «-3» por 100
+  // restaba 300 al valor del negocio, y «NaN» se GUARDABA —el `numeric` de
+  // Postgres acepta NaN—, con lo que cualquier suma de la columna salía NaN.
+  // Vacía vale uno, como antes; lo demás tiene que ser mayor que cero. Lo
+  // encontró `scripts/_probe-acciones-crm-extras.ts`.
+  const cantidad = leerImporte(formData.get("quantity")) ?? 1;
+  if (!(cantidad > 0) || !(precio >= 0) || !(descuento >= 0 && descuento <= 100)) return;
+  const quantity = String(cantidad);
+  const unitPriceMxn = String(precio);
+  const discountPct = String(descuento);
   // El selector envía "product:<id>" o "part:<id>"; texto libre si va vacío.
   const catalogRef = String(formData.get("catalogRef") ?? "");
   if (!dealId || !name) return;
@@ -108,12 +115,21 @@ export async function deleteDealItem(formData: FormData) {
   const db = await tenantDb();
   // Una línea borrada cambia el valor del negocio: es cambio con efecto en
   // dinero, así que el snapshot importa para poder auditar la diferencia.
-  await db.transaction(async (tx) => {
+  //
+  // La línea se busca por id Y negocio, y el valor se recalcula SOLO si se
+  // borró algo. Antes se borraba por `id` a secas y se recalculaba el `dealId`
+  // que llegara: con la línea de un negocio y el id de otro, el primero perdía
+  // la línea y seguía valiendo lo de antes (el importe fantasma de
+  // `recalcDealValue`), y el evento apuntaba al negocio equivocado. Y con un id
+  // que no existía, el recálculo corría igual y dejaba en `null` el valor
+  // capturado a mano de un negocio sin líneas. Lo encontró
+  // `scripts/_probe-acciones-crm-extras.ts`.
+  const borrada = await db.transaction(async (tx) => {
     const [row] = await tx
       .delete(crmDealProducts)
-      .where(eq(crmDealProducts.id, id))
+      .where(and(eq(crmDealProducts.id, id), eq(crmDealProducts.dealId, dealId)))
       .returning();
-    if (!row) return;
+    if (!row) return false;
     await recordDeletion(tx, {
       aggregateType: "deal_product",
       aggregateId: id,
@@ -122,7 +138,9 @@ export async function deleteDealItem(formData: FormData) {
       snapshot: row,
       extra: { dealId },
     });
+    return true;
   });
+  if (!borrada) return;
   await recalcDealValue(dealId);
   revalidateTenant();
 }
@@ -209,7 +227,8 @@ export async function createGoal(formData: FormData) {
   const ownerId = (formData.get("ownerId") as string) || null;
   const pipelineId = (formData.get("pipelineId") as string) || null;
   const metric = String(formData.get("metric") ?? "revenue");
-  const target = String(formData.get("target") ?? "0").replace(/[^0-9.]/g, "");
+  const meta = leerImporte(formData.get("target"));
+  const target = meta !== null && meta > 0 ? String(meta) : "";
   const periodStart = String(formData.get("periodStart") ?? "");
   const periodEnd = String(formData.get("periodEnd") ?? "");
   if (!name || !target || !periodStart || !periodEnd) return;
@@ -266,7 +285,12 @@ export async function createEmailTemplate(formData: FormData) {
 }
 
 export async function deleteEmailTemplate(formData: FormData) {
-  const session = await requireSales();
+  // Administrar, como las otras tres bajas de este archivo. Se conformaba con
+  // «editar» —el nivel de cualquier vendedor—, y la plantilla es de todo el
+  // equipo: un vendedor podía borrar la de otro llamando a la acción, aunque la
+  // única pantalla con el botón exija configuración:administrar. Lo encontró
+  // `scripts/_probe-acciones-crm-extras.ts`.
+  const session = await requireAdmin();
   if (!session) return;
   const id = String(formData.get("id") ?? "");
   if (!id) return;

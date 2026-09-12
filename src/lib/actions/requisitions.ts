@@ -31,6 +31,11 @@ export type RequisitionState = {
 };
 
 const uuid = z.string().uuid();
+/** Un id que puede faltar: ausente o vacío es `null`; si viene, uuid o nada. */
+const idOpcional = z.preprocess(
+  (v) => (typeof v === "string" && v.trim() !== "" ? v.trim() : null),
+  uuid.nullable(),
+);
 
 async function quien() {
   const session = await auth();
@@ -100,8 +105,18 @@ export async function resolveRequisitionLine(
   const lineId = uuid.safeParse(formData.get("lineId"));
   if (!lineId.success) return { ok: false, error: "Renglón inválido." };
 
-  const partId = uuid.safeParse(formData.get("partId"));
-  const supplierId = uuid.safeParse(formData.get("supplierId"));
+  /*
+    Vacío es «sin asignar» —lo que manda el selector cuando se quita la
+    refacción o el proveedor—; cualquier otra cosa tiene que ser un uuid.
+    Antes, lo que no pasaba la validación TAMBIÉN se tomaba por vacío
+    (`partId.success ? partId.data : null`): basura en el campo le borraba la
+    refacción al renglón y respondía «Renglón actualizado». Lo encontró
+    `scripts/_probe-acciones-requisiciones.ts`.
+  */
+  const partId = idOpcional.safeParse(formData.get("partId"));
+  if (!partId.success) return { ok: false, error: "Refacción inválida." };
+  const supplierId = idOpcional.safeParse(formData.get("supplierId"));
+  if (!supplierId.success) return { ok: false, error: "Proveedor inválido." };
   const cantidad = Number(formData.get("quantity"));
 
   try {
@@ -133,11 +148,11 @@ export async function resolveRequisitionLine(
       await tx
         .update(requisitionLines)
         .set({
-          partId: partId.success ? partId.data : null,
-          supplierId: supplierId.success ? supplierId.data : null,
+          partId: partId.data,
+          supplierId: supplierId.data,
           // El motivo de la sugerencia deja de valer en cuanto alguien elige a
           // mano: mantenerlo diría «última compra: X» junto a un proveedor Y.
-          supplierReason: supplierId.success ? "Elegido a mano" : null,
+          supplierReason: supplierId.data ? "Elegido a mano" : null,
           ...(Number.isInteger(cantidad) && cantidad > linea.ordered
             ? { quantity: cantidad }
             : {}),

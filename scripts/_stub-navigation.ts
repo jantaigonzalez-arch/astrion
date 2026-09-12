@@ -23,8 +23,27 @@ const fuera = (que: string) => () => {
   throw new Error(`${que}() no existe fuera de una petición; esto es un probe.`);
 };
 
-export const redirect = fuera("redirect");
-export const permanentRedirect = fuera("permanentRedirect");
+/**
+ * Lo que lanza `redirect()`: el error de siempre, con el destino a la vista.
+ *
+ * Varias acciones terminan redirigiendo —dar de alta un negocio lleva a su
+ * ficha, entrar a una empresa lleva a su portal—, y en Next eso ES lanzar: la
+ * acción escribe y luego tira `NEXT_REDIRECT`. Aquí se sigue lanzando, porque
+ * devolver en silencio dejaría correr el código que va detrás y que en la
+ * aplicación nunca se ejecuta. Pero con `destino` el probe puede distinguir
+ * «terminó y quería llevarte a tal sitio» de «reventó a medias», que antes eran
+ * el mismo mensaje.
+ */
+export class RedireccionDeProbe extends Error {
+  constructor(readonly destino: string) {
+    super(`redirect(${destino}) no existe fuera de una petición; esto es un probe.`);
+  }
+}
+
+export const redirect = (destino: string): never => {
+  throw new RedireccionDeProbe(destino);
+};
+export const permanentRedirect = redirect;
 export const notFound = fuera("notFound");
 export const forbidden = fuera("forbidden");
 export const unauthorized = fuera("unauthorized");

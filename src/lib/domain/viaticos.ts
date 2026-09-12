@@ -1,7 +1,14 @@
 import "server-only";
 import { and, eq, sql } from "drizzle-orm";
 import type { DbOrTx } from "@/lib/db";
-import { crmDeals, viaticoExpenses, viaticoRubros, viaticos } from "@/lib/db/schema";
+import {
+  contractEquipment,
+  crmDeals,
+  tickets,
+  viaticoExpenses,
+  viaticoRubros,
+  viaticos,
+} from "@/lib/db/schema";
 import { listTenantMembers } from "@/lib/data/people";
 import type { MembershipRole } from "@/lib/db/platform";
 import { getSettings } from "@/lib/data/settings";
@@ -836,9 +843,26 @@ async function destinoValido(
   destino: DestinoGasto,
 ): Promise<string | null> {
   if (v.contractId) {
-    return destino.tipo === "ticket"
-      ? null
-      : "Este viático es de un contrato: cada gasto va a un ticket del servicio.";
+    if (destino.tipo !== "ticket") {
+      return "Este viático es de un contrato: cada gasto va a un ticket del servicio.";
+    }
+    /*
+      Y el ticket tiene que ser DE ESE CONTRATO: de uno de los equipos que
+      ampara, que es la misma relación con la que `ticketsDelContrato` llena el
+      desplegable. Se aceptaba cualquier ticket de la empresa, así que un uuid
+      cambiado a mano cargaba el gasto a otro contrato, y al cerrar el viático
+      entraba en la utilidad equivocada. Es la comprobación que los negocios ya
+      tenían abajo. Lo encontró `_probe-acciones-viaticos`.
+    */
+    const [t] = await tx
+      .select({ id: tickets.id })
+      .from(tickets)
+      .innerJoin(contractEquipment, eq(contractEquipment.equipmentId, tickets.equipmentId))
+      .where(
+        and(eq(tickets.id, destino.ticketId), eq(contractEquipment.contractId, v.contractId)),
+      )
+      .limit(1);
+    return t ? null : "Ese ticket no es de un equipo de este contrato.";
   }
 
   if (destino.tipo === "ticket") {

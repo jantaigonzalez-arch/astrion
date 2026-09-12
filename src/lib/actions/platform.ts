@@ -5,6 +5,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { getDb } from "@/lib/db";
 import {
@@ -160,9 +161,9 @@ export async function exitTenant(formData?: FormData): Promise<void> {
 
 /** Alta de empresa: crea su esquema, lo migra y lo deja listo. */
 export async function createTenant(
-  _prev: PlatformState,
+  _prev: ReviewState,
   formData: FormData,
-): Promise<PlatformState> {
+): Promise<ReviewState> {
   const session = await requirePlatform("superadmin");
   if (!session) return { ok: false, error: "Solo un superadministrador da de alta empresas." };
 
@@ -170,12 +171,46 @@ export async function createTenant(
   const name = String(formData.get("name") ?? "").trim();
   if (!slug || !name) return { ok: false, error: "Faltan el identificador o el nombre." };
 
+  /*
+    EL DUEÑO SE PIDE, NO SE SUPONE.
+
+    Pasaba `session.user.id` como dueño: el del operador. Desde la 0023 los
+    operadores viven en `platform_users` y la membresía apunta a `users`, así
+    que el alta desde la consola fallaba SIEMPRE contra la llave foránea —y con
+    el operador antiguo, que conservó su uuid en las dos tablas, funcionaba pero
+    dejaba de dueña a su cuenta de empresa—. Lo encontró
+    `_probe-acciones-plataforma`. Ahora es como aprobar una solicitud: se da el
+    correo de quien va a mandar en la empresa, y se crea o se reutiliza su
+    cuenta.
+  */
+  const dueno = DuenoSchema.safeParse({
+    email: formData.get("ownerEmail"),
+    name: formData.get("ownerName"),
+  });
+  if (!dueno.success) {
+    return { ok: false, error: "Falta el nombre o un correo válido del dueño." };
+  }
+
+  const invalido = await identificadorInvalido(slug);
+  if (invalido) return { ok: false, error: invalido };
+
   try {
-    const r = await provisionTenant({ slug, name, ownerUserId: session.user.id });
+    const alta = await darDeAltaConDueno({
+      slug,
+      name,
+      dueno: { email: dueno.data.email, name: dueno.data.name, company: name },
+    });
+    await getDb().insert(platformEvents).values({
+      tenantId: alta.r.tenantId,
+      eventType: "tenant.created",
+      payload: { empresa: name, slug, esquema: alta.r.schemaName, dueno: alta.email, cuentaNueva: alta.nuevo },
+      actorId: session.user.id,
+    });
     revalidatePath("/platform");
     return {
       ok: true,
-      message: `Empresa "${name}" creada en el esquema ${r.schemaName}, con ${r.applied.length} migración(es) aplicada(s).`,
+      message: `Empresa "${name}" creada en el esquema ${alta.r.schemaName}, con ${alta.r.applied.length} migración(es) aplicada(s).`,
+      credentials: { email: alta.email, password: alta.password, nuevo: alta.nuevo },
     };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Error del servidor." };
@@ -213,6 +248,15 @@ export async function setMlContribution(formData: FormData): Promise<void> {
 
 /* ------------------------- Revisión de solicitudes ------------------------- */
 
+/*
+  El id de la solicitud viaja en un campo oculto. Uno que no era uuid llegaba
+  tal cual a la consulta y la acción reventaba en Postgres («invalid input
+  syntax for type uuid») con un 500, en vez de responder lo mismo que para una
+  solicitud que no existe —que es lo que es—. Lo encontró
+  `scripts/_probe-acciones-plataforma.ts`.
+*/
+const esUuid = (v: string) => z.string().uuid().safeParse(v).success;
+
 export type ReviewState = {
   ok: boolean;
   error?: string;
@@ -240,6 +284,104 @@ function tempPassword(): string {
   return Array.from(bytes, (b) => abc[b % abc.length]).join("");
 }
 
+const DuenoSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(255),
+  name: z.string().trim().min(2).max(160),
+});
+
+/**
+ * Por qué no sirve este identificador, o `null` si sirve.
+ *
+ * TODA la validación del identificador va antes de tocar nada.
+ *
+ * No es cosmético: el correo es único en toda la plataforma, así que un
+ * dueño creado para un alta que después falla se queda ocupando ese correo
+ * para siempre —sin membresía, sin poder entrar a ningún lado— y el segundo
+ * intento tomaría la rama de "ya tenía cuenta" y nunca mostraría las
+ * credenciales. Por eso el formato y la lista de reservados se comprueban
+ * aquí y no se dejan reventar dentro de `provisionTenant`.
+ */
+async function identificadorInvalido(slug: string): Promise<string | null> {
+  if (RESERVED_SLUGS.has(slug)) {
+    return `El identificador "${slug}" está reservado por la plataforma.`;
+  }
+  try {
+    schemaNameFor(slug); // valida el formato; lanza con un mensaje explicativo
+  } catch (e) {
+    return e instanceof Error ? e.message : "Identificador inválido.";
+  }
+  const [ocupado] = await getDb()
+    .select({ id: tenants.id })
+    .from(tenants)
+    .where(eq(tenants.slug, slug))
+    .limit(1);
+  return ocupado ? `El identificador "${slug}" ya lo usa otra empresa. Elige otro.` : null;
+}
+
+/**
+ * Crea (o reutiliza) la cuenta del dueño y aprovisiona la empresa con él.
+ *
+ * Lo comparten el alta desde la consola y la aprobación de una solicitud: son
+ * la misma operación con otro origen de datos, y cuando vivía dos veces una de
+ * las copias se quedó apuntando a un dueño que ya no podía existir.
+ */
+async function darDeAltaConDueno(a: {
+  slug: string;
+  name: string;
+  plan?: string;
+  dueno: { email: string; name: string; company?: string | null; phone?: string | null };
+}) {
+  const db = getDb();
+  // El dueño puede existir ya: el correo es único en TODA la plataforma, así
+  // que un consultor que ya atiende a otro cliente reutiliza su cuenta y
+  // suma una membresía, en vez de tener dos contraseñas.
+  const email = a.dueno.email.toLowerCase();
+  const [existente] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, email))
+    .limit(1);
+
+  let ownerId = existente?.id;
+  let password = "";
+
+  if (!ownerId) {
+    password = tempPassword();
+    const [creado] = await db
+      .insert(users)
+      .values({
+        name: a.dueno.name,
+        email,
+        company: a.dueno.company ?? null,
+        phone: a.dueno.phone ?? null,
+        passwordHash: bcrypt.hashSync(password, 10),
+        // El papel de dueño no se pone aquí: lo crea `provisionTenant` como
+        // membresía `owner` de la empresa que está naciendo. La cuenta es la
+        // identidad; mandar en una empresa es otra cosa.
+        //
+        // Y no hay nada que decir sobre la plataforma: quien opera Astraion
+        // vive en `platform_users` y no se llega ahí dando de alta una empresa.
+        active: true,
+      })
+      .returning({ id: users.id });
+    ownerId = creado.id;
+  }
+
+  try {
+    const r = await provisionTenant({ slug: a.slug, name: a.name, ownerUserId: ownerId, plan: a.plan });
+    return { r, email, password, nuevo: !existente };
+  } catch (e) {
+    // Segunda red, por lo que la validación de antes no puede prever (un
+    // esquema a medio crear, la base caída a mitad de la migración). Solo se
+    // borra la cuenta si la creó ESTA llamada: la de alguien que ya existía
+    // pertenece a otro inquilino y borrarla sería mucho peor que el fallo.
+    if (!existente) {
+      await db.delete(users).where(eq(users.id, ownerId));
+    }
+    throw e;
+  }
+}
+
 /**
  * Aprueba una solicitud: la convierte en inquilino con su esquema y su dueño.
  *
@@ -259,6 +401,7 @@ export async function approveSignup(
   const slug = String(formData.get("slug") ?? "").trim().toLowerCase();
   const plan = String(formData.get("plan") ?? "poc").trim() || "poc";
   if (!id || !slug) return { ok: false, error: "Falta la solicitud o el identificador." };
+  if (!esUuid(id)) return { ok: false, error: "La solicitud ya no existe." };
 
   const db = getDb();
 
@@ -272,88 +415,16 @@ export async function approveSignup(
     return { ok: false, error: `Esta solicitud ya está ${s.status === "approved" ? "aprobada" : "rechazada"}.` };
   }
 
-  // TODA la validación del identificador va antes de tocar nada.
-  //
-  // No es cosmético: el correo es único en toda la plataforma, así que un
-  // dueño creado para un alta que después falla se queda ocupando ese correo
-  // para siempre —sin membresía, sin poder entrar a ningún lado— y el segundo
-  // intento tomaría la rama de "ya tenía cuenta" y nunca mostraría las
-  // credenciales. Por eso el formato y la lista de reservados se comprueban
-  // aquí y no se dejan reventar dentro de `provisionTenant`.
-  if (RESERVED_SLUGS.has(slug)) {
-    return { ok: false, error: `El identificador "${slug}" está reservado por la plataforma.` };
-  }
-  try {
-    schemaNameFor(slug); // valida el formato; lanza con un mensaje explicativo
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Identificador inválido." };
-  }
-
-  const [ocupado] = await db
-    .select({ id: tenants.id })
-    .from(tenants)
-    .where(eq(tenants.slug, slug))
-    .limit(1);
-  if (ocupado) {
-    return { ok: false, error: `El identificador "${slug}" ya lo usa otra empresa. Elige otro.` };
-  }
+  const invalido = await identificadorInvalido(slug);
+  if (invalido) return { ok: false, error: invalido };
 
   try {
-    // El dueño puede existir ya: el correo es único en TODA la plataforma, así
-    // que un consultor que ya atiende a otro cliente reutiliza su cuenta y
-    // suma una membresía, en vez de tener dos contraseñas.
-    const email = s.email.toLowerCase();
-    const [existente] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
-
-    let ownerId = existente?.id;
-    let password = "";
-
-    if (!ownerId) {
-      password = tempPassword();
-      const [creado] = await db
-        .insert(users)
-        .values({
-          name: s.contactName,
-          email,
-          company: s.companyName,
-          phone: s.phone,
-          passwordHash: bcrypt.hashSync(password, 10),
-          // El papel de dueño no se pone aquí: lo crea `provisionTenant` como
-          // membresía `owner` de la empresa que está naciendo. La cuenta es la
-          // identidad; mandar en una empresa es otra cosa.
-          //
-          // Y no hay nada que decir sobre la plataforma: quien opera Astraion
-          // vive en `platform_users` y no se llega ahí aprobando un alta. Antes
-          // esto ponía `platformRole: null` explícitamente para dejarlo dicho;
-          // con las tablas separadas la frase ya no se puede ni escribir.
-          active: true,
-        })
-        .returning({ id: users.id });
-      ownerId = creado.id;
-    }
-
-    let r;
-    try {
-      r = await provisionTenant({
-        slug,
-        name: s.companyName,
-        ownerUserId: ownerId,
-        plan,
-      });
-    } catch (e) {
-      // Segunda red, por lo que la validación de arriba no puede prever (un
-      // esquema a medio crear, la base caída a mitad de la migración). Solo se
-      // borra la cuenta si la creó ESTA llamada: la de alguien que ya existía
-      // pertenece a otro inquilino y borrarla sería mucho peor que el fallo.
-      if (!existente) {
-        await db.delete(users).where(eq(users.id, ownerId));
-      }
-      throw e;
-    }
+    const { r, email, password, nuevo } = await darDeAltaConDueno({
+      slug,
+      name: s.companyName,
+      plan,
+      dueno: { email: s.email, name: s.contactName, company: s.companyName, phone: s.phone },
+    });
 
     await db
       .update(tenantSignups)
@@ -374,7 +445,7 @@ export async function approveSignup(
         slug,
         esquema: r.schemaName,
         dueno: email,
-        cuentaNueva: !existente,
+        cuentaNueva: nuevo,
       },
       actorId: session.user.id,
     });
@@ -383,7 +454,7 @@ export async function approveSignup(
     return {
       ok: true,
       message: `"${s.companyName}" quedó dada de alta en ${r.schemaName}, con ${r.applied.length} migración(es).`,
-      credentials: { email, password, nuevo: !existente },
+      credentials: { email, password, nuevo },
     };
   } catch (e) {
     console.error("[signup] approve error:", e);
@@ -403,6 +474,7 @@ export async function rejectSignup(
   const reason = String(formData.get("reason") ?? "").trim();
   if (!id) return { ok: false, error: "Falta la solicitud." };
   if (!reason) return { ok: false, error: "Escribe el motivo del rechazo." };
+  if (!esUuid(id)) return { ok: false, error: "La solicitud ya no existe." };
 
   const db = getDb();
   const [s] = await db

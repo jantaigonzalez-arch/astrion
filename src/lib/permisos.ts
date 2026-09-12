@@ -293,6 +293,21 @@ export function nivelEfectivo(
 }
 
 /**
+ * El nivel que le queda a un operador de Astraion DE VISITA: «ver» como techo.
+ *
+ * El diseño siempre dijo que la visita es de solo lectura, pero lo cumplía una
+ * sola pieza: `tenantDb()` abre la conexión en modo lectura. Las acciones que
+ * escriben en tablas de PLATAFORMA —usuarios, marca, correo— usan `getDb()` y no
+ * pasan por ahí, y como el operador entra con rol `admin`, `puedeEn` le decía
+ * que sí: soporte podía dar de alta un administrador con contraseña conocida en
+ * la empresa de un cliente. Con el techo aquí, TODA guardia de módulo lo sabe,
+ * y no hay que acordarse en cada acción. Lo encontró `_probe-acciones-plataforma`.
+ */
+export function nivelDeVisita(nivel: Nivel): Nivel {
+  return alcanza(nivel, "ver") ? "ver" : nivel;
+}
+
+/**
  * Sanea lo que viene de la base o de un formulario.
  *
  * `permissions` es `jsonb`: puede traer un módulo que esta versión ya no

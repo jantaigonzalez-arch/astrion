@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { importeOpcional } from "@/lib/importe";
 import { eq, inArray } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { tenantDb, puedeEn } from "@/lib/tenancy/context";
@@ -28,15 +29,8 @@ export type PurchaseState = {
   orderId?: string;
 };
 
-const money = z
-  .string()
-  .optional()
-  .transform((v) => {
-    if (!v) return undefined;
-    const clean = v.replace(/[^0-9.]/g, "");
-    return clean || undefined;
-  })
-  .refine((v) => v === undefined || !Number.isNaN(Number(v)));
+// Monto opcional: vacío o un número de cero en adelante. Ver `lib/importe.ts`.
+const money = importeOpcional;
 
 /* ------------------------- Proveedores ------------------------- */
 
@@ -294,12 +288,18 @@ export async function createPurchaseOrder(
     const quantity = Number(qtys[i]);
     if (!partId) continue;
     if (!Number.isInteger(quantity) || quantity <= 0) continue;
+    /*
+      Vacío hereda el costo del catálogo (más abajo); un negativo o algo que no
+      es número se RECHAZA. Antes, el fallo de validación también se tomaba
+      por vacío: se tecleaba «-50» o «12o» y la orden salía con el costo del
+      catálogo y un «Orden creada». Lo encontró
+      `scripts/_probe-acciones-compras.ts`.
+    */
     const cost = money.safeParse(costs[i] ?? "");
-    draft.push({
-      partId,
-      quantity,
-      cost: cost.success ? cost.data : undefined,
-    });
+    if (!cost.success) {
+      return { ok: false, error: "Un renglón trae un costo que no es un importe." };
+    }
+    draft.push({ partId, quantity, cost: cost.data });
   }
 
   if (draft.length === 0) {

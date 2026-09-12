@@ -224,7 +224,7 @@ export async function guardarRubroAction(
       lo lee de esta fila, y la clave sigue sirviendo para reconocer los cinco
       de fábrica.
     */
-    await db
+    const tocadas = await db
       .update(viaticoRubros)
       .set({
         name,
@@ -233,7 +233,14 @@ export async function guardarRubroAction(
         blocksOverBudget: String(formData.get("blocksOverBudget") ?? "") === "on",
         active: String(formData.get("active") ?? "") === "on",
       })
-      .where(eq(viaticoRubros.id, id.data));
+      .where(eq(viaticoRubros.id, id.data))
+      .returning({ id: viaticoRubros.id });
+    /*
+      Un `update` que no encuentra la fila no falla: no toca nada. Sin mirarlo,
+      guardar un rubro que otra persona acababa de borrar contestaba «Rubro
+      actualizado.». Lo encontró `scripts/_probe-acciones-viaticos-config.ts`.
+    */
+    if (tocadas.length === 0) return { ok: false, error: "Ese rubro ya no existe." };
 
     revalidateTenant();
     return { ok: true, message: "Rubro actualizado." };
@@ -276,7 +283,13 @@ export async function borrarRubroAction(
       };
     }
 
-    await db.delete(viaticoRubros).where(eq(viaticoRubros.id, id.data));
+    const borradas = await db
+      .delete(viaticoRubros)
+      .where(eq(viaticoRubros.id, id.data))
+      .returning({ id: viaticoRubros.id });
+    // Lo mismo que al guardar: borrar lo que ya no está contestaba «Rubro
+    // borrado.». Lo encontró `scripts/_probe-acciones-viaticos-config.ts`.
+    if (borradas.length === 0) return { ok: false, error: "Ese rubro ya no existe." };
     revalidateTenant();
     return { ok: true, message: "Rubro borrado." };
   } catch (e) {

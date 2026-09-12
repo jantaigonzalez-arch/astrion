@@ -38,6 +38,8 @@ function ErrorMsg({ error }: { error?: string }) {
     invalid: "Revisa los campos (contraseña de 8+ caracteres).",
     self: "No puedes quitarte a ti mismo el rol de administrador ni desactivarte.",
     owner: "La cuenta del dueño no se edita desde aquí: transferir la titularidad es otra operación.",
+    compartida:
+      "Esta persona también trabaja en otra empresa de la plataforma y su contraseña vale allí: pídele a soporte que la restablezca.",
     server: "Ocurrió un error. Intenta de nuevo.",
   };
   return <p className="text-sm text-destructive">{map[error] ?? error}</p>;

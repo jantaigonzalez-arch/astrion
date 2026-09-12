@@ -2,19 +2,23 @@
 
 import { useActionState, useState } from "react";
 import { Plus, Loader2 } from "lucide-react";
-import { createTenant, type PlatformState } from "@/lib/actions/platform";
+import { createTenant, type ReviewState } from "@/lib/actions/platform";
+import { ApprovedCard } from "@/components/portal/signup-inbox";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-const initial: PlatformState = { ok: false };
+const initial: ReviewState = { ok: false };
 
 /**
  * Alta de empresa. Un envío crea el esquema de Postgres, aplica todas las
- * migraciones de inquilino y deja al superadministrador como dueño de la
- * cuenta — la operación completa, no un registro que alguien debe terminar
- * a mano después.
+ * migraciones de inquilino y deja como dueño a la persona cuyo correo se da
+ * —con cuenta nueva o la que ya tenía—: la operación completa, no un registro
+ * que alguien debe terminar a mano después.
+ *
+ * El dueño se pide y no es el operador: quien opera Astraion vive en
+ * `platform_users` y no puede tener membresía en una empresa.
  */
 export function NewTenantForm() {
   const [state, action, pending] = useActionState(createTenant, initial);
@@ -44,7 +48,7 @@ export function NewTenantForm() {
         de la nueva empresa arrancan en uno, sin relación con los de las demás.
       </p>
 
-      <form action={action} className="mt-4 grid gap-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+      <form action={action} className="mt-4 grid gap-4 sm:grid-cols-2 sm:items-end">
         <div className="grid gap-1.5">
           <Label htmlFor="t-name">Nombre</Label>
           <Input
@@ -79,7 +83,26 @@ export function NewTenantForm() {
           </span>
         </div>
 
-        <Button type="submit" variant="accent" disabled={pending}>
+        <div className="grid gap-1.5">
+          <Label htmlFor="t-owner-name">Nombre del dueño</Label>
+          <Input id="t-owner-name" name="ownerName" required placeholder="Ana Pérez" />
+        </div>
+
+        <div className="grid gap-1.5">
+          <Label htmlFor="t-owner-email">Correo del dueño</Label>
+          <Input
+            id="t-owner-email"
+            name="ownerEmail"
+            type="email"
+            required
+            placeholder="ana@acme.com"
+          />
+          <span className="text-[11px] text-muted-foreground">
+            Si ya tiene cuenta en la plataforma, se le suma la empresa.
+          </span>
+        </div>
+
+        <Button type="submit" variant="accent" disabled={pending} className="sm:col-span-2 sm:justify-self-end">
           {pending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
           {pending ? "Creando…" : "Crear"}
         </Button>
@@ -88,8 +111,10 @@ export function NewTenantForm() {
       {state.error && (
         <p className="mt-3 text-sm text-destructive">{state.error}</p>
       )}
-      {state.ok && state.message && (
-        <p className="mt-3 text-sm text-success">{state.message}</p>
+      {state.ok && state.credentials && (
+        <div className="mt-3">
+          <ApprovedCard state={state} />
+        </div>
       )}
     </Card>
   );

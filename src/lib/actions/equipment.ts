@@ -141,8 +141,15 @@ export async function deleteEquipmentItem(formData: FormData) {
   const session = await requireStaff();
   if (!session) return;
   const kind = String(formData.get("kind"));
-  const id = String(formData.get("id"));
-  if (!id) return;
+  /*
+    Solo un id con forma de uuid. `String(formData.get("id"))` convertía la
+    ausencia en el texto "null", que pasaba el `if (!id)`, y la basura llegaba
+    a Postgres dentro de la transacción: un 500 donde tocaba no hacer nada. Lo
+    encontró `scripts/_probe-acciones-equipos.ts`.
+  */
+  const crudo = formData.get("id");
+  const id = typeof crudo === "string" ? crudo.trim() : "";
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return;
   const db = await tenantDb();
 
   // Borrar un equipo arrastra sus módulos y submódulos por cascada, y deja los
