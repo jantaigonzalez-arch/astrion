@@ -32,6 +32,7 @@ import {
   SIN_CATALOGOS,
   type CatalogosSat,
 } from "./src/lib/domain/cliente.ts";
+import { decision69b, POLITICAS_69B } from "./src/lib/politica-clientes.ts";
 
 let fallos = 0;
 const ok = (l: string, c: boolean, e = "") => {
@@ -434,6 +435,36 @@ ok(
   cruces.length === 0,
   cruces.join(", "),
 );
+
+/* ── 11 · La lista 69-B ─────────────────────────────────────────────────── */
+console.log("\nLA LISTA 69-B: SOLO PRESUNTO Y DEFINITIVO TIENEN POLÍTICA");
+
+/*
+  `decision69b` es lo único que decide qué hacer con un cliente listado; la
+  bloquean `vetoLista69b` (contratos y tickets) y la pinta la ficha. Aquí, cada
+  política en cada estatus: presunto y definitivo siguen CADA UNO la suya —con
+  la del otro en el extremo contrario, para que un cruce se vea—, y los finales
+  en que el contribuyente demostró que operaba no se castigan nunca. Los cinco
+  estatus son los del enum `lista69b_estatus` de la base.
+*/
+const OPUESTA = { nada: "bloquear", avisar: "nada", bloquear: "nada" } as const;
+for (const p of POLITICAS_69B) {
+  ok(
+    `presunto con «${p}» (y definitivo con «${OPUESTA[p]}») → ${p}`,
+    decision69b("presunto", { presunto: p, definitivo: OPUESTA[p] }) === p,
+  );
+  ok(
+    `definitivo con «${p}» (y presunto con «${OPUESTA[p]}») → ${p}`,
+    decision69b("definitivo", { presunto: OPUESTA[p], definitivo: p }) === p,
+  );
+}
+const TODO_BLOQUEADO = { presunto: "bloquear", definitivo: "bloquear" } as const;
+for (const e of ["desvirtuado", "sentencia_favorable", "no_listado", null, undefined, "PRESUNTO"]) {
+  ok(
+    `${e === null ? "nulo" : e === undefined ? "sin estatus" : `«${e}»`} → nada, aunque las dos políticas bloqueen`,
+    decision69b(e, TODO_BLOQUEADO) === "nada",
+  );
+}
 
 console.log(
   fallos

@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { getSettings } from "@/lib/data/settings";
 import { setRequestLocale } from "next-intl/server";
 import { ArrowLeft } from "lucide-react";
 import {
@@ -45,11 +46,12 @@ export default async function EditOrganizationPage({
     está el formulario de arriba— y esconde el bloque fiscal a quien no tiene el
     alto, en vez de negarle la pantalla entera por un campo que no iba a tocar.
   */
-  const [owners, clients, fiscal, puedeFiscal] = await Promise.all([
+  const [owners, clients, fiscal, puedeFiscal, ajustes] = await Promise.all([
     getCrmOwners(),
     getClientAccounts(),
     getExpedienteFiscal(id),
     puedeEn("clientes", "administrar"),
+    getSettings(),
   ]);
 
   /*
@@ -93,6 +95,7 @@ export default async function EditOrganizationPage({
         <OrganizationForm
           owners={owners}
           clients={clients}
+          slaGeneral={ajustes.clientesSlaHoras}
           defaults={{
             id: org.id,
             name: org.name,
@@ -158,7 +161,12 @@ export default async function EditOrganizationPage({
               paisResidencia: fiscal?.paisResidencia ?? null,
               numRegIdTrib: fiscal?.numRegIdTrib ?? null,
               curp: fiscal?.curp ?? null,
-              usoCfdiDefault: fiscal?.usoCfdiDefault ?? null,
+              /*
+                Un expediente NUEVO abre con el uso que la empresa sugiere
+                (Configuración → Clientes); uno que ya existe, con el suyo, aunque
+                esté vacío —vacío también es una decisión que alguien guardó—.
+              */
+              usoCfdiDefault: fiscal ? fiscal.usoCfdiDefault : ajustes.clientesUsoCfdiOmision,
               domicilio: fiscal?.domicilio ?? null,
             }}
             regimenes={regimenes.map((r) => ({

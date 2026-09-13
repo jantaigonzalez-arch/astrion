@@ -11,6 +11,8 @@ import {
   Orbit,
   Plane,
   Coins,
+  Wrench,
+  Building2,
   type LucideIcon,
 } from "lucide-react";
 import { Link, usePathname } from "@/lib/nav";
@@ -22,7 +24,8 @@ type Tab = {
   Icon: LucideIcon;
   exact?: boolean;
   /** Qué módulo la manda. Sin declarar, la manda Configuración. */
-  modulo?: "viaticos";
+  /** La pestaña la manda otro módulo y no `configuracion`. Ver `RUTAS` en `lib/permisos.ts`. */
+  modulo?: "viaticos" | "servicio" | "clientes";
 };
 
 /**
@@ -33,10 +36,17 @@ type Tab = {
  * la fila de izquierda a derecha y eso es exactamente lo que tiene que hacer.
  */
 const TABS: Tab[] = [
-  { href: "/admin/configuracion", label: "Marca y tarifas", Icon: Palette, exact: true },
-  // Pegada a Marca y tarifas: es de lo que se decide al montar la empresa, y
-  // afecta a cuánto suma cada negocio en dólares desde el primer día.
+  { href: "/admin/configuracion", label: "Marca y correo", Icon: Palette, exact: true },
+  // Pegada a Marca: es de lo que se decide al montar la empresa, y afecta a
+  // cuánto suma cada negocio en dólares desde el primer día.
   { href: "/admin/configuracion/moneda", label: "Moneda", Icon: Coins },
+  // Las tarifas de mano de obra, que vivían en «Marca y tarifas». Son del
+  // SERVICIO —solo alimentan la utilidad de los tickets— y las decide quien lo
+  // administra, así que su pestaña la manda `servicio: administrar`.
+  { href: "/admin/configuracion/servicio", label: "Servicio", Icon: Wrench, modulo: "servicio" },
+  // Lo que decide la empresa sobre sus clientes (0038). La manda
+  // `clientes: administrar`, como Servicio y Viáticos mandan las suyas.
+  { href: "/admin/configuracion/clientes", label: "Clientes", Icon: Building2, modulo: "clientes" },
   { href: "/admin/configuracion/usuarios", label: "Usuarios", Icon: Users },
   { href: "/admin/configuracion/catalogo", label: "Catálogo", Icon: Boxes },
   { href: "/admin/configuracion/embudos", label: "Embudos y etapas", Icon: Settings2 },
@@ -76,19 +86,29 @@ const TABS: Tab[] = [
 export function SettingsTabs({
   puedeConfiguracion,
   puedeViaticos,
+  puedeServicio,
+  puedeClientes,
 }: {
   puedeConfiguracion: boolean;
   puedeViaticos: boolean;
+  puedeServicio: boolean;
+  puedeClientes: boolean;
 }) {
   const pathname = usePathname();
   const visibles = TABS.filter((t) =>
-    t.modulo === "viaticos" ? puedeViaticos : puedeConfiguracion,
+    t.modulo === "viaticos"
+      ? puedeViaticos
+      : t.modulo === "servicio"
+        ? puedeServicio
+        : t.modulo === "clientes"
+          ? puedeClientes
+          : puedeConfiguracion,
   );
 
   return (
     <nav className="flex gap-1 overflow-x-auto border-b border-border pb-px">
       {visibles.map(({ href, label, Icon, exact }) => {
-        // "Marca y tarifas" es la raíz del área: sin `exact` se quedaría
+        // "Marca y correo" es la raíz del área: sin `exact` se quedaría
         // encendida en todas las pestañas, porque todas empiezan por su ruta.
         const active = exact ? pathname === href : pathname.startsWith(href);
         return (

@@ -604,6 +604,20 @@ export const settings = pgTable("settings", {
   viaticosMezclarDestinos: boolean("viaticos_mezclar_destinos").notNull().default(false),
 
   /**
+   * LO QUE DECIDE LA EMPRESA SOBRE SUS CLIENTES (0038). Configuración → Clientes.
+   *
+   *   clientesSlaHoras        plazo de primera respuesta para quien no pactó el suyo
+   *   clientesUsoCfdiOmision  con qué uso nace un expediente fiscal nuevo (nulo = ninguno)
+   *   clientesPruebas         qué hace cliente a una organización (lo lee `ES_CLIENTE`)
+   *   clientes69b*            `nada` | `avisar` | `bloquear` según la lista 69-B
+   */
+  clientesSlaHoras: smallint("clientes_sla_horas").notNull().default(2),
+  clientesUsoCfdiOmision: varchar("clientes_uso_cfdi_omision", { length: 5 }),
+  clientesPruebas: jsonb("clientes_pruebas").notNull().default(["portal", "pedido", "contrato"]),
+  clientes69bPresunto: varchar("clientes_69b_presunto", { length: 10 }).notNull().default("nada"),
+  clientes69bDefinitivo: varchar("clientes_69b_definitivo", { length: 10 }).notNull().default("nada"),
+
+  /**
    * Si el tipo de cambio sale de Banxico (`true`, lo normal) o de `usdRate`.
    *
    * El manual no desaparece al encender el automático: es el de quien pactó una

@@ -444,6 +444,20 @@ const RUTAS: Regla[] = [
     tener que declarar ninguna excepción a mano.
   */
   { prefijo: "/admin/configuracion/viaticos", modulo: "viaticos", nivel: "administrar" },
+  /*
+    Y la misma excepción para las TARIFAS DE MANO DE OBRA: cuánto cuesta y
+    cuánto se cobra una hora de técnico es una decisión de quien administra el
+    SERVICIO, y solo sirve para la utilidad de los tickets. Vivía en «Marca y
+    tarifas», revuelta con el logo y el correo, bajo `configuracion`.
+  */
+  { prefijo: "/admin/configuracion/servicio", modulo: "servicio", nivel: "administrar" },
+  /*
+    Lo que decide la empresa sobre sus CLIENTES (0038): el SLA general, el uso
+    de CFDI con que nace un expediente, qué cuenta como cliente y qué se hace con
+    la lista 69-B. Lo decide quien administra Clientes, no quien administra el
+    sistema: es el mismo reparto que Viáticos y Servicio.
+  */
+  { prefijo: "/admin/configuracion/clientes", modulo: "clientes", nivel: "administrar" },
 ];
 
 /** Las reglas, de la más específica a la más general. Ver la nota de `RUTAS`. */

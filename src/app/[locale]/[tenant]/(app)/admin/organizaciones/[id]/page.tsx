@@ -33,7 +33,8 @@ import {
   label,
   money,
 } from "@/lib/crm";
-import { SLA_HOURS } from "@/lib/tickets";
+import { getSettings } from "@/lib/data/settings";
+import { decision69b } from "@/lib/politica-clientes";
 import { domicilioEnUnaLinea } from "@/lib/domicilio";
 import { Telefono } from "@/components/portal/telefono";
 import { Card } from "@/components/ui/card";
@@ -75,11 +76,12 @@ export default async function OrganizationDetailPage({
     `Promise.all` no las hace más baratas, las hace simultáneas — que con dos
     conexiones por empresa es además una manera de soltar antes la que se ocupa.
   */
-  const [portal, kind, viajes] = await Promise.all([
+  const [portal, kind, viajes, ajustes] = await Promise.all([
     // Todo lo que ya existe en el portal para este laboratorio.
     getOrganizationPortalData(org.clientId),
     kindDeOrganizacion(org.id),
     viaticosDelProspecto(org.id),
+    getSettings(),
   ]);
 
   const intl = locale === "en" ? "en-US" : "es-MX";
@@ -246,7 +248,7 @@ export default async function OrganizationDetailPage({
                   </span>
                 ) : (
                   <span className="text-xs text-muted-foreground">
-                    {SLA_HOURS} h · el general, no pactó uno propio
+                    {ajustes.clientesSlaHoras} h · el general, no pactó uno propio
                   </span>
                 )}
                 <Link
@@ -559,8 +561,19 @@ export default async function OrganizationDetailPage({
                     </div>
                   )}
                 {fiscal.lista69b !== "no_listado" && (
+                  /*
+                    El estatus y LO QUE HACE LA EMPRESA con él (0038). Decir solo
+                    «presunto» deja a quien lo lee sin saber si puede firmarle un
+                    contrato; la política —nada, avisar o bloquear— se decide en
+                    Configuración → Clientes y se hace cumplir en las acciones.
+                  */
                   <div className="rounded-md bg-destructive/10 p-2 text-destructive">
-                    Lista 69-B: {fiscal.lista69b}
+                    Lista 69-B del SAT: {fiscal.lista69b}.{" "}
+                    {decision69b(fiscal.lista69b, ajustes.clientes69b) === "bloquear"
+                      ? "Tu empresa no permite contratos ni tickets nuevos con este cliente."
+                      : decision69b(fiscal.lista69b, ajustes.clientes69b) === "avisar"
+                        ? "Tu empresa pide revisarlo antes de firmar contratos o levantar servicios."
+                        : ""}
                   </div>
                 )}
               </dl>

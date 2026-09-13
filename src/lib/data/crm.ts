@@ -15,6 +15,7 @@ import {
   crmPipelines,
   crmStages,
   equipment,
+  settings,
   tickets,
 } from "@/lib/db/schema";
 import { listTenantMembers } from "@/lib/data/people";
@@ -326,19 +327,33 @@ export async function getDealById(id: string) {
  * vigente y 20 con equipo instalado. Llamarle prospecto a quien tiene tu equipo
  * en su laboratorio no es un matiz de etiqueta: manda al vendedor a prospectar
  * a un cliente que ya paga.
+ *
+ * ── CUÁLES DE LAS TRES CUENTAN LO DECIDE CADA EMPRESA (0038) ──────────────
+ *
+ * `settings.clientes_pruebas`, en Configuración → Clientes. De fábrica, las
+ * tres, que es la regla de arriba. Se lee DENTRO de la misma consulta, con una
+ * subconsulta sin correlación que Postgres resuelve una sola vez por consulta:
+ * así todo lo que usa `ES_CLIENTE` —Clientes, Ventas, el selector del negocio,
+ * los destinos de viáticos— obedece al ajuste sin que ninguna pantalla tenga
+ * que leerlo y pasarlo. Sin fila de ajustes, las tres de fábrica (el `coalesce`).
  */
+const PRUEBAS_DE_LA_EMPRESA = sql`coalesce(
+  (select s.clientes_pruebas from ${settings} s where s.id = 'global'),
+  '["portal","pedido","contrato"]'::jsonb
+)`;
+
 export const ES_CLIENTE = sql<boolean>`(
-  ${crmOrganizations.clientId} is not null
-  or exists (
+  (${PRUEBAS_DE_LA_EMPRESA} @> '["portal"]'::jsonb and ${crmOrganizations.clientId} is not null)
+  or (${PRUEBAS_DE_LA_EMPRESA} @> '["pedido"]'::jsonb and exists (
     select 1 from ${crmDeals}
      where ${crmDeals}.organization_id = ${crmOrganizations}.id
        and ${crmDeals}.status = 'won'
-  )
-  or exists (
+  ))
+  or (${PRUEBAS_DE_LA_EMPRESA} @> '["contrato"]'::jsonb and exists (
     select 1 from ${contracts}
       join ${crmDeals} on ${crmDeals}.id = ${contracts}.deal_id
      where ${crmDeals}.organization_id = ${crmOrganizations}.id
-  )
+  ))
 )`;
 
 /**

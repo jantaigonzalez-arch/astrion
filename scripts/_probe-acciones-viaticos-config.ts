@@ -131,12 +131,19 @@ void probar("configuración de viáticos: el permiso es el del gasto, no el del 
     fila.
   */
   const original = await politica();
+  /*
+    `::text::jsonb` y no `::jsonb` a secas: con `JSON.stringify`, `$1::jsonb`
+    guardaba la lista dos veces codificada —una CADENA jsonb—, que
+    `getSettings()` lee como `[]`. Si la fila existía antes de la prueba, la
+    reponía dejando a nadie con permiso de pedir viáticos. Lo encontró
+    `_probe-acciones-clientes-config`, que se tropezó con lo mismo.
+  */
   alLimpiar(async () => {
     if (original !== null) {
       return sql.unsafe(
         `update ${ESQUEMA}.settings
-            set viaticos_contratos_roles = $1::jsonb, viaticos_visitas_roles = $2::jsonb,
-                viaticos_prospectos_roles = $3::jsonb, viaticos_max_contratos = $4,
+            set viaticos_contratos_roles = $1::text::jsonb, viaticos_visitas_roles = $2::text::jsonb,
+                viaticos_prospectos_roles = $3::text::jsonb, viaticos_max_contratos = $4,
                 viaticos_max_visitas = $5, viaticos_max_prospectos = $6,
                 viaticos_mezclar_destinos = $7
           where id = 'global'`,

@@ -119,9 +119,11 @@ export const PRIORITY_STYLES: Record<TicketPriorityValue, string> = {
  * haya pactado el suyo. Un cliente puede tener otro —ver `crmOrganizations.slaHours`—
  * y entonces manda el suyo.
  *
- * Sigue siendo una constante y no un ajuste de la empresa: es la promesa
- * comercial de base, no una preferencia. El día que dos inquilinos prometan
- * cosas distintas, el sitio es `settings`.
+ * YA NO ES LA REGLA: desde la 0038 el plazo general lo decide cada empresa
+ * (`settings.clientes_sla_horas`, Configuración → Clientes), como anunciaba
+ * este comentario —«el día que dos inquilinos prometan cosas distintas, el
+ * sitio es `settings`»—. Queda como el valor de fábrica y como la caída de
+ * `slaDueFrom` cuando quien llama no pasa el de la empresa.
  */
 export const SLA_HOURS = 2;
 
@@ -209,7 +211,8 @@ export const SLA_STYLES: Record<SlaState, string> = {
 /**
  * Cuándo vence la primera respuesta de un ticket.
  *
- * `horas` es lo pactado con el cliente. Nulo o inválido cae al plazo general:
+ * `horas` es lo pactado con el cliente. Nulo o inválido cae al plazo general
+ * de la empresa (`general`, de `getSettings().clientesSlaHoras`):
  * la caída es deliberada y no se avisa, porque un número raro en la ficha de un
  * cliente no puede dejar un ticket sin compromiso — eso convertiría un dato mal
  * capturado en una promesa apagada.
@@ -219,8 +222,12 @@ export const SLA_STYLES: Record<SlaState, string> = {
  * que ya tienen plazo. Cuando se decida el horario laboral, este es el único
  * sitio que hay que tocar.
  */
-export function slaDueFrom(createdAt: Date, horas?: number | null): Date {
-  const h = slaHorasValidas(horas) ? horas : SLA_HOURS;
+export function slaDueFrom(
+  createdAt: Date,
+  horas?: number | null,
+  general: number = SLA_HOURS,
+): Date {
+  const h = slaHorasValidas(horas) ? horas : slaHorasValidas(general) ? general : SLA_HOURS;
   return new Date(createdAt.getTime() + h * 60 * 60 * 1000);
 }
 

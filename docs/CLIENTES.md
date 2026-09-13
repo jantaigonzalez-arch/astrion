@@ -382,8 +382,14 @@ Un cambio cosmético (una minúscula, un espacio de más) **no** invalida nada.
 Cada cliente lleva su estado en la lista: `no_listado`, `presunto`,
 `desvirtuado`, `definitivo`, `sentencia_favorable`.
 
-📐 Está diseñado —y no construido— que la empresa pueda configurar el **bloqueo
-de facturación** a clientes en `definitivo`, y una advertencia en `presunto`.
+✅ Cada empresa decide qué hacer con un cliente `presunto` y con uno
+`definitivo` —nada, avisar en su ficha o bloquear contratos y tickets nuevos—, en
+Configuración → Clientes (0038). Lo hace cumplir `vetoLista69b`; lo ya firmado no
+se toca, y `desvirtuado` / `sentencia_favorable` nunca bloquean.
+
+📐 Falta el **cargador** de la lista del SAT: hoy nada alimenta el estatus, así
+que todo cliente está en `no_listado` y la política no tiene a quién aplicarse.
+El bloqueo de **facturación** llegará con la facturación.
 
 ---
 

@@ -1,4 +1,5 @@
 import { setRequestLocale } from "next-intl/server";
+import { getSettings } from "@/lib/data/settings";
 import { ArrowLeft } from "lucide-react";
 import { getClientAccounts, getCrmOwners } from "@/lib/data/crm";
 import { Card } from "@/components/ui/card";
@@ -23,7 +24,11 @@ export default async function NewOrganizationPage({
     await redirectInTenant("/admin/organizaciones", locale);
   }
 
-  const [owners, clients] = await Promise.all([getCrmOwners(), getClientAccounts()]);
+  const [owners, clients, ajustes] = await Promise.all([
+    getCrmOwners(),
+    getClientAccounts(),
+    getSettings(),
+  ]);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -43,7 +48,7 @@ export default async function NewOrganizationPage({
       </div>
 
       <Card className="p-6">
-        <OrganizationForm owners={owners} clients={clients} />
+        <OrganizationForm owners={owners} clients={clients} slaGeneral={ajustes.clientesSlaHoras} />
       </Card>
     </div>
   );

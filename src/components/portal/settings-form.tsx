@@ -21,7 +21,14 @@ export function SettingsForm({
 
   return (
     <Card className="p-6 sm:p-8">
-      <form action={action} className="grid gap-5">
+      <h2 className="font-semibold">Tarifas de mano de obra</h2>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Con ellas se calcula la utilidad de cada ticket de servicio: las horas
+        registradas por la tarifa es lo que se cobra, y por el costo, lo que
+        cuesta. Se aplican al calcular, así que cambiarlas mueve también la
+        utilidad de los tickets anteriores.
+      </p>
+      <form action={action} className="mt-5 grid gap-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="cost">Costo por hora, sin IVA (interno)</Label>
@@ -71,7 +78,7 @@ export function SettingsForm({
         {state.error && (
           <p className="text-sm text-destructive">
             {state.error === "auth"
-              ? "Solo un administrador puede cambiar las tarifas."
+              ? "Solo quien administra Servicio puede cambiar las tarifas."
               : "Ocurrió un error."}
           </p>
         )}

@@ -113,6 +113,7 @@ export function ClientsList({
   totalSinFiltro,
   conAbiertos,
   sinPortal,
+  slaGeneral = SLA_HOURS,
 }: {
   /** Solo las filas de ESTA página. */
   clients: ClientListRow[];
@@ -127,6 +128,8 @@ export function ClientsList({
   totalSinFiltro: number;
   conAbiertos: number;
   sinPortal: number;
+  /** El SLA general de la empresa (Configuración → Clientes). */
+  slaGeneral?: number;
 }) {
   /*
     La consulta que viaja en cada enlace. Sin ella, pulsar una columna para
@@ -519,7 +522,7 @@ export function ClientsList({
                         <Link
                           href={`/admin/organizaciones/${c.id}/editar`}
                           className="text-xs text-muted-foreground hover:text-primary"
-                          title={`Sin plazo propio: se le aplica el general de ${SLA_HOURS} h. Pulsa para pactar uno.`}
+                          title={`Sin plazo propio: se le aplica el general de ${slaGeneral} h. Pulsa para pactar uno.`}
                         >
                           General
                         </Link>

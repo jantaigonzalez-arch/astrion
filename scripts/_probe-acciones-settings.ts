@@ -1,6 +1,9 @@
 /**
  * LAS ACCIONES DE CONFIGURACIÓN: TARIFAS Y TIPO DE CAMBIO.
  *
+ * El tipo de cambio pide `configuracion: administrar`; las tarifas de mano de
+ * obra, `servicio: administrar` (Configuración → Servicio).
+ *
  *   npx tsx --tsconfig tsconfig.probe.json --conditions react-server \
  *     scripts/_probe-acciones-settings.ts
  *
@@ -81,11 +84,29 @@ void probar("configuración: guardia, validación y lo que se guarda", async () 
 
   /*
     Un escalón menos del que piden. Cambiar el tipo de cambio mueve todos los
-    informes en dólares de la empresa: no es trabajo del día.
+    informes en dólares de la empresa: no es trabajo del día. Las tarifas piden
+    `servicio: administrar` (su pestaña es Configuración → Servicio), así que
+    «editar» se prueba en el módulo de cada una.
   */
+  const [fx, automatico, tarifas] = llamadas;
   como(ACTOR, "configuracion:editar");
-  for (const [nombre, fn] of llamadas)
-    await rechazaSinEscribir(`${nombre}, con «editar»`, fn, [FILA], conError("auth"));
+  for (const [nombre, fn] of [fx, automatico])
+    await rechazaSinEscribir(`${nombre}, con «configuracion:editar»`, fn, [FILA], conError("auth"));
+  como(ACTOR, "servicio:editar");
+  await rechazaSinEscribir(`${tarifas[0]}, con «servicio:editar»`, tarifas[1], [FILA], conError("auth"));
+  /*
+    LAS TARIFAS SON DE SERVICIO, NO DEL SISTEMA. Vivían en «Marca y tarifas»
+    bajo `configuracion: administrar`; ahora las decide quien administra el
+    servicio. Administrar la configuración ya no alcanza, y administrar el
+    servicio sí —sin tocar nada de configuración—.
+  */
+  como(ACTOR, "configuracion:administrar");
+  await rechazaSinEscribir(
+    `${tarifas[0]}, con «configuracion:administrar» y nada de servicio`,
+    tarifas[1],
+    [FILA],
+    conError("auth"),
+  );
 
   /* ── 2 · la captura inválida ─────────────────────────────────────────── */
   /*
@@ -119,6 +140,7 @@ void probar("configuración: guardia, validación y lo que se guarda", async () 
   [f] = await filas<Fila>(FILA);
   ok("la casilla del automático se invierte", r.ok && f?.tipo_cambio_automatico === !antes);
 
+  como(ACTOR, "servicio:administrar");
   r = await s.updateSettings(
     inicial,
     forma({ laborCostPerHour: "$1,234.5", laborRatePerHour: "-50" }),

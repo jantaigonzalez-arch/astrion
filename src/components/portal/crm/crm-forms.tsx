@@ -64,10 +64,13 @@ export function OrganizationForm({
   owners,
   clients,
   defaults,
+  slaGeneral = SLA_HOURS,
 }: {
   owners: OwnerOption[];
   clients: ClientOption[];
   defaults?: OrgDefaults;
+  /** El SLA general de la empresa (Configuración → Clientes), para decirlo aquí. */
+  slaGeneral?: number;
 }) {
   const editing = Boolean(defaults?.id);
   const [state, action, pending] = useActionState(
@@ -328,14 +331,14 @@ export function OrganizationForm({
             step={1}
             className="w-28"
             defaultValue={defaults?.slaHours ?? ""}
-            placeholder={String(SLA_HOURS)}
+            placeholder={String(slaGeneral)}
           />
           <span className="text-sm text-muted-foreground">horas</span>
         </div>
         <p className="mt-1.5 text-xs text-muted-foreground">
           Solo si este cliente pactó un plazo distinto. Déjalo vacío y se le
           aplica el general de{" "}
-          <span className="font-medium text-foreground">{SLA_HOURS} horas</span>.
+          <span className="font-medium text-foreground">{slaGeneral} horas</span>.
           Se usa al levantar cada ticket y queda fijado en él: cambiarlo aquí no
           mueve el vencimiento de los que ya entraron.
         </p>

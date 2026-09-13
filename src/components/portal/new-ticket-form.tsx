@@ -139,6 +139,9 @@ export function NewTicketForm({
       {state.error === "server" && (
         <p className="text-sm text-destructive">Ocurrió un error. Intenta de nuevo.</p>
       )}
+      {state.error === "lista69b" && (
+        <p className="text-sm text-destructive">{state.motivo}</p>
+      )}
 
       <Button type="submit" variant="accent" size="lg" disabled={pending}>
         {pending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}

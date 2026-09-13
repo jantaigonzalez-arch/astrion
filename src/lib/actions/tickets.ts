@@ -1,5 +1,7 @@
 "use server";
 
+import { vetoLista69b } from "@/lib/domain/lista-69b";
+import { getSettings } from "@/lib/data/settings";
 import { z } from "zod";
 import { slaHorasDelCliente } from "@/lib/data/crm";
 import { revalidateTenant } from "@/lib/revalidate";
@@ -43,7 +45,13 @@ const CreateSchema = z.object({
   moduleId: z.string().uuid().optional(),
 });
 
-export type TicketFormState = { ok: boolean; error?: string; reference?: string };
+export type TicketFormState = {
+  ok: boolean;
+  error?: string;
+  /** Con `lista69b`: el porqué, con el nombre del cliente. Ver `vetoLista69b`. */
+  motivo?: string;
+  reference?: string;
+};
 
 /**
  * Un id que llega en el formulario, solo si tiene forma de uuid; si no, `null`.
@@ -133,7 +141,17 @@ export async function createTicket(
       el de ese día, y recalcularlo hacia atrás dejaría tickets que pasan de
       cumplidos a vencidos sin que nadie hiciera nada.
     */
+    /*
+      Un cliente en la lista 69-B, si la empresa lo bloquea (0038). Se mira la
+      cuenta que queda como dueña del ticket; si lo levanta el staff para sí
+      mismo, no tiene organización enlazada y no hay nada que mirar.
+    */
+    const veto69b = await vetoLista69b(db, session.user.id, "tickets");
+    if (veto69b) return { ok: false, error: "lista69b", motivo: veto69b };
+
     const horasSla = await slaHorasDelCliente(session.user.id, db);
+    // Y si no pactó uno, el general de ESTA empresa (0038), no una constante.
+    const { clientesSlaHoras: slaGeneral } = await getSettings(db);
 
     const row = await db.transaction(async (tx) => {
       const [created] = await tx
@@ -152,7 +170,7 @@ export async function createTicket(
           createdById: session.user.id,
           equipmentId,
           moduleId,
-          slaDueAt: slaDueFrom(now, horasSla),
+          slaDueAt: slaDueFrom(now, horasSla, slaGeneral),
         })
         .returning({ id: tickets.id, reference: tickets.reference });
 
@@ -169,7 +187,7 @@ export async function createTicket(
           type: isStaff ? "service" : "request",
           equipmentId,
           moduleId,
-          slaDueAt: slaDueFrom(now, horasSla).toISOString(),
+          slaDueAt: slaDueFrom(now, horasSla, slaGeneral).toISOString(),
         },
       });
 
@@ -290,7 +308,12 @@ export async function createServiceTicket(
     // El plazo es el del LABORATORIO al que se le levanta el servicio, no el de
     // quien teclea: son dos personas distintas y el compromiso es con la
     // empresa. Ver `slaHorasDelCliente`.
+    // El servicio es del LABORATORIO: es su estatus 69-B el que cuenta (0038).
+    const veto69b = await vetoLista69b(db, parsed.data.clientId, "tickets");
+    if (veto69b) return { ok: false, error: "lista69b", motivo: veto69b };
+
     const horasSla = await slaHorasDelCliente(parsed.data.clientId, db);
+    const { clientesSlaHoras: slaGeneral } = await getSettings(db);
 
     // El ticket pertenece al laboratorio (lo ve en su portal), pero lo levantó
     // el staff: entra directo a la cola, sin revisión.
@@ -310,7 +333,7 @@ export async function createServiceTicket(
           moduleId,
           reviewedById: session.user.id,
           reviewedAt: now,
-          slaDueAt: slaDueFrom(now, horasSla),
+          slaDueAt: slaDueFrom(now, horasSla, slaGeneral),
         })
         .returning({ id: tickets.id, reference: tickets.reference });
 
@@ -328,7 +351,7 @@ export async function createServiceTicket(
           clientId: parsed.data.clientId,
           equipmentId,
           moduleId,
-          slaDueAt: slaDueFrom(now, horasSla).toISOString(),
+          slaDueAt: slaDueFrom(now, horasSla, slaGeneral).toISOString(),
         },
       });
 

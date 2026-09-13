@@ -157,6 +157,7 @@ scripts/_dash.ts
 !scripts/_probe-rent.ts
 !scripts/_probe-siembra.ts
 # Las pruebas de acciones y su andamio (ver `pruebas/registro.ts`).
+!scripts/_probe-acciones-clientes-config.ts
 !scripts/_probe-acciones-compras.ts
 !scripts/_probe-acciones-contratos.ts
 !scripts/_probe-acciones-crm-etapas.ts

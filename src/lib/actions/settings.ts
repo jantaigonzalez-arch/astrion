@@ -102,11 +102,20 @@ export async function updateTipoCambioAutomatico(
   }
 }
 
+/**
+ * Tarifas de mano de obra: costo y cobro por hora de técnico.
+ *
+ * Las decide quien ADMINISTRA EL SERVICIO, no quien administra el sistema:
+ * solo alimentan la utilidad de los tickets (`lib/profit.ts`). Pedían
+ * `configuracion: administrar` cuando vivían en «Marca y tarifas»; desde que
+ * tienen su pestaña (Configuración → Servicio), la guardia es la del módulo,
+ * igual que la política de viáticos pide `viaticos: administrar`.
+ */
 export async function updateSettings(
   _prev: SettingsState,
   formData: FormData,
 ): Promise<SettingsState> {
-  if (!(await puedeEn("configuracion", "administrar"))) return { ok: false, error: "auth" };
+  if (!(await puedeEn("servicio", "administrar"))) return { ok: false, error: "auth" };
 
   const laborCostPerHour = money(formData.get("laborCostPerHour"));
   const laborRatePerHour = money(formData.get("laborRatePerHour"));

@@ -44,11 +44,13 @@ export default async function ConfiguracionLayout({
     de este— con la diferencia de que ahora entrar al área no significa poder
     abrirlo todo.
   */
-  const [puedeConfiguracion, puedeViaticos] = await Promise.all([
+  const [puedeConfiguracion, puedeViaticos, puedeServicio, puedeClientes] = await Promise.all([
     puedeEn("configuracion", "administrar"),
     puedeEn("viaticos", "administrar"),
+    puedeEn("servicio", "administrar"),
+    puedeEn("clientes", "administrar"),
   ]);
-  if (!puedeConfiguracion && !puedeViaticos) {
+  if (!puedeConfiguracion && !puedeViaticos && !puedeServicio && !puedeClientes) {
     await redirectInTenant("/dashboard", locale);
   }
 
@@ -63,6 +65,8 @@ export default async function ConfiguracionLayout({
       <SettingsTabs
         puedeConfiguracion={puedeConfiguracion}
         puedeViaticos={puedeViaticos}
+        puedeServicio={puedeServicio}
+        puedeClientes={puedeClientes}
       />
       {children}
     </div>

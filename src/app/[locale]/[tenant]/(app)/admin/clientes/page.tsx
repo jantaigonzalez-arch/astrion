@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { getSettings } from "@/lib/data/settings";
 import { setRequestLocale } from "next-intl/server";
 import { Building2 } from "lucide-react";
 import { Link } from "@/lib/nav";
@@ -234,10 +235,11 @@ async function Lista({
   orden: { campo: CampoCartera; dir: "asc" | "desc" };
   pageParams: ReturnType<typeof parsePage>;
 }) {
-  const [clientes, cuantos, [totalSinFiltro, conAbiertos, sinPortal]] = await Promise.all([
+  const [clientes, cuantos, [totalSinFiltro, conAbiertos, sinPortal], ajustes] = await Promise.all([
     p,
     total,
     conteos,
+    getSettings(),
   ]);
 
   const rows: ClientListRow[] = clientes.map((c) => ({
@@ -278,6 +280,7 @@ async function Lista({
         totalSinFiltro={totalSinFiltro}
         conAbiertos={conAbiertos}
         sinPortal={sinPortal}
+        slaGeneral={ajustes.clientesSlaHoras}
       />
       {/*
         El paginador conserva búsqueda, filtro y orden. Sin eso, pasar a la

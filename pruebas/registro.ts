@@ -1,7 +1,7 @@
 /**
  * QUÉ PRUEBA CORRE DÓNDE, Y POR QUÉ.
  *
- * Las cinco listas de este archivo reparten los 83 probes del repositorio. La
+ * Las cinco listas de este archivo reparten los 84 probes del repositorio. La
  * meta-prueba de `cobertura.test.ts` exige que TODOS estén exactamente en una:
  * un probe nuevo que nadie clasifique rompe la suite en vez de quedarse fuera
  * en silencio, que es como se llega a tener catorce pruebas muertas sin que
@@ -172,6 +172,7 @@ export const CON_STUBS = [
     treinta bugs; el de más alcance, que siete acciones limpiaban los importes
     con `[^0-9.]` y se comían el signo (ver `lib/importe.ts`).
   */
+  "scripts/_probe-acciones-clientes-config.ts",
   "scripts/_probe-acciones-compras.ts",
   "scripts/_probe-acciones-contratos.ts",
   "scripts/_probe-acciones-crm-etapas.ts",

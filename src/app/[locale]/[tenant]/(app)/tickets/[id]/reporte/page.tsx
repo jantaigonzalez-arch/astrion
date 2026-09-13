@@ -53,12 +53,16 @@ export default async function TicketReportPage({
   const log = ticket.comments.filter((c) => !c.internal);
   const authorRoles = await rolesByUser(log.map((c) => c.author.id));
 
-  // Tiempos y cumplimiento de SLA (< 2 h primera respuesta).
+  // Tiempos y cumplimiento del SLA de primera respuesta del ticket.
   const created = new Date(ticket.createdAt);
   const firstResp = ticket.firstRespondedAt ? new Date(ticket.firstRespondedAt) : null;
   const resolved = ticket.resolvedAt ? new Date(ticket.resolvedAt) : null;
   const slaDue = ticket.slaDueAt ? new Date(ticket.slaDueAt) : null;
   const slaMet = firstResp && slaDue ? firstResp <= slaDue : null;
+  const horasObjetivo =
+    slaDue && ticket.createdAt
+      ? Math.round((slaDue.getTime() - new Date(ticket.createdAt).getTime()) / 3_600_000)
+      : null;
 
   // Horas de servicio acumuladas en la bitácora (para facturación).
   const totalHours = log.reduce((a, c) => a + Number(c.hours ?? 0), 0);
@@ -291,7 +295,16 @@ export default async function TicketReportPage({
                 )
               }
             />
-            <Row k="Objetivo SLA (< 2 h)" v={dt(slaDue)} />
+            {/*
+              El plazo de ESTE ticket, no «< 2 h»: el que se congeló al crearlo
+              —el pactado con el cliente o el general de la empresa, que desde
+              la 0038 decide cada una—. El texto fijo mentía en cuanto alguien
+              pactaba otro plazo.
+            */}
+            <Row
+              k={`Objetivo SLA${horasObjetivo ? ` (< ${horasObjetivo} h)` : ""}`}
+              v={dt(slaDue)}
+            />
             <Row
               k="Cumplimiento SLA"
               v={

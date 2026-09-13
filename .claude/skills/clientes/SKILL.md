@@ -157,6 +157,42 @@ en producción y que ninguna prueba ve venir.
 
 ---
 
+## Lo que decide cada empresa: Configuración → Clientes (0038)
+
+Estas cuatro reglas estaban fijas en el código y ahora son de cada empresa
+(`settings`, pestaña que manda `clientes: administrar`). Ver el skill
+`decisiones-configurables` para el método.
+
+| Ajuste | De fábrica | Lo hace cumplir |
+|---|---|---|
+| SLA general de primera respuesta (`clientes_sla_horas`) | 2 h | `slaDueFrom(…, general)` al crear el ticket |
+| Uso de CFDI con que nace un expediente (`clientes_uso_cfdi_omision`) | ninguno | la página de edición lo prellena; **la validación contra el régimen no cambia** |
+| Qué cuenta como cliente (`clientes_pruebas`) | portal, pedido y contrato | `ES_CLIENTE`, que lo lee **dentro de la consulta** |
+| Lista 69-B presunto / definitivo | nada | `vetoLista69b` en contratos y tickets nuevos |
+
+Lo que conviene saber antes de tocarlos:
+
+- **`ES_CLIENTE` sigue siendo UNA expresión**, y por eso el ajuste vive dentro de
+  ella —una subconsulta sin correlación a `settings`, que Postgres resuelve una
+  vez por consulta— en vez de pasarse como parámetro. Así Clientes, Ventas, el
+  selector del negocio y los destinos de viáticos obedecen sin que ninguna
+  pantalla tenga que leerlo. Si escribes otra regla de «qué es un cliente», no
+  la copies: úsala.
+- **Nada de esto es configurable**: las reglas fiscales (trampas 1-5), el
+  índice `(rfc, cp_fiscal)`, un solo domicilio fiscal. Son del SAT, no de la
+  empresa. El uso de CFDI por omisión es solo el valor con el que abre el
+  formulario: el expediente se sigue validando contra el régimen de cada cliente.
+- **La lista 69-B todavía no tiene cargador.** El estatus existe
+  (`cliente_validacion_sat.lista69b`) pero nada lo alimenta, así que todo cliente
+  está en `no_listado` y la política no bloquea a nadie hasta que se cargue la
+  lista del SAT. `desvirtuado` y `sentencia_favorable` nunca bloquean: son el
+  final en que el contribuyente demostró que sí operaba.
+
+Las pruebas: `scripts/_probe-acciones-clientes-config.ts`, cada ajuste en sus dos
+estados, y `decision69b` en `probe-clientes-fiscal.mts`.
+
+---
+
 ## Antes de tocar nada
 
 ```bash
@@ -208,7 +244,8 @@ y no hay que «arreglarlo» sembrando valores a mano.
 No lo des por hecho al leer lo de arriba: el `ValidadorFiscal` (puerto descrito,
 adaptadores sin escribir — el semáforo NO puede llegar a «Validado» por ningún
 camino automático), la UI por pestañas completa, la importación CSV con dry-run,
-el bloqueo por lista 69-B, y `npm run clientes:adoptar`, que es el traslado de
+el CARGADOR de la lista 69-B (la política de bloqueo ya existe, ver arriba), y
+`npm run clientes:adoptar`, que es el traslado de
 las 147 organizaciones con RFC al expediente — deliberadamente fuera de la
 migración, porque ninguna tiene régimen fiscal y darlas por altas las marcaría
 como expediente completo con datos que el SAT rechazaría.

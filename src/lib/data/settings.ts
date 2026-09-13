@@ -6,6 +6,13 @@ import { settings } from "@/lib/db/schema";
 import { membershipRole, type MembershipRole } from "@/lib/db/platform";
 import { getTipoDeCambio } from "@/lib/data/tipo-de-cambio";
 import { hoyEnMexico } from "@/lib/tipo-de-cambio";
+import {
+  POLITICAS_69B,
+  PRUEBAS_DE_CLIENTE,
+  SLA_HORAS_DE_FABRICA,
+  type Politica69b,
+  type PruebaDeCliente,
+} from "@/lib/politica-clientes";
 
 /** Descarta lo que no sea un rol conocido. Ver la nota de `getSettings`. */
 function rolesGuardados(v: unknown): MembershipRole[] {
@@ -52,7 +59,17 @@ export type AppSettings = {
   /** Cuántos de cada tipo caben en un viático. Ver la 0037. */
   viaticosMaxPorTipo: { contrato: number; visita: number; prospecto: number };
   viaticosMezclarDestinos: boolean;
+  /**
+   * LO QUE DECIDE LA EMPRESA SOBRE SUS CLIENTES (0038). Configuración → Clientes.
+   * De fábrica, lo de antes de que fuera configurable: 2 h de SLA, sin uso de
+   * CFDI sugerido, las tres pruebas de cliente y nada con la lista 69-B.
+   */
+  clientesSlaHoras: number;
+  clientesUsoCfdiOmision: string | null;
+  clientesPruebas: PruebaDeCliente[];
+  clientes69b: { presunto: Politica69b; definitivo: Politica69b };
 };
+
 
 /** Los roles que viajan: todos menos el cliente, que no entra al portal interno. */
 export const ROLES_INTERNOS: MembershipRole[] = ["owner", "admin", "agent", "sales", "general"];
@@ -69,7 +86,23 @@ const DEFAULTS: AppSettings = {
   viaticosVisitasRoles: [],
   viaticosMaxPorTipo: { contrato: 1, visita: 1, prospecto: 1 },
   viaticosMezclarDestinos: false,
+  clientesSlaHoras: SLA_HORAS_DE_FABRICA,
+  clientesUsoCfdiOmision: null,
+  clientesPruebas: [...PRUEBAS_DE_CLIENTE],
+  clientes69b: { presunto: "nada", definitivo: "nada" },
 };
+
+/** Lo guardado, saneado: `jsonb` y texto pueden traer algo que esta versión no conoce. */
+function pruebasGuardadas(v: unknown): PruebaDeCliente[] {
+  const ok = Array.isArray(v)
+    ? v.filter((x): x is PruebaDeCliente => (PRUEBAS_DE_CLIENTE as readonly unknown[]).includes(x))
+    : [];
+  // Sin ninguna válida, las de fábrica: el CHECK de la 0038 ya exige al menos
+  // una, así que esto solo cubre una fila escrita a mano.
+  return ok.length ? [...new Set(ok)] : [...PRUEBAS_DE_CLIENTE];
+}
+const politica69b = (v: unknown): Politica69b =>
+  (POLITICAS_69B as readonly unknown[]).includes(v) ? (v as Politica69b) : "nada";
 
 /** El CHECK de la base ya lo acota a 1..20; se acota otra vez por si la fila se escribió a mano. */
 const tope = (n: unknown) => Math.min(20, Math.max(1, Number(n) || 1));
@@ -108,6 +141,13 @@ export async function getSettings(conexion?: DbOrTx): Promise<AppSettings> {
       prospecto: tope(row.viaticosMaxProspectos),
     },
     viaticosMezclarDestinos: row.viaticosMezclarDestinos,
+    clientesSlaHoras: Math.min(720, Math.max(1, Number(row.clientesSlaHoras) || SLA_HORAS_DE_FABRICA)),
+    clientesUsoCfdiOmision: row.clientesUsoCfdiOmision?.trim() || null,
+    clientesPruebas: pruebasGuardadas(row.clientesPruebas),
+    clientes69b: {
+      presunto: politica69b(row.clientes69bPresunto),
+      definitivo: politica69b(row.clientes69bDefinitivo),
+    },
   };
 }
 

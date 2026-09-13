@@ -1,8 +1,6 @@
 import { setRequestLocale } from "next-intl/server";
 import { redirectInTenant } from "@/lib/nav-server";
-import { getSettings } from "@/lib/data/settings";
 import { getTenantBrand } from "@/lib/data/platform";
-import { SettingsForm } from "@/components/portal/settings-form";
 import { BrandForm } from "@/components/portal/brand-form";
 import { DocumentoForm } from "@/components/portal/documento-form";
 import { CorreoForm } from "@/components/portal/correo-form";
@@ -21,8 +19,7 @@ export default async function SettingsPage({
     await redirectInTenant("/dashboard", locale);
   }
 
-  const [s, brand, correo] = await Promise.all([
-    getSettings(),
+  const [brand, correo] = await Promise.all([
     getTenantBrand(tenant),
     getCorreoDeLaEmpresa(),
   ]);
@@ -44,10 +41,10 @@ export default async function SettingsPage({
 
       <CorreoForm {...correo} />
 
-      <SettingsForm
-        laborCostPerHour={s.laborCostPerHour}
-        laborRatePerHour={s.laborRatePerHour}
-      />
+      {/*
+        Las tarifas de mano de obra ya no están aquí: tienen su pestaña,
+        Configuración → Servicio, y la manda quien administra el servicio.
+      */}
     </div>
   );
 }

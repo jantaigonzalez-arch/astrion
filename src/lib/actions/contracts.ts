@@ -1,5 +1,6 @@
 "use server";
 
+import { vetoLista69b } from "@/lib/domain/lista-69b";
 import { z } from "zod";
 import { importeOpcional } from "@/lib/importe";
 import { revalidateTenant } from "@/lib/revalidate";
@@ -14,7 +15,9 @@ import { recordDeletion } from "@/lib/domain/events";
 
 export type ContractState = {
   ok: boolean;
-  error?: "auth" | "invalid" | "duplicate" | "server";
+  error?: "auth" | "invalid" | "duplicate" | "lista69b" | "server";
+  /** Con `lista69b`: el porqué, con el nombre del cliente. Ver `vetoLista69b`. */
+  motivo?: string;
   number?: string;
 };
 
@@ -105,6 +108,11 @@ export async function createContract(
 
   const parties = await validateParties(parsed.data.clientId, parsed.data.salesRepId);
   if (!parties) return { ok: false, error: "invalid" };
+
+  // Un contrato NUEVO con un cliente en la lista 69-B, si la empresa lo bloquea
+  // (0038, Configuración → Clientes). Los ya firmados no se tocan.
+  const veto69b = await vetoLista69b(await tenantDb(), parties.clientId, "contratos");
+  if (veto69b) return { ok: false, error: "lista69b", motivo: veto69b };
 
   try {
     const db = await tenantDb();
